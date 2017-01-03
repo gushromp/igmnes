@@ -5,3 +5,4 @@ authors = ["Ivan Đorđević <i.djordjevic@itsinbox.com>"]
 
 [dependencies]
 sdl2 = "0.25.0"
+nom = "^2.0"

@@ -1,3 +1,5 @@
+use std::error::Error;
+
 pub enum AddressingMode {
     // indexed addressing modes
     //
@@ -98,7 +100,7 @@ pub enum InstructionToken {
     DEX,
     NOP,
 
-    Invalid,
+    Unknown,
 }
 
 
@@ -122,7 +124,7 @@ impl Instruction {
 }
 
 impl Instruction {
-    pub fn decode(opcode: u8) -> Instruction {
+    pub fn decode(opcode: u8) -> Result<Instruction, String> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 
@@ -130,33 +132,37 @@ impl Instruction {
         //      aaa and cc bits are used to specify instruction type
         //      bbb bits are used to specify addressing mode
         // However, since a lot of instructions don't fit into this pattern,
-        // we will match them one by one instead of looking at the individual bit groups.
+        // we will match the opcodes one by one instead of looking at the individual bit groups.
 
-        match opcode {
+        let instr = match opcode {
             //
             // Control, branch, and stack instructions
             //
             0x00 => Instruction::new(BRK, Implicit, 1, 7), // BReaK
+            0xEA => Instruction::new(NOP, Implicit, 1, 2), // NOP (No OPeration)
             // Jump instructions
             0x20 => Instruction::new(JSR, Absolute, 3, 6), // Jump to SubRoutine
-            0x4C => Instruction::new(JMP, Absolute, 3, 3), // JuMP
-            0x6C => Instruction::new(JMP, Indirect, 3, 5), // JuMP
+            0x4C => Instruction::new(JMP, Absolute, 3, 3), // JuMP (absolute)
+            0x6C => Instruction::new(JMP, Indirect, 3, 5), // JuMP (indirect)
+            // Return instructions
+            0x40 => Instruction::new(RTI, Implicit, 1, 6), // RTI (ReTurn from Interrupt)
+            0x60 => Instruction::new(RTS, Implicit, 1, 6), // RTS (ReTurn from Subroutine)
             // Branch instructions
-            0x10 => Instruction::new(BPL, Implicit, 1, 2), // Branch on PLus
-            0x30 => Instruction::new(BMI, Implicit, 1, 2), // Branch on MInus
-            0x50 => Instruction::new(BVC, Implicit, 1, 2), // Branch on oVerflow Clear
-            0x70 => Instruction::new(BVS, Implicit, 1, 2), // Branch on oVerflow Set
-            0x90 => Instruction::new(BCC, Implicit, 1, 2), // Branch on Carry Clear
-            0xB0 => Instruction::new(BCS, Implicit, 1, 2), // Branch on Carry Set
-            0xD0 => Instruction::new(BNE, Implicit, 1, 2), // Branch on Not Equal
-            0xF0 => Instruction::new(BEQ, Implicit, 1, 2), // Branch on EQual
+            0x10 => Instruction::new(BPL, Relative, 2, 2), // Branch on PLus
+            0x30 => Instruction::new(BMI, Relative, 2, 2), // Branch on MInus
+            0x50 => Instruction::new(BVC, Relative, 2, 2), // Branch on oVerflow Clear
+            0x70 => Instruction::new(BVS, Relative, 2, 2), // Branch on oVerflow Set
+            0x90 => Instruction::new(BCC, Relative, 2, 2), // Branch on Carry Clear
+            0xB0 => Instruction::new(BCS, Relative, 2, 2), // Branch on Carry Set
+            0xD0 => Instruction::new(BNE, Relative, 2, 2), // Branch on Not Equal
+            0xF0 => Instruction::new(BEQ, Relative, 2, 2), // Branch on EQual
             // Stack instructions
-            0x08 => Instruction::new(PHP, Implicit, 1, 3), // Transfer X to Stack ptr
-            0x28 => Instruction::new(PLP, Implicit, 1, 4), // Transfer Stack ptr to X
-            0x48 => Instruction::new(PHA, Implicit, 1, 3), // PusH Accumulator
-            0x68 => Instruction::new(PLA, Implicit, 1, 4), // PuLl Accumulator
             0x9A => Instruction::new(TXS, Implicit, 1, 2), // PusH Processor status
             0xBA => Instruction::new(TSX, Implicit, 1, 2), // PuLl Processor status
+            0x48 => Instruction::new(PHA, Implicit, 1, 3), // PusH Accumulator
+            0x68 => Instruction::new(PLA, Implicit, 1, 4), // PuLl Accumulator
+            0x08 => Instruction::new(PHP, Implicit, 1, 3), // Transfer X to Stack ptr
+            0x28 => Instruction::new(PLP, Implicit, 1, 4), // Transfer Stack ptr to X
             // Flag instructions
             0x18 => Instruction::new(CLC, Implicit, 1, 2), // CLear Carry
             0x38 => Instruction::new(SEC, Implicit, 1, 2), // SEt Carry
@@ -165,15 +171,6 @@ impl Instruction {
             0xB8 => Instruction::new(CLV, Implicit, 1, 2), // CLear oVerflow
             0xD8 => Instruction::new(CLD, Implicit, 1, 2), // CLear Decimal
             0xF8 => Instruction::new(SED, Implicit, 1, 2), // SEt Decimal
-            // Register instructions
-            0xAA => Instruction::new(TAX, Implicit, 1, 2), // Transfer A to X
-            0x8A => Instruction::new(TXA, Implicit, 1, 2), // Transfer X to A
-            0xCA => Instruction::new(DEX, Implicit, 1, 2), // DEcrement X
-            0xE8 => Instruction::new(INX, Implicit, 1, 2), // INcrement X
-            0xA8 => Instruction::new(TAY, Implicit, 1, 2), // Transfer A to Y
-            0x98 => Instruction::new(TYA, Implicit, 1, 2), // Transfer Y to A
-            0x88 => Instruction::new(DEY, Implicit, 1, 2), // DEcrement Y
-            0xC8 => Instruction::new(INY, Implicit, 1, 2), // INcrement Y
             //
             // ALU instructions
             //
@@ -222,6 +219,15 @@ impl Instruction {
             0xD9 => Instruction::new(CMP, AbsoluteIndexedY, 3, 4),
             0xC1 => Instruction::new(CMP, IndexedIndirectX, 2, 6),
             0xD1 => Instruction::new(CMP, IndirectIndexedY, 2, 5),
+            // SBC (SuBtract with Carry)
+            0xE9 => Instruction::new(SBC, Immediate, 2, 2),
+            0xE5 => Instruction::new(SBC, ZeroPage, 2, 3),
+            0xF5 => Instruction::new(SBC, ZeroPageIndexedX, 2, 4),
+            0xED => Instruction::new(SBC, Absolute, 3, 4),
+            0xFD => Instruction::new(SBC, AbsoluteIndexedX, 3, 4),
+            0xF9 => Instruction::new(SBC, AbsoluteIndexedY, 3, 4),
+            0xE1 => Instruction::new(SBC, IndexedIndirectX, 2, 6),
+            0xF1 => Instruction::new(SBC, IndirectIndexedY, 2, 5),
             //
             // Read/Modify/Write instructions
             //
@@ -237,12 +243,27 @@ impl Instruction {
             0x36 => Instruction::new(ROL, ZeroPageIndexedX, 2, 6),
             0x2E => Instruction::new(ROL, Absolute, 3, 6),
             0x3E => Instruction::new(ROL, AbsoluteIndexedX, 3, 7),
-            // ASL (Arithmetic Shift Left)
-            0x0A => Instruction::new(ASL, Accumulator, 1, 2),
-            0x06 => Instruction::new(ASL, ZeroPage, 2, 5),
-            0x16 => Instruction::new(ASL, ZeroPageIndexedX, 2, 6),
-            0x0E => Instruction::new(ASL, Absolute, 3, 6),
-            0x1E => Instruction::new(ASL, AbsoluteIndexedX, 3, 7),
+            // LSR (Logical Shift Right)
+            0x4A => Instruction::new(ASL, Accumulator, 1, 2),
+            0x46 => Instruction::new(ASL, ZeroPage, 2, 5),
+            0x56 => Instruction::new(ASL, ZeroPageIndexedX, 2, 6),
+            0x4E => Instruction::new(ASL, Absolute, 3, 6),
+            0x5E => Instruction::new(ASL, AbsoluteIndexedX, 3, 7),
+            // ROR (ROtate Right)
+            0x6A => Instruction::new(ROL, Accumulator, 1, 2),
+            0x66 => Instruction::new(ROL, ZeroPage, 2, 5),
+            0x76 => Instruction::new(ROL, ZeroPageIndexedX, 2, 6),
+            0x6E => Instruction::new(ROL, Absolute, 3, 6),
+            0x7E => Instruction::new(ROL, AbsoluteIndexedX, 3, 7),
+            // Register instructions
+            0xAA => Instruction::new(TAX, Implicit, 1, 2), // Transfer A to X
+            0x8A => Instruction::new(TXA, Implicit, 1, 2), // Transfer X to A
+            0xCA => Instruction::new(DEX, Implicit, 1, 2), // DEcrement X
+            0xE8 => Instruction::new(INX, Implicit, 1, 2), // INcrement X
+            0xA8 => Instruction::new(TAY, Implicit, 1, 2), // Transfer A to Y
+            0x98 => Instruction::new(TYA, Implicit, 1, 2), // Transfer Y to A
+            0x88 => Instruction::new(DEY, Implicit, 1, 2), // DEcrement Y
+            0xC8 => Instruction::new(INY, Implicit, 1, 2), // INcrement Y
             //
             // Store/Load instructions
             //
@@ -284,6 +305,14 @@ impl Instruction {
             0x94 => Instruction::new(STY, ZeroPageIndexedX, 2, 4),
             0x8C => Instruction::new(STY, Absolute, 3, 4),
 
+            _ => Instruction::new(Unknown, Invalid, 0, 0)
+        };
+
+        if let Unknown = instr.token {
+            Err(format!("Unknown opcode: 0x{:x}", opcode))
+        }
+        else {
+            Ok(instr)
         }
     }
 }
