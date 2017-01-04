@@ -39,8 +39,11 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new() -> Cpu {
-        let mut cpu = Cpu::default();
+    pub fn new(mem_map: MemMap) -> Cpu {
+        let mut cpu = Cpu {
+            mem_map: mem_map,
+            ..Default::default()
+        };
         cpu.hard_reset();
 
         cpu

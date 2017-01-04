@@ -1,4 +1,5 @@
 use std::default::Default;
+use core::rom::Rom;
 use core::apu::Apu;
 
 const RAM_SIZE: usize = 0x800;
@@ -39,14 +40,16 @@ impl MemMapped for Ram {
 
 #[derive(Default)]
 pub struct MemMap {
+    rom: Rom,
     ram: Ram,
     apu: Apu,
 
 }
 
 impl MemMap {
-    pub fn new() -> MemMap {
+    pub fn new(rom: Rom) -> MemMap {
         MemMap {
+            rom: rom,
             ram: Ram::new(),
             apu: Apu,
         }
