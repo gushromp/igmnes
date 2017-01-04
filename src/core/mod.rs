@@ -12,11 +12,8 @@ use self::rom::Rom;
 
 // 2A03 (NTSC) and 2A07 (PAL) emulation
 // contains CPU (nearly identical to MOS 6502) part and APU part
-#[derive(Default)]
 pub struct Core {
-
     cpu: Cpu,
-
 }
 
 impl Core {
@@ -24,6 +21,7 @@ impl Core {
 
 
         let rom = Rom::load_rom(file_path).unwrap();
+        println!("{:#?}", rom.header);
         let mem_map = MemMap::new(rom);
 
         let core = Core {

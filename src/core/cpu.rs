@@ -23,7 +23,6 @@ struct StatusReg {
     sign_flag: bool, // 0 when result of operation is positive, 1 when negative
 }
 
-#[derive(Default)]
 pub struct Cpu {
     // Memory map
     mem_map: MemMap,
@@ -38,11 +37,29 @@ pub struct Cpu {
     reg_pc: u16, // program counter register
 }
 
+
 impl Cpu {
     pub fn new(mem_map: MemMap) -> Cpu {
         let mut cpu = Cpu {
             mem_map: mem_map,
-            ..Default::default()
+
+            reg_a: 0,
+            reg_x: 0,
+            reg_y: 0,
+
+            reg_status: StatusReg {
+                carry_flag: false,
+                zero_flag: false,
+                interrupt_disable: true,
+                decimal_mode: false,
+                break_executed: false,
+                logical_1: true, // unused flag, always on
+                overflow_flag: false,
+                sign_flag: false,
+            },
+
+            reg_sp: RESET_SP,
+            reg_pc: 0,
         };
         cpu.hard_reset();
 

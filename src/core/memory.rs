@@ -38,7 +38,6 @@ impl MemMapped for Ram {
     }
 }
 
-#[derive(Default)]
 pub struct MemMap {
     rom: Rom,
     ram: Ram,
