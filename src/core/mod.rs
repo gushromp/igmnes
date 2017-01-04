@@ -1,4 +1,5 @@
 mod rom;
+mod mappers;
 mod apu;
 mod cpu;
 mod memory;
@@ -22,7 +23,7 @@ impl Core {
 
         let rom = Rom::load_rom(file_path).unwrap();
         println!("{:#?}", rom.header);
-        let mem_map = MemMap::new(rom);
+        let mem_map = Box::new(MemMap::new(rom));
 
         let core = Core {
             cpu: Cpu::new(mem_map),

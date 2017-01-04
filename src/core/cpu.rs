@@ -24,8 +24,6 @@ struct StatusReg {
 }
 
 pub struct Cpu {
-    // Memory map
-    mem_map: MemMap,
 
     // Registers
     reg_a: u8, // Accumulator
@@ -35,11 +33,14 @@ pub struct Cpu {
     reg_status: StatusReg, // status register
     reg_sp: u8, // stack pointer register
     reg_pc: u16, // program counter register
+
+    // Memory map
+    mem_map: Box<MemMap>,
 }
 
 
 impl Cpu {
-    pub fn new(mem_map: MemMap) -> Cpu {
+    pub fn new(mem_map: Box<MemMap>) -> Cpu {
         let mut cpu = Cpu {
             mem_map: mem_map,
 
