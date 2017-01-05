@@ -127,5 +127,8 @@ impl Cpu {
         instruction.cycle_count
     }
 
+    fn execute_instruction(&mut self, instruction: Instruction) {
+
+    }
 
 }

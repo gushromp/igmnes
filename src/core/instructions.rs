@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum AddressingMode {
@@ -103,6 +104,12 @@ pub enum InstructionToken {
     NOP,
 
     Unknown,
+}
+
+impl fmt::Display for InstructionToken {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug)]

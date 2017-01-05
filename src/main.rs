@@ -2,11 +2,10 @@
 extern crate nom;
 extern crate sdl2;
 
-use std::path::Path;
-
 mod core;
-use core::Core;
 
+use core::Core;
+use std::path::Path;
 
 
 fn main() {
@@ -37,8 +36,9 @@ fn main() {
     let rom_path = Path::new(&args[1]);
 
     let mut core = Core::load_rom(rom_path);
-    core.print_cpu_state();
-    core.step();
+    core.attach_debugger();
+//    core.print_cpu_state();
+//    core.step();
     // Play for 2 second
     // std::thread::sleep(Duration::from_millis(2000));
 }

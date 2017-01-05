@@ -1,5 +1,6 @@
-mod rom;
+mod debugger;
 mod mappers;
+mod rom;
 mod apu;
 mod cpu;
 mod memory;
@@ -10,22 +11,27 @@ use self::memory::*;
 use self::apu::Apu;
 use self::cpu::Cpu;
 use self::rom::Rom;
+use self::debugger::Debugger;
 
 // 2A03 (NTSC) and 2A07 (PAL) emulation
 // contains CPU (nearly identical to MOS 6502) part and APU part
-pub struct Core {
+pub struct Core<'a> {
     cpu: Cpu,
+    debugger: Option<Debugger<'a>>,
 }
 
-impl Core {
+impl<'a> Core<'a> {
     pub fn load_rom(file_path: &Path) -> Core {
         let rom = Rom::load_rom(file_path).unwrap();
         let mem_map = Box::new(MemMap::new(rom));
 
-        let core = Core {
-            cpu: Cpu::new(mem_map),
-        };
+        let cpu = Cpu::new(mem_map);
+        let debugger = None;
 
+        let mut core = Core {
+            cpu: cpu,
+            debugger: debugger,
+        };
 
         core
     }
@@ -36,5 +42,15 @@ impl Core {
 
     pub fn step(&mut self) {
         self.cpu.step();
+    }
+
+    pub fn attach_debugger(&'a mut self) {
+        let debugger = Some(Debugger::attach(&mut self.cpu));
+
+        self.debugger = debugger;
+    }
+
+    pub fn detach_debugger(&mut self) {
+        self.debugger = None
     }
 }
