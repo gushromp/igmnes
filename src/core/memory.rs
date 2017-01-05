@@ -119,7 +119,7 @@ impl MemMapped for MemMap {
             }
             0x4020...0xFFFF => {
                 println!("Attempted read from mapper address space: 0x{:X}", index);
-                self.mapper.read_prg(index)
+                self.mapper.read(index)
             }
             _ => unimplemented!() // cannot happen
         }
@@ -155,7 +155,7 @@ impl MemMapped for MemMap {
                 panic!("Attempted unimplemented write to CPU Test Register: 0x{:X}", index);
             }
             0x4020...0xFFFF => {
-                self.mapper.write_prg(index, byte);
+                self.mapper.write(index, byte);
             }
             _ => unimplemented!() // cannot happen
         }
