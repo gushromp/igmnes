@@ -1,5 +1,6 @@
 use std::error::Error;
 
+#[derive(Debug)]
 pub enum AddressingMode {
     // indexed addressing modes
     //
@@ -23,6 +24,7 @@ pub enum AddressingMode {
     Invalid,
 }
 
+#[derive(Debug)]
 pub enum InstructionToken {
     // instruction opcodes are byte-wide
     //
@@ -103,7 +105,7 @@ pub enum InstructionToken {
     Unknown,
 }
 
-
+#[derive(Debug)]
 pub struct Instruction {
     pub token: InstructionToken,
     pub addressing_mode: AddressingMode,

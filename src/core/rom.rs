@@ -73,16 +73,16 @@ impl Rom {
 fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
     do_parse!(input,
         tag!("\x4E\x45\x53\x1A")        >>
-        prg_rom_chunk_count: be_u8      >>
-        chr_rom_chunk_count: be_u8      >>
-        flags_6: be_u8                  >>
-        flags_7: be_u8                  >>
-        byte_8: be_u8                   >>
-        flags_9: be_u8                  >>
-        flags_10: be_u8                 >>
-        flags_11: be_u8                 >>
-        flags_12: be_u8                 >>
-        flags_13: be_u8                 >>
+        prg_rom_chunk_count: le_u8      >>
+        chr_rom_chunk_count: le_u8      >>
+        flags_6: le_u8                  >>
+        flags_7: le_u8                  >>
+        byte_8: le_u8                   >>
+        flags_9: le_u8                  >>
+        flags_10: le_u8                 >>
+        flags_11: le_u8                 >>
+        flags_12: le_u8                 >>
+        flags_13: le_u8                 >>
         rest: take!(2)                  >>
         (
             {

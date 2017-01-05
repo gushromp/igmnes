@@ -36,7 +36,9 @@ fn main() {
 
     let rom_path = Path::new(&args[1]);
 
-    let core = Core::load_rom(rom_path);
+    let mut core = Core::load_rom(rom_path);
+    core.print_cpu_state();
+    core.step();
     // Play for 2 second
     // std::thread::sleep(Duration::from_millis(2000));
 }

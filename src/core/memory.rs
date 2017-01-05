@@ -9,8 +9,20 @@ const RAM_SIZE: usize = 0x800;
 
 
 pub trait MemMapped {
-    fn read(&self, u16: u16) -> u8;
+    fn read(&self, index: u16) -> u8;
     fn write(&mut self, index: u16, byte: u8);
+
+    fn read_word(&self, index: u16) -> u16 {
+
+        // little-endian!
+        let nibble_low = self.read(index);
+        let nibble_high = self.read(index+1);
+
+
+        let word: u16 = ((nibble_high as u16) << 8) | nibble_low as u16;
+
+        word
+    }
 }
 
 pub struct Ram {
@@ -87,27 +99,27 @@ impl MemMapped for MemMap {
             0x2000...0x3FFF => {
                 let index = index % 0x0008;
                 // self.ppu.read(index)
-                panic!("Attempted unimplemented read from PPU register: {}", index);
+                panic!("Attempted unimplemented read from PPU register: 0x{:X}", index);
             },
             // APU
             0x4000...0x4015 => {
                 let index = index % 0x4000;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented read from APU register: {}", index);
+                panic!("Attempted unimplemented read from APU register: 0x{:X}", index);
             }
             // I/O
             0x4016...0x4017 => {
                 let index = index % 0x4016;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented read from APU register: {}", index);
+                panic!("Attempted unimplemented read from APU register: 0x{:X}", index);
             }
             0x4018...0x401f => {
                 let index = index % 0x4018;
-                panic!("Attempted unimplemented read from CPU Test Register: {}", index);
+                panic!("Attempted unimplemented read from CPU Test Register: 0x{:X}", index);
             }
             0x4020...0xFFFF => {
-                let index = index - 0x4020;
-                panic!("Attempted unimplemented read from mapper address space index: {}", index);
+                println!("Attempted read from mapper address space: 0x{:X}", index);
+                self.mapper.read_prg(index)
             }
             _ => unimplemented!() // cannot happen
         }
@@ -124,27 +136,26 @@ impl MemMapped for MemMap {
             0x2000...0x3FFF => {
                 let index = index % 0x0008;
                 // self.ppu.read(index)
-                panic!("Attempted unimplemented write to PPU register: {}", index);
+                panic!("Attempted unimplemented write to PPU register: 0x{:X}", index);
             },
             // APU
             0x4000...0x4015 => {
                 let index = index % 0x4000;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented write to APU register: {}", index);
+                panic!("Attempted unimplemented write to APU register: 0x{:X}", index);
             }
             // I/O
             0x4016...0x4017 => {
                 let index = index % 0x4016;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented write to APU register: {}", index);
+                panic!("Attempted unimplemented write to APU register: 0x{:X}", index);
             }
             0x4018...0x401F => {
                 let index = index % 0x4018;
-                panic!("Attempted unimplemented write to CPU Test Register: {}", index);
+                panic!("Attempted unimplemented write to CPU Test Register: 0x{:X}", index);
             }
             0x4020...0xFFFF => {
-                let index = index - 0x4020;
-                panic!("Attempted unimplemented write to mapper address space index: {}", index);
+                self.mapper.write_prg(index, byte);
             }
             _ => unimplemented!() // cannot happen
         }

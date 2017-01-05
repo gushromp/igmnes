@@ -19,18 +19,22 @@ pub struct Core {
 
 impl Core {
     pub fn load_rom(file_path: &Path) -> Core {
-
-
         let rom = Rom::load_rom(file_path).unwrap();
-        println!("{:#?}", rom.header);
         let mem_map = Box::new(MemMap::new(rom));
 
         let core = Core {
             cpu: Cpu::new(mem_map),
-
         };
+
 
         core
     }
 
+    pub fn print_cpu_state(&self) {
+        println!("{:#?}", self.cpu.state());
+    }
+
+    pub fn step(&mut self) {
+        self.cpu.step();
+    }
 }

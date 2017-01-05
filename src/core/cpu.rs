@@ -10,6 +10,7 @@ const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
 const CLOCK_DIVISOR_PAL: i32 = 15;
 
 const RESET_SP: u8 = 0xFD;
+const RESET_PC_VEC: u16 = 0xFFFC;
 
 #[derive(Debug, Default)]
 struct StatusReg {
@@ -23,8 +24,8 @@ struct StatusReg {
     sign_flag: bool, // 0 when result of operation is positive, 1 when negative
 }
 
-pub struct Cpu {
-
+#[derive(Debug)]
+struct State {
     // Registers
     reg_a: u8, // Accumulator
     reg_x: u8, // X index register
@@ -33,6 +34,12 @@ pub struct Cpu {
     reg_status: StatusReg, // status register
     reg_sp: u8, // stack pointer register
     reg_pc: u16, // program counter register
+}
+
+pub struct Cpu {
+
+    // CPU State
+    state: State,
 
     // Memory map
     mem_map: Box<MemMap>,
@@ -41,9 +48,8 @@ pub struct Cpu {
 
 impl Cpu {
     pub fn new(mem_map: Box<MemMap>) -> Cpu {
-        let mut cpu = Cpu {
-            mem_map: mem_map,
 
+        let state = State {
             reg_a: 0,
             reg_x: 0,
             reg_y: 0,
@@ -62,17 +68,26 @@ impl Cpu {
             reg_sp: RESET_SP,
             reg_pc: 0,
         };
+
+        let mut cpu = Cpu {
+            state: state,
+            mem_map: mem_map,
+
+        };
         cpu.hard_reset();
 
         cpu
     }
 
     pub fn hard_reset(&mut self) {
-        self.reg_a = 0;
-        self.reg_x = 0;
-        self.reg_y = 0;
 
-        self.reg_status = StatusReg {
+        let mut state = &mut self.state;
+
+        state.reg_a = 0;
+        state.reg_x = 0;
+        state.reg_y = 0;
+
+        state.reg_status = StatusReg {
             carry_flag: false,
             zero_flag: false,
             interrupt_disable: true,
@@ -83,19 +98,34 @@ impl Cpu {
             sign_flag: false,
         };
 
-        self.reg_sp = RESET_SP;
-        self.reg_pc = 0;
+        state.reg_sp = RESET_SP;
+        state.reg_pc = self.mem_map.read_word(RESET_PC_VEC);
     }
 
     pub fn soft_reset(&mut self) {
 
     }
 
-    pub fn step() -> u8 {
-        0u8
+    pub fn state(&self) -> &State {
+        &self.state
     }
 
-    fn fetch_instruction() -> Result<Instruction, String> {
-        unimplemented!()
+    pub fn state_mut(&mut self) -> &mut State {
+        &mut self.state
     }
+
+    fn fetch_instruction(&self) -> Result<Instruction, String> {
+        let opcode = self.mem_map.read(self.state.reg_pc);
+        Instruction::decode(opcode)
+    }
+
+    pub fn step(&mut self) -> u8 {
+        let instruction = self.fetch_instruction().unwrap();
+
+        println!("{:#?}", instruction);
+
+        instruction.cycle_count
+    }
+
+
 }
