@@ -1,6 +1,7 @@
-use nom::*;
+use nom::{IResult, space, le_i32, le_u16, eol};
 use nom::IResult::*;
 
+#[derive(Debug)]
 pub enum Command {
     PrintState,
     PrintMemory,
@@ -22,12 +23,16 @@ impl Command {
 
 named!(
     parse_command<Command>,
-    alt_complete! (
-        parse_print_state       |
-        parse_print_memory      |
-        parse_breakpoint_set    |
-        parse_breakpoint_remove
-    )
+    complete!(
+    terminated!(
+        alt_complete! (
+            parse_print_state       |
+            parse_print_memory      |
+            parse_breakpoint_set    |
+            parse_breakpoint_remove
+        ),
+        eol
+    ))
 );
 
 named!(

@@ -1,5 +1,6 @@
 // 6502
 use std::default::Default;
+use core::CpuFacade;
 use core::memory::{MemMap, MemMapped};
 use core::instructions::*;
 
@@ -14,28 +15,29 @@ const RESET_PC_VEC: u16 = 0xFFFC;
 
 #[derive(Debug, Default)]
 struct StatusReg {
-    carry_flag: bool,
-    zero_flag: bool,
-    interrupt_disable: bool,
-    decimal_mode: bool, // unused
-    break_executed: bool,
+    pub carry_flag: bool,
+    pub zero_flag: bool,
+    pub interrupt_disable: bool,
+    pub decimal_mode: bool, // unused
+    pub break_executed: bool,
     logical_1: bool, // unused
-    overflow_flag: bool,
-    sign_flag: bool, // 0 when result of operation is positive, 1 when negative
+    pub overflow_flag: bool,
+    pub sign_flag: bool, // 0 when result of operation is positive, 1 when negative
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct State {
     // Registers
-    reg_a: u8, // Accumulator
-    reg_x: u8, // X index register
-    reg_y: u8, // Y index register
+    pub reg_a: u8, // Accumulator
+    pub reg_x: u8, // X index register
+    pub reg_y: u8, // Y index register
 
-    reg_status: StatusReg, // status register
-    reg_sp: u8, // stack pointer register
-    reg_pc: u16, // program counter register
+    pub reg_status: StatusReg, // status register
+    pub reg_sp: u8, // stack pointer register
+    pub reg_pc: u16, // program counter register
 }
 
+#[derive(Default)]
 pub struct Cpu {
 
     // CPU State
@@ -119,16 +121,23 @@ impl Cpu {
         Instruction::decode(opcode)
     }
 
-    pub fn step(&mut self) -> u8 {
+
+    fn execute_instruction(&mut self, instruction: Instruction) {
+
+    }
+
+}
+
+impl CpuFacade for Cpu {
+    fn get_cpu(self: Box<Self>) -> Box<Cpu> {
+        self
+    }
+
+    fn step(&mut self) -> u8 {
         let instruction = self.fetch_instruction().unwrap();
 
         println!("{:#?}", instruction);
 
         instruction.cycle_count
     }
-
-    fn execute_instruction(&mut self, instruction: Instruction) {
-
-    }
-
 }

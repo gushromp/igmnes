@@ -1,16 +1,12 @@
 mod command;
 mod disassembler;
+pub mod frontends;
 
+use self::command::Command;
+use core::CpuFacade;
 use core::cpu::Cpu;
 
-pub struct Debugger<'a> {
-    cpu: &'a mut Cpu,
-}
-
-impl<'a> Debugger<'a> {
-    pub fn attach(cpu: &'a mut Cpu) -> Debugger {
-        Debugger {
-            cpu: cpu
-        }
-    }
+pub trait Debugger: CpuFacade {
+    fn start_listening(&mut self);
+    fn stop_listening(&mut self);
 }

@@ -1,12 +1,9 @@
 use std::default::Default;
 use core::rom::Rom;
 use core::apu::Apu;
-use core::mappers;
-use core::mappers::Mapper;
+use core::mappers::{self, Mapper};
 
 const RAM_SIZE: usize = 0x800;
-
-
 
 pub trait MemMapped {
     fn read(&self, index: u16) -> u8;
@@ -59,6 +56,20 @@ pub struct MemMap {
     ram: Ram,
     apu: Apu,
     mapper: Box<Mapper>,
+}
+
+impl Default for MemMap {
+    fn default() -> MemMap {
+
+        let def_mapper = mappers::default_mapper();
+
+        MemMap {
+            rom: Rom::default(),
+            ram: Ram::default(),
+            apu: Apu,
+            mapper: def_mapper,
+        }
+    }
 }
 
 impl MemMap {
@@ -118,7 +129,6 @@ impl MemMapped for MemMap {
                 panic!("Attempted unimplemented read from CPU Test Register: 0x{:X}", index);
             }
             0x4020...0xFFFF => {
-                println!("Attempted read from mapper address space: 0x{:X}", index);
                 self.mapper.read(index)
             }
             _ => unimplemented!() // cannot happen
