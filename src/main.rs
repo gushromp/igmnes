@@ -19,12 +19,9 @@ fn main() {
     let rom_path = Path::new(&args[1]);
 
     let mut core = Core::load_rom(rom_path).unwrap();
-    for i in 0..20 {
-        if i == 10 {
-            core.attach_debugger();
-        }
+    core.attach_debugger();
 
-        core.step();
-    }
+    let debugger = core.debugger().unwrap();
+    debugger.start_listening();
 
 }

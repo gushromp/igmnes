@@ -32,7 +32,6 @@ impl Default for Ram {
     }
 }
 
-
 impl Ram {
     pub fn new() -> Ram {
         Ram {
@@ -131,7 +130,7 @@ impl MemMapped for MemMap {
             0x4020...0xFFFF => {
                 self.mapper.read(index)
             }
-            _ => unimplemented!() // cannot happen
+            _ => unreachable!()
         }
     }
 
@@ -167,7 +166,7 @@ impl MemMapped for MemMap {
             0x4020...0xFFFF => {
                 self.mapper.write(index, byte);
             }
-            _ => unimplemented!() // cannot happen
+            _ => unreachable!()
         }
     }
 }

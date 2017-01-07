@@ -45,8 +45,12 @@ impl Debugger for TerminalDebugger {
 }
 
 impl CpuFacade for TerminalDebugger {
-    fn get_cpu(self: Box<Self>) -> Box<Cpu> {
+    fn cpu(self: Box<Self>) -> Box<Cpu> {
         self.cpu
+    }
+
+    fn debugger(&mut self) -> Option<&mut Debugger> {
+        Some(self)
     }
 
     fn step(&mut self) -> u8 {

@@ -3,6 +3,7 @@ use std::default::Default;
 use core::CpuFacade;
 use core::memory::{MemMap, MemMapped};
 use core::instructions::*;
+use core::debugger::Debugger;
 
 const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32; // 21.477272 MHz
 const CLOCK_DIVISOR_NTSC: i32 = 12;
@@ -116,6 +117,14 @@ impl Cpu {
         &mut self.state
     }
 
+    fn step(&mut self) -> u8 {
+        let instruction = self.fetch_instruction().unwrap();
+
+        println!("{:#?}", instruction);
+
+        instruction.cycle_count
+    }
+
     fn fetch_instruction(&self) -> Result<Instruction, String> {
         let opcode = self.mem_map.read(self.state.reg_pc);
         Instruction::decode(opcode)
@@ -129,15 +138,16 @@ impl Cpu {
 }
 
 impl CpuFacade for Cpu {
-    fn get_cpu(self: Box<Self>) -> Box<Cpu> {
+    fn cpu(self: Box<Self>) -> Box<Cpu> {
         self
     }
 
+    // This is the real cpu, not a debugger
+    fn debugger(&mut self) -> Option<&mut Debugger> {
+        None
+    }
+
     fn step(&mut self) -> u8 {
-        let instruction = self.fetch_instruction().unwrap();
-
-        println!("{:#?}", instruction);
-
-        instruction.cycle_count
+        self.step()
     }
 }
