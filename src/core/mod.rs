@@ -20,7 +20,7 @@ pub trait CpuFacade {
     fn cpu(self: Box<Self>) -> Box<Cpu>;
     fn debugger(&mut self) -> Option<&mut Debugger>;
 
-    fn step(&mut self, mem_map: &mut MemMap) -> u8;
+    fn step(&mut self, mem_map: &mut MemMapped) -> u8;
 }
 
 // 2A03 (NTSC) and 2A07 (PAL) emulation

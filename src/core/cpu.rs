@@ -1,7 +1,7 @@
 // 6502
 use std::default::Default;
 use core::CpuFacade;
-use core::memory::{MemMap, MemMapped};
+use core::memory::MemMapped;
 use core::instructions::*;
 use core::debugger::Debugger;
 
@@ -26,9 +26,8 @@ pub struct StatusReg {
     pub sign_flag: bool, // 0 when result of operation is positive, 1 when negative
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Cpu {
-
     // Registers
     pub reg_a: u8, // Accumulator
     pub reg_x: u8, // X index register
@@ -37,11 +36,10 @@ pub struct Cpu {
     pub reg_status: StatusReg, // status register
     pub reg_sp: u8, // stack pointer register
     pub reg_pc: u16, // program counter register
-
 }
 
 impl Cpu {
-    pub fn new(mem_map: &MemMap) -> Cpu {
+    pub fn new(mem_map: &MemMapped) -> Cpu {
         let mut cpu = Cpu {
             reg_a: 0,
             reg_x: 0,
@@ -67,7 +65,7 @@ impl Cpu {
         cpu
     }
 
-    pub fn hard_reset(&mut self, mem_map: &MemMap) {
+    pub fn hard_reset(&mut self, mem_map: &MemMapped) {
         self.reg_a = 0;
         self.reg_x = 0;
         self.reg_y = 0;
@@ -91,15 +89,15 @@ impl Cpu {
 
     }
 
-    fn step(&mut self, mem_map: &mut MemMap) -> u8 {
+    fn step(&mut self, mem_map: &mut MemMapped) -> u8 {
         let instruction = self.fetch_instruction(mem_map).unwrap();
 
-        println!("{:#?}", instruction);
+        //println!("{:#?}", instruction);
 
         instruction.cycle_count
     }
 
-    fn fetch_instruction(&self, mem_map: &MemMap) -> Result<Instruction, String> {
+    fn fetch_instruction(&self, mem_map: &MemMapped) -> Result<Instruction, String> {
         let opcode = mem_map.read(self.reg_pc);
         Instruction::decode(opcode)
     }
@@ -121,7 +119,7 @@ impl CpuFacade for Cpu {
         None
     }
 
-    fn step(&mut self, mem_map: &mut MemMap) -> u8 {
+    fn step(&mut self, mem_map: &mut MemMapped) -> u8 {
         self.step(mem_map)
     }
 }
