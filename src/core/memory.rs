@@ -15,7 +15,6 @@ pub trait MemMapped {
         let nibble_low = self.read(index);
         let nibble_high = self.read(index+1);
 
-
         let word: u16 = ((nibble_high as u16) << 8) | nibble_low as u16;
 
         word

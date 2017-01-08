@@ -20,12 +20,13 @@ pub trait CpuFacade {
     fn cpu(self: Box<Self>) -> Box<Cpu>;
     fn debugger(&mut self) -> Option<&mut Debugger>;
 
-    fn step(&mut self) -> u8;
+    fn step(&mut self, mem_map: &mut MemMap) -> u8;
 }
 
 // 2A03 (NTSC) and 2A07 (PAL) emulation
 // contains CPU (nearly identical to MOS 6502) part and APU part
 pub struct Core {
+    mem_map: MemMap,
     cpu_facade: Box<CpuFacade>,
     is_debugger_attached: bool,
 }
@@ -33,11 +34,12 @@ pub struct Core {
 impl Core {
     pub fn load_rom(file_path: &Path) -> Result<Core, Box<Error>> {
         let rom = Rom::load_rom(file_path)?;
-        let mem_map = Box::new(MemMap::new(rom));
+        let mem_map = MemMap::new(rom);
 
-        let cpu = Box::new(Cpu::new(mem_map)) as Box<CpuFacade>;
+        let cpu = Box::new(Cpu::new(&mem_map)) as Box<CpuFacade>;
 
         let mut core = Core {
+            mem_map: mem_map,
             cpu_facade: cpu,
             is_debugger_attached: false,
         };
@@ -46,7 +48,7 @@ impl Core {
     }
 
     pub fn step(&mut self) -> u8 {
-        self.cpu_facade.step()
+        self.cpu_facade.step(&mut self.mem_map)
     }
 
     pub fn attach_debugger(&mut self) {

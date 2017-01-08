@@ -15,7 +15,7 @@ const RESET_SP: u8 = 0xFD;
 const RESET_PC_VEC: u16 = 0xFFFC;
 
 #[derive(Debug, Default)]
-struct StatusReg {
+pub struct StatusReg {
     pub carry_flag: bool,
     pub zero_flag: bool,
     pub interrupt_disable: bool,
@@ -26,8 +26,9 @@ struct StatusReg {
     pub sign_flag: bool, // 0 when result of operation is positive, 1 when negative
 }
 
-#[derive(Debug, Default)]
-struct State {
+#[derive(Default)]
+pub struct Cpu {
+
     // Registers
     pub reg_a: u8, // Accumulator
     pub reg_x: u8, // X index register
@@ -36,23 +37,12 @@ struct State {
     pub reg_status: StatusReg, // status register
     pub reg_sp: u8, // stack pointer register
     pub reg_pc: u16, // program counter register
+
 }
-
-#[derive(Default)]
-pub struct Cpu {
-
-    // CPU State
-    state: State,
-
-    // Memory map
-    mem_map: Box<MemMap>,
-}
-
 
 impl Cpu {
-    pub fn new(mem_map: Box<MemMap>) -> Cpu {
-
-        let state = State {
+    pub fn new(mem_map: &MemMap) -> Cpu {
+        let mut cpu = Cpu {
             reg_a: 0,
             reg_x: 0,
             reg_y: 0,
@@ -70,27 +60,19 @@ impl Cpu {
 
             reg_sp: RESET_SP,
             reg_pc: 0,
-        };
-
-        let mut cpu = Cpu {
-            state: state,
-            mem_map: mem_map,
 
         };
-        cpu.hard_reset();
+        cpu.hard_reset(mem_map);
 
         cpu
     }
 
-    pub fn hard_reset(&mut self) {
+    pub fn hard_reset(&mut self, mem_map: &MemMap) {
+        self.reg_a = 0;
+        self.reg_x = 0;
+        self.reg_y = 0;
 
-        let mut state = &mut self.state;
-
-        state.reg_a = 0;
-        state.reg_x = 0;
-        state.reg_y = 0;
-
-        state.reg_status = StatusReg {
+        self.reg_status = StatusReg {
             carry_flag: false,
             zero_flag: false,
             interrupt_disable: true,
@@ -101,32 +83,24 @@ impl Cpu {
             sign_flag: false,
         };
 
-        state.reg_sp = RESET_SP;
-        state.reg_pc = self.mem_map.read_word(RESET_PC_VEC);
+        self.reg_sp = RESET_SP;
+        self.reg_pc = mem_map.read_word(RESET_PC_VEC);
     }
 
     pub fn soft_reset(&mut self) {
 
     }
 
-    pub fn state(&self) -> &State {
-        &self.state
-    }
-
-    pub fn state_mut(&mut self) -> &mut State {
-        &mut self.state
-    }
-
-    fn step(&mut self) -> u8 {
-        let instruction = self.fetch_instruction().unwrap();
+    fn step(&mut self, mem_map: &mut MemMap) -> u8 {
+        let instruction = self.fetch_instruction(mem_map).unwrap();
 
         println!("{:#?}", instruction);
 
         instruction.cycle_count
     }
 
-    fn fetch_instruction(&self) -> Result<Instruction, String> {
-        let opcode = self.mem_map.read(self.state.reg_pc);
+    fn fetch_instruction(&self, mem_map: &MemMap) -> Result<Instruction, String> {
+        let opcode = mem_map.read(self.reg_pc);
         Instruction::decode(opcode)
     }
 
@@ -147,7 +121,7 @@ impl CpuFacade for Cpu {
         None
     }
 
-    fn step(&mut self) -> u8 {
-        self.step()
+    fn step(&mut self, mem_map: &mut MemMap) -> u8 {
+        self.step(mem_map)
     }
 }

@@ -1,4 +1,5 @@
 use core::CpuFacade;
+use core::memory::MemMap;
 use core::debugger::Debugger;
 use core::debugger::command::Command;
 use core::cpu::Cpu;
@@ -20,7 +21,7 @@ impl TerminalDebugger {
 
 impl Debugger for TerminalDebugger {
     fn start_listening(&mut self) {
-        let pc = self.cpu.state().reg_pc;
+        let pc = self.cpu.reg_pc;
 
         let mut stdout = io::stdout();
 
@@ -53,7 +54,7 @@ impl CpuFacade for TerminalDebugger {
         Some(self)
     }
 
-    fn step(&mut self) -> u8 {
-        self.cpu.step()
+    fn step(&mut self, mem_map: &mut MemMap) -> u8 {
+        self.cpu.step(mem_map)
     }
 }

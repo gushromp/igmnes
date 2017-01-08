@@ -48,34 +48,6 @@ macro_rules! opt_default (
   );
 );
 
-//named!(
-//    parse_command<Command>,
-//    complete!(
-//        alt!(
-//            parse_show_usage |
-//            terminated!(
-//                alt_complete! (
-//                    parse_print_state       |
-//                    parse_print_memory      |
-//                    parse_print_breakpoints |
-//                    parse_print_watchpoints |
-//                    parse_print_labels      |
-//                    parse_breakpoint_set    |
-//                    parse_breakpoint_remove |
-//                    parse_watchpoint_set    |
-//                    parse_watchpoint_remove |
-//                    parse_label_set         |
-//                    parse_label_remove      |
-//                    parse_disassemble       |
-//                    parse_goto              |
-//                    parse_repeat_command
-//                ),
-//                line_ending
-//            )
-//        )
-//    )
-//);
-
 named!(
     parse_command<Command>,
     complete!(
