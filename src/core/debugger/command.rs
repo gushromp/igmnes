@@ -1,6 +1,6 @@
 use std::str::{self, FromStr};
 use std::ops::Range;
-use nom::{IResult, line_ending, space, digit, alphanumeric, eol, ErrorKind};
+use nom::{self, IResult, line_ending, space, digit, alphanumeric, eol, ErrorKind};
 use nom::IResult::*;
 
 #[derive(Debug)]
@@ -11,12 +11,15 @@ pub enum Command {
     PrintBreakpoints,
     PrintWatchpoints,
     PrintLabels,
-    BreakpointSet(u16),
-    BreakpointRemove(u16),
-    WatchpointSet(u16),
-    WatchpointRemove(u16),
-    LabelSet(String, u16),
-    LabelRemove(u16),
+    SetBreakpoint(u16),
+    SetWatchpoint(u16),
+    SetLabel(String, u16),
+    RemoveBreakpoint(u16),
+    RemoveWatchpoint(u16),
+    RemoveLabel(u16),
+    ClearBreakpoints,
+    ClearWatchpoints,
+    ClearLabels,
     Disassemble(Range<i16>),
     Goto(u16),
     Step,
@@ -51,26 +54,31 @@ macro_rules! opt_default (
 named!(
     parse_command<Command>,
     complete!(
-        alt!(
-            parse_show_usage |
-            alt_complete! (
-                parse_print_state       |
-                parse_print_memory      |
-                parse_print_breakpoints |
-                parse_print_watchpoints |
-                parse_print_labels      |
-                parse_breakpoint_set    |
-                parse_breakpoint_remove |
-                parse_watchpoint_set    |
-                parse_watchpoint_remove |
-                parse_label_set         |
-                parse_label_remove      |
-                parse_disassemble       |
-                parse_goto              |
-                parse_step              |
-                parse_repeat_command
+        terminated!(
+            alt!(
+                parse_show_usage |
+                alt_complete! (
+                    parse_print_state       |
+                    parse_print_memory      |
+                    parse_print_breakpoints |
+                    parse_print_watchpoints |
+                    parse_print_labels      |
+                    parse_set_breakpoint    |
+                    parse_remove_breakpoint |
+                    parse_set_watchpoint    |
+                    parse_remove_watchpoint |
+                    parse_set_label         |
+                    parse_remove_label      |
+                    parse_clear_breakpoints |
+                    parse_clear_watchpoints |
+                    parse_clear_labels      |
+                    parse_disassemble       |
+                    parse_goto              |
+                    parse_step              |
+                    parse_repeat_command
+                )
             )
-        )
+        , eol)
     )
 );
 
@@ -138,69 +146,102 @@ named!(
 );
 
 named!(
-    parse_breakpoint_set<Command>,
+    parse_set_breakpoint<Command>,
     do_parse! (
         alt_complete! (
-            tag_no_case!("breakpointset") |
-            tag_no_case!("bs"))                     >>
+            tag_no_case!("setbreakpoint") |
+            tag_no_case!("sb"))                     >>
         addr: preceded!(space, parse_literal_u16)   >>
-        ( Command::BreakpointSet(addr) )
+        ( Command::SetBreakpoint(addr) )
     )
 );
 
 named!(
-    parse_breakpoint_remove<Command>,
+    parse_remove_breakpoint<Command>,
     do_parse! (
         alt_complete! (
-            tag_no_case!("breakpointremove") |
-            tag_no_case!("br"))                     >>
+            tag_no_case!("removebreakpoint") |
+            tag_no_case!("rb"))                     >>
         addr: preceded!(space, parse_literal_u16)   >>
-        ( Command::BreakpointRemove(addr) )
+        ( Command::RemoveBreakpoint(addr) )
     )
 );
 
 named!(
-    parse_watchpoint_set<Command>,
+    parse_set_watchpoint<Command>,
     do_parse! (
         alt_complete! (
-            tag_no_case!("watchpointset") |
-            tag_no_case!("ws"))                     >>
+            tag_no_case!("setwatchpoint") |
+            tag_no_case!("sw"))                     >>
         addr: preceded!(space, parse_literal_u16)   >>
-        ( Command::WatchpointSet(addr) )
+        ( Command::SetWatchpoint(addr) )
     )
 );
 
 named!(
-    parse_watchpoint_remove<Command>,
+    parse_remove_watchpoint<Command>,
     do_parse! (
         alt_complete! (
-            tag_no_case!("watchpointremove") |
-            tag_no_case!("wr"))                     >>
+            tag_no_case!("removewatchpoint") |
+            tag_no_case!("rw"))                     >>
         addr: preceded!(space, parse_literal_u16)   >>
-        ( Command::WatchpointRemove(addr) )
+        ( Command::RemoveWatchpoint(addr) )
     )
 );
 
 named!(
-    parse_label_set<Command>,
+    parse_set_label<Command>,
     do_parse! (
         alt_complete! (
-            tag_no_case!("labelset") |
-            tag_no_case!("ls"))                         >>
+            tag_no_case!("setlabel") |
+            tag_no_case!("sl"))                         >>
         label: preceded!(opt!(tag!(".")), parse_string) >>
         addr: preceded!(space, parse_literal_u16)       >>
-        ( Command::LabelSet(label, addr) )
+        ( Command::SetLabel(label, addr) )
     )
 );
 
 named!(
-    parse_label_remove<Command>,
+    parse_remove_label<Command>,
     do_parse! (
         alt_complete! (
-            tag_no_case!("labelremove") |
-            tag_no_case!("lr"))                     >>
+            tag_no_case!("removelabel") |
+            tag_no_case!("rl"))                     >>
         addr: preceded!(space, parse_literal_u16)   >>
-        ( Command::LabelRemove(addr) )
+        ( Command::RemoveLabel(addr) )
+    )
+);
+
+named!(
+    parse_clear_breakpoints<Command>,
+    map!(
+        alt_complete! (
+            tag_no_case!("clearbreakpoints") |
+            tag_no_case!("cb")
+        )
+        , |_| Command::ClearBreakpoints
+    )
+);
+
+named!(
+    parse_clear_watchpoints<Command>,
+    map!(
+        alt_complete! (
+            tag_no_case!("clearwatchpoints") |
+            tag_no_case!("cw")
+        )
+        , |_| Command::ClearWatchpoints
+    )
+);
+
+named!(
+    parse_clear_labels<Command>,
+    map!(
+        alt_complete! (
+            tag_no_case!("clearlabels") |
+            tag_no_case!("cl")
+        )
+        , |_| Command::ClearLabels
     )
 );
 
@@ -327,7 +368,7 @@ named!(
 // Modified version of nom's built-in hex_u32 parser
 #[inline]
 fn hex_u16(input: &[u8]) -> IResult<&[u8], u16> {
-    match is_a!(input, &b"0123456789abcdef"[..]) {
+    match is_a!(input, &b"0123456789abcdefABCDEF"[..]) {
         Error(e) => Error(e),
         Incomplete(e) => Incomplete(e),
         Done(i, o) => {
