@@ -19,23 +19,32 @@ pub struct StatusReg {
     pub carry_flag: bool,
     pub zero_flag: bool,
     pub interrupt_disable: bool,
-    pub decimal_mode: bool, // unused
+    pub decimal_mode: bool,
+    // unused
     pub break_executed: bool,
-    logical_1: bool, // unused
+    logical_1: bool,
+    // unused
     pub overflow_flag: bool,
-    pub sign_flag: bool, // 0 when result of operation is positive, 1 when negative
+    pub sign_flag: bool,
+    // 0 when result of operation is positive, 1 when negative
 }
 
 #[derive(Debug, Default)]
 pub struct Cpu {
     // Registers
-    pub reg_a: u8, // Accumulator
-    pub reg_x: u8, // X index register
-    pub reg_y: u8, // Y index register
+    pub reg_a: u8,
+    // Accumulator
+    pub reg_x: u8,
+    // X index register
+    pub reg_y: u8,
+    // Y index register
 
-    pub reg_status: StatusReg, // status register
-    pub reg_sp: u8, // stack pointer register
-    pub reg_pc: u16, // program counter register
+    pub reg_status: StatusReg,
+    // status register
+    pub reg_sp: u8,
+    // stack pointer register
+    pub reg_pc: u16,
+    // program counter register
 }
 
 impl Cpu {
@@ -58,7 +67,6 @@ impl Cpu {
 
             reg_sp: RESET_SP,
             reg_pc: 0,
-
         };
         cpu.hard_reset(mem_map);
 
@@ -85,28 +93,17 @@ impl Cpu {
         self.reg_pc = mem_map.read_word(RESET_PC_VEC);
     }
 
-    pub fn soft_reset(&mut self) {
+    pub fn soft_reset(&mut self) {}
 
+    fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
+        let instruction = Instruction::decode(mem_map, self.reg_pc)?;
+
+        println!("{:#?}", instruction);
+
+        Ok(instruction.cycle_count)
     }
 
-    fn step(&mut self, mem_map: &mut MemMapped) -> u8 {
-        let instruction = self.fetch_instruction(mem_map).unwrap();
-
-        //println!("{:#?}", instruction);
-
-        instruction.cycle_count
-    }
-
-    fn fetch_instruction(&self, mem_map: &MemMapped) -> Result<Instruction, String> {
-        let opcode = mem_map.read(self.reg_pc);
-        Instruction::decode(opcode)
-    }
-
-
-    fn execute_instruction(&mut self, instruction: Instruction) {
-
-    }
-
+    fn execute_instruction(&mut self, instruction: Instruction) {}
 }
 
 impl CpuFacade for Cpu {
@@ -119,7 +116,7 @@ impl CpuFacade for Cpu {
         None
     }
 
-    fn step(&mut self, mem_map: &mut MemMapped) -> u8 {
+    fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
         self.step(mem_map)
     }
 }

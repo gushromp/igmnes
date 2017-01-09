@@ -247,7 +247,7 @@ impl CpuFacade for TerminalDebugger {
         Some(self)
     }
 
-    fn step(&mut self, mem_map: &mut MemMapped) -> u8 {
+    fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
         let mut mem_map_shim = MemMapShim::new(mem_map);
 
         self.cpu.step(&mut mem_map_shim)
