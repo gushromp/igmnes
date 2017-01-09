@@ -54,6 +54,9 @@ impl TerminalDebugger {
             ClearBreakpoints => self.clear_breakpoints(),
             ClearWatchpoints => self.clear_watchpoints(),
             ClearLabels => self.clear_labels(),
+            Goto(addr) => self.goto(addr),
+            Step => self.step(),
+            Continue => self.stop_listening(),
             c @ _ => println!("{:?}", c)
         };
     }
@@ -209,6 +212,18 @@ impl TerminalDebugger {
         println!();
         println!("Cleared all labels");
         println!();
+    }
+
+    fn goto(&mut self, addr: u16) {
+        self.cpu.reg_pc = addr;
+
+        println!();
+        println!("Changed program counter value to: 0x{:04X}", addr);
+        println!();
+    }
+
+    fn step(&mut self) {
+        self.step();
     }
 }
 

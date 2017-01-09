@@ -23,6 +23,7 @@ pub enum Command {
     Disassemble(Range<i16>),
     Goto(u16),
     Step,
+    Continue,
     RepeatCommand(Box<Command>, u16),
 }
 
@@ -83,6 +84,7 @@ named!(parse_command_non_terminated<Command>,
         parse_disassemble       |
         parse_goto              |
         parse_step              |
+        parse_continue          |
         parse_repeat_command
     )
 );
@@ -289,6 +291,16 @@ named!(
             tag_no_case!("step") |
             tag_no_case!("s"))      >>
         ( Command::Step )
+    )
+);
+
+named!(
+    parse_continue<Command>,
+    do_parse! (
+        alt_complete! (
+            tag_no_case!("continue") |
+            tag_no_case!("c"))      >>
+        ( Command::Continue )
     )
 );
 
