@@ -54,31 +54,36 @@ macro_rules! opt_default (
 named!(
     parse_command<Command>,
     complete!(
-        terminated!(
-            alt!(
-                parse_show_usage |
-                alt_complete! (
-                    parse_print_state       |
-                    parse_print_memory      |
-                    parse_print_breakpoints |
-                    parse_print_watchpoints |
-                    parse_print_labels      |
-                    parse_set_breakpoint    |
-                    parse_remove_breakpoint |
-                    parse_set_watchpoint    |
-                    parse_remove_watchpoint |
-                    parse_set_label         |
-                    parse_remove_label      |
-                    parse_clear_breakpoints |
-                    parse_clear_watchpoints |
-                    parse_clear_labels      |
-                    parse_disassemble       |
-                    parse_goto              |
-                    parse_step              |
-                    parse_repeat_command
-                )
+        alt!(
+            parse_show_usage |
+            terminated!(
+                parse_command_non_terminated
+                , eol
             )
-        , eol)
+        )
+    )
+);
+
+named!(parse_command_non_terminated<Command>,
+    alt_complete! (
+        parse_print_state       |
+        parse_print_memory      |
+        parse_print_breakpoints |
+        parse_print_watchpoints |
+        parse_print_labels      |
+        parse_set_breakpoint    |
+        parse_remove_breakpoint |
+        parse_set_watchpoint    |
+        parse_remove_watchpoint |
+        parse_set_label         |
+        parse_remove_label      |
+        parse_clear_breakpoints |
+        parse_clear_watchpoints |
+        parse_clear_labels      |
+        parse_disassemble       |
+        parse_goto              |
+        parse_step              |
+        parse_repeat_command
     )
 );
 
@@ -294,7 +299,10 @@ named!(
             tag_no_case!("repeatcommand") |
             tag_no_case!("r"))                                      >>
         command: preceded!(space
-            , delimited!(char!('('), parse_command, char!(')')))    >>
+            , delimited!(
+                char!('(')
+                , parse_command_non_terminated
+                , char!(')')))                                      >>
         count: preceded!(space, parse_literal_u16)                  >>
         ( Command::RepeatCommand(Box::new(command), count) )
     )

@@ -120,6 +120,7 @@ impl TerminalDebugger {
         for (addr, ref label) in &self.label_map {
             println!(" | 0x{:04X} .{} |", addr, label);
         }
+        println!();
     }
 
     fn set_breakpoint(&mut self, addr: u16) {
