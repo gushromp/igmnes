@@ -27,30 +27,30 @@ pub enum AddressingMode {
     Invalid,
 }
 
-impl AddressingMode {
-    pub fn byte_count(&self) -> usize {
-        use self::AddressingMode::*;
-
-        match *self {
-            ZeroPageIndexedX(_) => 2,
-            ZeroPageIndexedY(_) => 2,
-            AbsoluteIndexedX(_) => 3,
-            AbsoluteIndexedY(_) => 3,
-            IndexedIndirectX(_) => 2,
-            IndirectIndexedY(_) => 2,
-
-            Implicit => 1,
-            Immediate(_) => 2,
-            Accumulator => 1,
-            ZeroPage(_) => 2,
-            Absolute(_) => 3,
-            Relative(_) => 2,
-            Indirect(_) => 3,
-
-            Invalid => 0,
-        }
-    }
-}
+//impl AddressingMode {
+//    pub fn byte_count(&self) -> usize {
+//        use self::AddressingMode::*;
+//
+//        match *self {
+//            ZeroPageIndexedX(_) => 2,
+//            ZeroPageIndexedY(_) => 2,
+//            AbsoluteIndexedX(_) => 3,
+//            AbsoluteIndexedY(_) => 3,
+//            IndexedIndirectX(_) => 2,
+//            IndirectIndexedY(_) => 2,
+//
+//            Implicit => 1,
+//            Immediate(_) => 2,
+//            Accumulator => 1,
+//            ZeroPage(_) => 2,
+//            Absolute(_) => 3,
+//            Relative(_) => 2,
+//            Indirect(_) => 3,
+//
+//            Invalid => 0,
+//        }
+//    }
+//}
 
 #[derive(Debug)]
 pub enum InstructionToken {
@@ -264,6 +264,17 @@ impl Instruction {
             0xF9 => Instruction::new(SBC, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4),
             0xE1 => Instruction::new(SBC, IndexedIndirectX(mem_map.read(arg_index)), 6),
             0xF1 => Instruction::new(SBC, IndirectIndexedY(mem_map.read(arg_index)), 5),
+            // CPX (ComPare X register)
+            0xE0 => Instruction::new(CPX, Immediate(mem_map.read(arg_index)), 2),
+            0xE4 => Instruction::new(CPX, ZeroPage(mem_map.read(arg_index)), 3),
+            0xEC => Instruction::new(CPX, Absolute(mem_map.read_word(arg_index)), 4),
+            // CPY (ComPare Y register)
+            0xC0 => Instruction::new(CPY, Immediate(mem_map.read(arg_index)), 2),
+            0xC4 => Instruction::new(CPY, ZeroPage(mem_map.read(arg_index)), 3),
+            0xCC => Instruction::new(CPY, Absolute(mem_map.read_word(arg_index)), 4),
+            // BIT (test BITs)
+            0x24 => Instruction::new(BIT, ZeroPage(mem_map.read(arg_index)), 3),
+            0x2C => Instruction::new(BIT, Absolute(mem_map.read_word(arg_index)), 4),
             //
             // Read/Modify/Write instructions
             //
@@ -280,17 +291,27 @@ impl Instruction {
             0x2E => Instruction::new(ROL, Absolute(mem_map.read_word(arg_index)), 6),
             0x3E => Instruction::new(ROL, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7),
             // LSR (Logical Shift Right)
-            0x4A => Instruction::new(ASL, Accumulator, 2),
-            0x46 => Instruction::new(ASL, ZeroPage(mem_map.read(arg_index)), 5),
-            0x56 => Instruction::new(ASL, ZeroPageIndexedX(mem_map.read(arg_index)), 6),
-            0x4E => Instruction::new(ASL, Absolute(mem_map.read_word(arg_index)), 6),
-            0x5E => Instruction::new(ASL, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7),
+            0x4A => Instruction::new(LSR, Accumulator, 2),
+            0x46 => Instruction::new(LSR, ZeroPage(mem_map.read(arg_index)), 5),
+            0x56 => Instruction::new(LSR, ZeroPageIndexedX(mem_map.read(arg_index)), 6),
+            0x4E => Instruction::new(LSR, Absolute(mem_map.read_word(arg_index)), 6),
+            0x5E => Instruction::new(LSR, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7),
             // ROR (ROtate Right)
-            0x6A => Instruction::new(ROL, Accumulator, 2),
-            0x66 => Instruction::new(ROL, ZeroPage(mem_map.read(arg_index)), 5),
-            0x76 => Instruction::new(ROL, ZeroPageIndexedX(mem_map.read(arg_index)), 6),
-            0x6E => Instruction::new(ROL, Absolute(mem_map.read_word(arg_index)), 6),
-            0x7E => Instruction::new(ROL, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7),
+            0x6A => Instruction::new(ROR, Accumulator, 2),
+            0x66 => Instruction::new(ROR, ZeroPage(mem_map.read(arg_index)), 5),
+            0x76 => Instruction::new(ROR, ZeroPageIndexedX(mem_map.read(arg_index)), 6),
+            0x6E => Instruction::new(ROR, Absolute(mem_map.read_word(arg_index)), 6),
+            0x7E => Instruction::new(ROR, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7),
+            // DEC (DECrement memory)
+            0xC6 => Instruction::new(DEC, ZeroPage(mem_map.read(arg_index)), 5),
+            0xD6 => Instruction::new(DEC, ZeroPageIndexedX(mem_map.read(arg_index)), 6),
+            0xCE => Instruction::new(DEC, Absolute(mem_map.read_word(arg_index)), 6),
+            0xDE => Instruction::new(DEC, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7),
+            // INC (INCrement memory)
+            0xE6 => Instruction::new(INC, ZeroPage(mem_map.read(arg_index)), 5),
+            0xF6 => Instruction::new(INC, ZeroPageIndexedX(mem_map.read(arg_index)), 6),
+            0xEE => Instruction::new(INC, Absolute(mem_map.read_word(arg_index)), 6),
+            0xFE => Instruction::new(INC, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7),
             // Register instructions
             0xAA => Instruction::new(TAX, Implicit, 2), // Transfer A to X
             0x8A => Instruction::new(TXA, Implicit, 2), // Transfer X to A
