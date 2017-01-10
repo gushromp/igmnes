@@ -41,10 +41,10 @@ impl TerminalDebugger {
         }
     }
 
-    fn execute_command(&mut self, command: Command) {
+    fn execute_command(&mut self, command: &Command) {
         use core::debugger::command::Command::*;
 
-        match command {
+        match *command {
             ShowUsage => TerminalDebugger::show_usage(),
             PrintState => self.print_state(),
             PrintBreakpoints => self.print_breakpoints(),
@@ -54,16 +54,17 @@ impl TerminalDebugger {
             RemoveBreakpoint(addr) => self.remove_breakpoint(addr),
             SetWatchpoint(addr) => self.set_watchpoint(addr),
             RemoveWatchpoint(addr) => self.remove_watchpoint(addr),
-            SetLabel(label, addr) => self.set_label(addr, label),
+            SetLabel(ref label, addr) => self.set_label(addr, label),
             RemoveLabel(addr) => self.remove_label(addr),
             ClearBreakpoints => self.clear_breakpoints(),
             ClearWatchpoints => self.clear_watchpoints(),
             ClearLabels => self.clear_labels(),
             Goto(addr) => self.goto(addr),
             Step => self.step_cpu(),
-            Disassemble(range) => self.disassemble(range),
+            Disassemble(ref range) => self.disassemble(range),
             Continue => self.stop_listening(),
-            c @ _ => println!("{:?}", c)
+            RepeatCommand(ref command, count) => self.repeat_command(command, count),
+            ref c @ _ => println!("{:?}", c)
         };
     }
 
@@ -188,8 +189,8 @@ impl TerminalDebugger {
         println!();
     }
 
-    fn set_label(&mut self, addr: u16, label: String) {
-        self.label_map.insert(addr, label);
+    fn set_label(&mut self, addr: u16, label: &String) {
+        self.label_map.insert(addr, label.clone());
 
         if let Entry::Occupied(e) = self.label_map.entry(addr) {
             let label = e.get();
@@ -232,7 +233,7 @@ impl TerminalDebugger {
         self.step();
     }
 
-    fn disassemble(&self, range: Range<i16>) {
+    fn disassemble(&self, range: &Range<i16>) {
         let addr = self.cpu.reg_pc;
         let disassembly = disassembler::disassemble_range(addr, range, &self.mem_map);
 
@@ -243,6 +244,13 @@ impl TerminalDebugger {
             println!("{}", line);
         }
         println!();
+    }
+
+    fn repeat_command(&mut self, command: &Box<Command>, count: u16) {
+
+        for _i in 0..count {
+            self.execute_command(command);
+        }
     }
 }
 
@@ -262,7 +270,7 @@ impl Debugger for TerminalDebugger {
             let command = Command::parse(&line);
 
             match command {
-                Ok(command) => self.execute_command(command),
+                Ok(ref command) => self.execute_command(command),
                 Err(err) => println!("{:#?}", err),
             }
         }

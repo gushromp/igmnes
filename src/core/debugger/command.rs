@@ -311,10 +311,9 @@ named!(
             tag_no_case!("repeatcommand") |
             tag_no_case!("r"))                                      >>
         command: preceded!(space
-            , delimited!(
-                char!('(')
-                , parse_command_non_terminated
-                , char!(')')))                                      >>
+            , terminated!(
+                parse_command_non_terminated
+                , char!(',')))                                      >>
         count: preceded!(space, parse_literal_u16)                  >>
         ( Command::RepeatCommand(Box::new(command), count) )
     )
