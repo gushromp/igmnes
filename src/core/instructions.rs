@@ -141,6 +141,7 @@ impl fmt::Display for InstructionToken {
 
 #[derive(Debug)]
 pub struct Instruction {
+    pub op_code: u8,
     pub token: InstructionToken,
     pub addressing_mode: AddressingMode,
     pub cycle_count: u8,
@@ -150,6 +151,7 @@ impl Instruction {
     pub fn new(token: InstructionToken, addressing_mode: AddressingMode,
                cycle_count: u8) -> Instruction {
         Instruction {
+            op_code: 0,
             token: token,
             addressing_mode: addressing_mode,
             cycle_count: cycle_count,
@@ -170,7 +172,7 @@ impl Instruction {
         let op_code = mem_map.read(index);
         let arg_index = index + 1;
 
-        let instr = match op_code {
+        let mut instr = match op_code {
             //
             // Control, branch, and stack instructions
             //
@@ -364,6 +366,8 @@ impl Instruction {
 
             _ => Instruction::new(Unknown, Invalid, 0)
         };
+
+        instr.op_code = op_code;
 
         if let Unknown = instr.token {
             Err(format!("Unknown opcode: 0x{:x}", op_code))

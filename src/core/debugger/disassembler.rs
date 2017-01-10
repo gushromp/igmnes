@@ -16,7 +16,7 @@ pub fn disassemble_range(addr: u16, range: Range<i16>, mem_map: &MemMapped) -> V
                 current_addr += ins.addressing_mode.byte_count();
             },
             Err(e) => {
-                result.push(e);
+                result.push(format!("${:04X}: {}", current_addr, e));
                 current_addr += 1;
             }
         };
@@ -28,6 +28,7 @@ pub fn disassemble_range(addr: u16, range: Range<i16>, mem_map: &MemMapped) -> V
 pub fn disassemble(addr: u16, instruction: &Instruction) -> String {
     use core::instructions::AddressingMode::*;
 
+    let op_code = instruction.op_code;
     let token = instruction.token.to_string();
     let addressing_mode = &instruction.addressing_mode;
 
@@ -50,5 +51,5 @@ pub fn disassemble(addr: u16, instruction: &Instruction) -> String {
         Invalid => format!(""),
     };
 
-    format!("${:04X}: {} {}", addr, token, args)
+    format!("${:04X}(${:02X}): {} {}", addr, op_code, token, args)
 }
