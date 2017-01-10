@@ -19,12 +19,14 @@ pub struct StatusReg {
     pub carry_flag: bool,
     pub zero_flag: bool,
     pub interrupt_disable: bool,
-    pub decimal_mode: bool, // should never be set to true by a NES rom
+    pub decimal_mode: bool,
+    // should never be set to true by a NES rom
     pub break_executed: bool,
-    logical_1: bool, // unused
+    logical_1: bool,
+    // unused
     pub overflow_flag: bool,
-    pub sign_flag: bool, // 0 when result of operation is positive, 1 when negative
-
+    pub sign_flag: bool,
+    // 0 when result of operation is positive, 1 when negative
 }
 
 impl StatusReg {
@@ -130,10 +132,11 @@ impl Cpu {
     pub fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
         let instruction = Instruction::decode(mem_map, self.reg_pc)?;
 
-        self.execute_instruction(instruction)
+        self.execute_instruction(instruction, mem_map)
     }
 
-    fn execute_instruction(&mut self, instruction: Instruction) -> Result<u8, String> {
+    fn execute_instruction(&mut self, mut instruction: Instruction,
+                           mem_map: &mut MemMapped) -> Result<u8, String> {
         use core::instructions::InstructionToken::*;
 
         let should_advance_pc: bool = true;
@@ -147,6 +150,13 @@ impl Cpu {
             CLV => self.reg_status.clear_overflow(),
             CLD => self.reg_status.clear_decimal(),
             SED => self.reg_status.set_decimal(),
+            // Store/Load instructions
+            LDA => self.instr_lda(&mut instruction, mem_map),
+            LDX => self.instr_ldx(&mut instruction, mem_map),
+            LDY => self.instr_ldy(&mut instruction, mem_map),
+            STA => self.instr_sta(&mut instruction, mem_map),
+            STX => self.instr_stx(&mut instruction, mem_map),
+            STY => self.instr_sty(&mut instruction, mem_map),
             _ => println!("Skipping unimplemented instruction: {}", instruction.token),
         };
 
@@ -155,6 +165,109 @@ impl Cpu {
         }
 
         Ok(instruction.cycle_count)
+    }
+
+
+    fn instr_lda(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
+        self.reg_a = self.read_resolved_addr(instruction, mem_map);
+    }
+
+    fn instr_ldx(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
+        self.reg_x = self.read_resolved_addr(instruction, mem_map);
+    }
+
+    fn instr_ldy(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
+        self.reg_y = self.read_resolved_addr(instruction, mem_map);
+    }
+
+    fn instr_sta(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        self.write_resolved_addr(instruction, mem_map, self.reg_a);
+    }
+
+    fn instr_stx(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        self.write_resolved_addr(instruction, mem_map, self.reg_x);
+    }
+
+    fn instr_sty(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        self.write_resolved_addr(instruction, mem_map, self.reg_y);
+    }
+
+    fn read_resolved_addr(&self, instruction: &mut Instruction, mem_map: &MemMapped) -> u8 {
+        use core::instructions::AddressingMode::*;
+
+        let addressing_mode = &instruction.addressing_mode;
+        match *addressing_mode {
+            ZeroPageIndexedX(arg) => mem_map.read(((arg + self.reg_x) % 0xFF) as u16),
+            ZeroPageIndexedY(arg) => mem_map.read(((arg + self.reg_y) % 0xFF) as u16),
+            AbsoluteIndexedX(arg) => {
+                if ((arg & 0xFF) as u8) + self.reg_x > 0xFF {
+                    instruction.cycle_count += 1;
+                }
+
+                mem_map.read(arg + self.reg_x as u16)
+            },
+            AbsoluteIndexedY(arg) => {
+                if ((arg & 0xFF) as u8) + self.reg_y > 0xFF {
+                    instruction.cycle_count += 1;
+                }
+
+                mem_map.read(arg + self.reg_y as u16)
+            },
+            IndexedIndirectX(arg) => mem_map.read(mem_map.read_word(((arg + self.reg_x) % 0xFF) as u16)),
+            IndirectIndexedY(arg) => {
+                let addr = mem_map.read_word(arg as u16) + self.reg_y as u16;
+                if ((addr & 0xFF) as u8) + self.reg_y > 0xFF {
+                    instruction.cycle_count += 1;
+                }
+                mem_map.read(addr)
+            }
+
+            Immediate(arg) => arg,
+            Accumulator => self.reg_a,
+            ZeroPage(arg) => mem_map.read(arg as u16),
+            Absolute(arg) => mem_map.read(arg),
+
+            // Implicit, Relative and Indirect addressing modes are handled
+            // by the instructions themselves
+            _ => unreachable!()
+        }
+    }
+
+    fn write_resolved_addr(&self, instruction: &mut Instruction, mem_map: &mut MemMapped, byte: u8) {
+        use core::instructions::AddressingMode::*;
+
+        let addressing_mode = &instruction.addressing_mode;
+        match *addressing_mode {
+            ZeroPageIndexedX(arg) => mem_map.write(((arg + self.reg_x) % 0xFF) as u16, byte),
+            ZeroPageIndexedY(arg) => mem_map.write(((arg + self.reg_y) % 0xFF) as u16, byte),
+            AbsoluteIndexedX(arg) => {
+                instruction.cycle_count += 1;
+
+                mem_map.write(arg + self.reg_x as u16, byte);
+            },
+            AbsoluteIndexedY(arg) => {
+                instruction.cycle_count += 1;
+
+                mem_map.write(arg + self.reg_y as u16, byte);
+            },
+            IndexedIndirectX(arg) => {
+                let addr = mem_map.read_word(((arg + self.reg_x) % 0xFF) as u16);
+                mem_map.write(addr, byte)
+            },
+            IndirectIndexedY(arg) => {
+                let addr = mem_map.read_word(arg as u16) + self.reg_y as u16;
+
+                instruction.cycle_count += 1;
+
+                mem_map.write(addr, byte);
+            }
+
+            ZeroPage(arg) => mem_map.write(arg as u16, byte),
+            Absolute(arg) => mem_map.write(arg, byte),
+
+            // Above covers all addresing modes for writing memory
+            _ => unreachable!()
+        };
     }
 }
 
