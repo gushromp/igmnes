@@ -95,7 +95,7 @@ impl Cpu {
 
     pub fn soft_reset(&mut self) {}
 
-    fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
+    pub fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
         let instruction = Instruction::decode(mem_map, self.reg_pc)?;
 
         println!("{:#?}", instruction);
@@ -106,17 +106,3 @@ impl Cpu {
     fn execute_instruction(&mut self, instruction: Instruction) {}
 }
 
-impl CpuFacade for Cpu {
-    fn cpu(self: Box<Self>) -> Box<Cpu> {
-        self
-    }
-
-    // This is the real cpu, not a debugger
-    fn debugger(&mut self) -> Option<&mut Debugger> {
-        None
-    }
-
-    fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
-        self.step(mem_map)
-    }
-}

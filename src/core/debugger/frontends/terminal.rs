@@ -1,11 +1,14 @@
 use std::io::{self, Read, Write};
 use std::collections::{HashSet, HashMap};
 use std::collections::hash_map::Entry;
+use std::ops::Range;
+use std::mem;
 use core::CpuFacade;
-use core::memory::MemMapped;
+use core::cpu::Cpu;
+use core::memory::{MemMap, MemMapped};
 use core::debugger::Debugger;
 use core::debugger::command::Command;
-use core::cpu::Cpu;
+use core::debugger::disassembler;
 
 struct MemMapShim<'a> {
     mem_map: &'a mut MemMapped
@@ -20,16 +23,18 @@ impl<'a> MemMapShim<'a> {
 }
 
 pub struct TerminalDebugger {
-    cpu: Box<Cpu>,
+    cpu: Cpu,
+    mem_map: MemMap,
     breakpoint_set: HashSet<u16>,
     watchpoint_set: HashSet<u16>,
     label_map: HashMap<u16, String>,
 }
 
 impl TerminalDebugger {
-    pub fn new(cpu: Box<Cpu>) -> TerminalDebugger {
+    pub fn new(cpu: Cpu, mem_map: MemMap) -> TerminalDebugger {
         TerminalDebugger {
             cpu: cpu,
+            mem_map: mem_map,
             breakpoint_set: HashSet::new(),
             watchpoint_set: HashSet::new(),
             label_map: HashMap::new(),
@@ -55,7 +60,8 @@ impl TerminalDebugger {
             ClearWatchpoints => self.clear_watchpoints(),
             ClearLabels => self.clear_labels(),
             Goto(addr) => self.goto(addr),
-            Step => self.step(),
+            Step => self.step_cpu(),
+            Disassemble(range) => self.disassemble(range),
             Continue => self.stop_listening(),
             c @ _ => println!("{:?}", c)
         };
@@ -222,8 +228,21 @@ impl TerminalDebugger {
         println!();
     }
 
-    fn step(&mut self) {
+    fn step_cpu(&mut self) {
         self.step();
+    }
+
+    fn disassemble(&self, range: Range<i16>) {
+        let addr = self.cpu.reg_pc;
+        let disassembly = disassembler::disassemble_range(addr, range, &self.mem_map);
+
+        println!();
+        println!("Disassembly:");
+        println!("------------");
+        for line in disassembly.into_iter() {
+            println!("{}", line);
+        }
+        println!();
     }
 }
 
@@ -254,16 +273,18 @@ impl Debugger for TerminalDebugger {
 }
 
 impl CpuFacade for TerminalDebugger {
-    fn cpu(self: Box<Self>) -> Box<Cpu> {
-        self.cpu
+    fn consume(self: Box<Self>) -> (Cpu, MemMap) {
+        let this = *self;
+
+        (this.cpu, this.mem_map)
     }
 
     fn debugger(&mut self) -> Option<&mut Debugger> {
         Some(self)
     }
 
-    fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
-        let mut mem_map_shim = MemMapShim::new(mem_map);
+    fn step(&mut self) -> Result<u8, String> {
+        let mut mem_map_shim = MemMapShim::new(&mut self.mem_map);
 
         self.cpu.step(&mut mem_map_shim)
     }

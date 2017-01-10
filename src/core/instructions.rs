@@ -27,30 +27,30 @@ pub enum AddressingMode {
     Invalid,
 }
 
-//impl AddressingMode {
-//    pub fn byte_count(&self) -> usize {
-//        use self::AddressingMode::*;
-//
-//        match *self {
-//            ZeroPageIndexedX(_) => 2,
-//            ZeroPageIndexedY(_) => 2,
-//            AbsoluteIndexedX(_) => 3,
-//            AbsoluteIndexedY(_) => 3,
-//            IndexedIndirectX(_) => 2,
-//            IndirectIndexedY(_) => 2,
-//
-//            Implicit => 1,
-//            Immediate(_) => 2,
-//            Accumulator => 1,
-//            ZeroPage(_) => 2,
-//            Absolute(_) => 3,
-//            Relative(_) => 2,
-//            Indirect(_) => 3,
-//
-//            Invalid => 0,
-//        }
-//    }
-//}
+impl AddressingMode {
+    pub fn byte_count(&self) -> u16 {
+        use self::AddressingMode::*;
+
+        match *self {
+            ZeroPageIndexedX(_) => 2,
+            ZeroPageIndexedY(_) => 2,
+            AbsoluteIndexedX(_) => 3,
+            AbsoluteIndexedY(_) => 3,
+            IndexedIndirectX(_) => 2,
+            IndirectIndexedY(_) => 2,
+
+            Implicit => 1,
+            Immediate(_) => 2,
+            Accumulator => 1,
+            ZeroPage(_) => 2,
+            Absolute(_) => 3,
+            Relative(_) => 2,
+            Indirect(_) => 3,
+
+            Invalid => 0,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum InstructionToken {
