@@ -139,7 +139,7 @@ impl Cpu {
                            mem_map: &mut MemMapped) -> Result<u8, String> {
         use core::instructions::InstructionToken::*;
 
-        let should_advance_pc: bool = true;
+        let mut should_advance_pc = true;
 
         match instruction.token {
             // Flag instructions
@@ -157,6 +157,11 @@ impl Cpu {
             STA => self.instr_sta(&mut instruction, mem_map),
             STX => self.instr_stx(&mut instruction, mem_map),
             STY => self.instr_sty(&mut instruction, mem_map),
+            // JMP / JSR
+            JMP => {
+                should_advance_pc = false;
+                self.instr_jmp(&instruction.addressing_mode, mem_map)
+            },
             _ => println!("Skipping unimplemented instruction: {}", instruction.token),
         };
 
@@ -190,6 +195,20 @@ impl Cpu {
 
     fn instr_sty(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         self.write_resolved_addr(instruction, mem_map, self.reg_y);
+    }
+
+    fn instr_jmp(&mut self, addressing_mode: &AddressingMode, mem_map: &mut MemMapped) {
+        use core::instructions::AddressingMode::*;
+
+        match *addressing_mode {
+            Absolute(arg) => {
+                self.reg_pc = arg;
+            }
+            Indirect(arg) => {
+                self.reg_pc = mem_map.read_word(arg);
+            }
+            _ => unreachable!()
+        }
     }
 
     fn read_resolved_addr(&self, instruction: &mut Instruction, mem_map: &MemMapped) -> u8 {

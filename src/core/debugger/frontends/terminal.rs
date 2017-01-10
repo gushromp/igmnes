@@ -231,6 +231,10 @@ impl TerminalDebugger {
 
     fn step_cpu(&mut self) {
         self.step();
+        self.print_state();
+
+        let range = 0..5;
+        self.disassemble(&range);
     }
 
     fn disassemble(&self, range: &Range<i16>) {
