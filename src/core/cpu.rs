@@ -197,23 +197,22 @@ impl Cpu {
                            mem_map: &mut MemMapped) -> Result<u8, String> {
         use core::instructions::InstructionToken::*;
 
-        let mut should_advance_pc = true;
 
         match instruction.token {
             // Jump instructions
-            JMP => {
-                should_advance_pc = false;
-                self.instr_jmp(&instruction.addressing_mode, mem_map)
-            },
-            JSR => {
-                should_advance_pc = false;
-                self.instr_jsr(&instruction.addressing_mode, mem_map)
-            }
+            JMP => self.instr_jmp(&instruction.addressing_mode, mem_map),
+            JSR => self.instr_jsr(&instruction.addressing_mode, mem_map),
             // Return instructions
-            RTS => {
-                should_advance_pc = false;
-                self.instr_rts(mem_map)
-            }
+            RTS => self.instr_rts(mem_map),
+            // Branch instructions
+            BPL => self.instr_bpl(&mut instruction),
+            BMI => self.instr_bmi(&mut instruction),
+            BVC => self.instr_bvc(&mut instruction),
+            BVS => self.instr_bvs(&mut instruction),
+            BCC => self.instr_bcc(&mut instruction),
+            BCS => self.instr_bcs(&mut instruction),
+            BNE => self.instr_bne(&mut instruction),
+            BEQ => self.instr_beq(&mut instruction),
             // Stack instructions
             TXS => self.instr_txs(),
             TSX => self.instr_tsx(),
@@ -248,7 +247,7 @@ impl Cpu {
             _ => println!("Skipping unimplemented instruction: {}", instruction.token),
         };
 
-        if should_advance_pc {
+        if instruction.should_advance_pc {
             self.reg_pc += instruction.addressing_mode.byte_count()
         }
 
@@ -290,6 +289,56 @@ impl Cpu {
         let addr = self.stack_pull_addr(mem_map);
 
         self.reg_pc = addr;
+    }
+    //
+    // Branch instructions
+    //
+    fn instr_bpl(&mut self, instruction: &mut Instruction) {
+        if !self.reg_status.sign_flag {
+            self.branch(instruction);
+        }
+    }
+
+    fn instr_bmi(&mut self, instruction: &mut Instruction) {
+        if self.reg_status.sign_flag {
+            self.branch(instruction);
+        }
+    }
+
+    fn instr_bvc(&mut self, instruction: &mut Instruction) {
+        if !self.reg_status.overflow_flag {
+            self.branch(instruction);
+        }
+    }
+
+    fn instr_bvs(&mut self, instruction: &mut Instruction) {
+        if self.reg_status.overflow_flag {
+            self.branch(instruction);
+        }
+    }
+
+    fn instr_bcc(&mut self, instruction: &mut Instruction) {
+        if !self.reg_status.carry_flag {
+            self.branch(instruction);
+        }
+    }
+
+    fn instr_bcs(&mut self, instruction: &mut Instruction) {
+        if self.reg_status.carry_flag {
+            self.branch(instruction);
+        }
+    }
+
+    fn instr_bne(&mut self, instruction: &mut Instruction) {
+        if !self.reg_status.zero_flag {
+            self.branch(instruction);
+        }
+    }
+
+    fn instr_beq(&mut self, instruction: &mut Instruction) {
+        if self.reg_status.zero_flag {
+            self.branch(instruction);
+        }
     }
     //
     // Stack instructions
@@ -513,6 +562,31 @@ impl Cpu {
         let addr = ((addr_high as u16) << 8) | addr_low as u16;
 
         addr
+    }
+
+    // branch is taken
+    fn branch(&mut self, instruction: &mut Instruction) {
+        use core::instructions::AddressingMode::*;
+
+        // increase cycle count by 1
+        instruction.cycle_count += 1;
+        // we don't want the cpu to increment the pc
+        // because we'll set it below
+        instruction.should_advance_pc = false;
+
+        match instruction.addressing_mode {
+            Relative(offset) => {
+                let reg_pc_i32 = self.reg_pc as i32;
+                let test = (reg_pc_i32 & 0xFF) + offset as i32;
+                if  test < 0 || test > 0xFF {
+                    // moved to previous or next page, increase cycle count by 1
+                    instruction.cycle_count += 1;
+                }
+
+                self.reg_pc = reg_pc_i32.wrapping_add(offset as i32) as u16;
+            },
+            _ => unreachable!()
+        }
     }
 }
 
