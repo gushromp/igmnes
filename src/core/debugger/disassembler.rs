@@ -7,7 +7,7 @@ pub fn disassemble_range(addr: u16, range: Range<i16>, mem_map: &MemMapped) -> V
     let mut current_addr = addr;
 
     for i in range {
-        let index = current_addr + i as u16;
+        let index = current_addr as u16;
         let instruction = Instruction::decode(mem_map, index);
 
         match instruction {
