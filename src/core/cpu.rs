@@ -19,14 +19,46 @@ pub struct StatusReg {
     pub carry_flag: bool,
     pub zero_flag: bool,
     pub interrupt_disable: bool,
-    pub decimal_mode: bool,
-    // unused
+    pub decimal_mode: bool, // should never be set to true by a NES rom
     pub break_executed: bool,
-    logical_1: bool,
-    // unused
+    logical_1: bool, // unused
     pub overflow_flag: bool,
-    pub sign_flag: bool,
-    // 0 when result of operation is positive, 1 when negative
+    pub sign_flag: bool, // 0 when result of operation is positive, 1 when negative
+
+}
+
+impl StatusReg {
+    pub fn clear_carry(&mut self) {
+        self.carry_flag = false;
+    }
+
+    pub fn set_carry(&mut self) {
+        self.carry_flag = true;
+    }
+
+    pub fn clear_interrupt_disable(&mut self) {
+        self.interrupt_disable = false;
+    }
+
+    pub fn set_interrupt_disable(&mut self) {
+        self.interrupt_disable = true;
+    }
+
+    pub fn clear_overflow(&mut self) {
+        self.overflow_flag = false;
+    }
+
+    pub fn set_overflow(&mut self) {
+        self.overflow_flag = true;
+    }
+
+    pub fn clear_decimal(&mut self) {
+        self.decimal_mode = false;
+    }
+
+    pub fn set_decimal(&mut self) {
+        self.decimal_mode = true;
+    }
 }
 
 #[derive(Debug, Default)]
@@ -98,11 +130,31 @@ impl Cpu {
     pub fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
         let instruction = Instruction::decode(mem_map, self.reg_pc)?;
 
-        println!("{:#?}", instruction);
+        self.execute_instruction(instruction)
+    }
+
+    fn execute_instruction(&mut self, instruction: Instruction) -> Result<u8, String> {
+        use core::instructions::InstructionToken::*;
+
+        let should_advance_pc: bool = true;
+
+        match instruction.token {
+            // Flag instructions
+            CLC => self.reg_status.clear_carry(),
+            SEC => self.reg_status.set_carry(),
+            CLI => self.reg_status.clear_interrupt_disable(),
+            SEI => self.reg_status.set_interrupt_disable(),
+            CLV => self.reg_status.clear_overflow(),
+            CLD => self.reg_status.clear_decimal(),
+            SED => self.reg_status.set_decimal(),
+            _ => println!("Skipping unimplemented instruction: {}", instruction.token),
+        };
+
+        if should_advance_pc {
+            self.reg_pc += instruction.addressing_mode.byte_count()
+        }
 
         Ok(instruction.cycle_count)
     }
-
-    fn execute_instruction(&mut self, instruction: Instruction) {}
 }
 
