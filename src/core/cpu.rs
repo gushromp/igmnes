@@ -219,14 +219,14 @@ impl Cpu {
             ZeroPageIndexedX(arg) => mem_map.read((arg + self.reg_x) as u16 % 0x100),
             ZeroPageIndexedY(arg) => mem_map.read((arg + self.reg_y) as u16 % 0x100),
             AbsoluteIndexedX(arg) => {
-                if ((arg & 0xFF) as u8) + self.reg_x > 0xFF {
+                if (arg & 0xFF) + self.reg_x as u16 > 0xFF {
                     instruction.cycle_count += 1;
                 }
 
                 mem_map.read(arg + self.reg_x as u16)
             },
             AbsoluteIndexedY(arg) => {
-                if ((arg & 0xFF) as u8) + self.reg_y > 0xFF {
+                if (arg & 0xFF) + self.reg_y as u16 > 0xFF {
                     instruction.cycle_count += 1;
                 }
 
@@ -235,7 +235,7 @@ impl Cpu {
             IndexedIndirectX(arg) => mem_map.read(mem_map.read_word((arg + self.reg_x) as u16 % 0x100)),
             IndirectIndexedY(arg) => {
                 let addr = mem_map.read_word(arg as u16) + self.reg_y as u16;
-                if ((addr & 0xFF) as u8) + self.reg_y > 0xFF {
+                if (addr & 0xFF) + self.reg_y as u16 > 0xFF {
                     instruction.cycle_count += 1;
                 }
                 mem_map.read(addr)
