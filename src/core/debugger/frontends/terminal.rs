@@ -248,11 +248,10 @@ impl TerminalDebugger {
 
 impl Debugger for TerminalDebugger {
     fn start_listening(&mut self) {
-        let pc = self.cpu.reg_pc;
-
         let mut stdout = io::stdout();
 
         while true {
+            let pc = self.cpu.reg_pc;
             print!("0x{:X} -> ", pc);
             stdout.flush().unwrap();
 
