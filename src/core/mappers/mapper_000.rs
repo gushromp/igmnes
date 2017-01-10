@@ -14,7 +14,6 @@ impl NRom {
         let chr_rom_bytes = rom.chr_rom_bytes.clone();
 
         let prg_ram_size = rom.header.prg_ram_size;
-
         let prg_ram_bytes = Vec::with_capacity(prg_ram_size as usize);
 
         NRom {
@@ -29,8 +28,8 @@ impl NRom {
         // CPU memory map maps maps the cart address space from 0x4020 to 0xFFFF
         // NROM starts mapping ROM at 0x8000
         let index = index - 0x8000;
-        if index > 0xBFFF && self.prg_rom_bytes.len() <= 0x8000 {
-            (index % 0x4000) as usize
+        if index > 0x3FFF && self.prg_rom_bytes.len() <= 0x8000 {
+            (index - 0x4000) as usize
         }
         else {
             index as usize
