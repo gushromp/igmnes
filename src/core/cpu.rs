@@ -19,23 +19,73 @@ pub struct StatusReg {
     pub carry_flag: bool,
     pub zero_flag: bool,
     pub interrupt_disable: bool,
-    pub decimal_mode: bool,
     // should never be set to true by a NES rom
+    pub decimal_mode: bool,
     pub break_executed: bool,
-    logical_1: bool,
     // unused
+    logical_1: bool,
     pub overflow_flag: bool,
-    pub sign_flag: bool,
     // 0 when result of operation is positive, 1 when negative
+    pub sign_flag: bool,
 }
 
 impl StatusReg {
+    pub fn to_byte(&self) -> u8 {
+        let mut byte = 0u8;
+
+        byte = byte | self.sign_flag as u8;
+        byte = (byte << 1) | self.overflow_flag as u8;
+        byte = (byte << 1) | self.logical_1 as u8;
+        byte = (byte << 1) | self.break_executed as u8;
+        byte = (byte << 1) | self.decimal_mode as u8;
+        byte = (byte << 1) | self.interrupt_disable as u8;
+        byte = (byte << 1) | self.zero_flag as u8;
+        byte = (byte << 1) | self.carry_flag as u8;
+
+        byte
+    }
+
+    pub fn from_byte(byte: u8) -> StatusReg {
+        StatusReg {
+            carry_flag: byte & 0b00000001 == 1,
+            zero_flag: (byte >> 1) & 0b00000001 == 1,
+            interrupt_disable: (byte >> 2) & 0b00000001 == 1,
+            decimal_mode: (byte >> 3) & 0b00000001 == 1,
+            break_executed: (byte >> 4) & 0b00000001 == 1,
+            logical_1: true,
+            overflow_flag: (byte >> 6) & 0b00000001 == 1,
+            sign_flag: (byte >> 7) & 0b00000001 == 1,
+        }
+    }
+
+    pub fn check(&mut self, byte: u8) {
+        if byte >> 7 == 1 {
+            self.set_sign();
+        } else {
+            self.clear_sign();
+        }
+
+        if byte == 0 {
+            self.set_zero();
+        } else {
+            self.clear_zero();
+        }
+    }
+
     pub fn clear_carry(&mut self) {
         self.carry_flag = false;
     }
 
     pub fn set_carry(&mut self) {
         self.carry_flag = true;
+    }
+
+    pub fn clear_zero(&mut self) {
+        self.zero_flag = false;
+    }
+
+    pub fn set_zero(&mut self) {
+        self.zero_flag = true;
     }
 
     pub fn clear_interrupt_disable(&mut self) {
@@ -60,6 +110,14 @@ impl StatusReg {
 
     pub fn set_decimal(&mut self) {
         self.decimal_mode = true;
+    }
+
+    pub fn set_sign(&mut self) {
+        self.sign_flag = true;
+    }
+
+    pub fn clear_sign(&mut self) {
+        self.sign_flag = false;
     }
 }
 
@@ -142,6 +200,18 @@ impl Cpu {
         let mut should_advance_pc = true;
 
         match instruction.token {
+            // JMP / JSR
+            JMP => {
+                should_advance_pc = false;
+                self.instr_jmp(&instruction.addressing_mode, mem_map)
+            },
+            // Stack instructions
+            TXS => self.instr_txs(),
+            TSX => self.instr_tsx(),
+            PHA => self.instr_pha(mem_map),
+            PLA => self.instr_pla(mem_map),
+            PHP => self.instr_php(mem_map),
+            PLP => self.instr_plp(mem_map),
             // Flag instructions
             CLC => self.reg_status.clear_carry(),
             SEC => self.reg_status.set_carry(),
@@ -157,11 +227,15 @@ impl Cpu {
             STA => self.instr_sta(&mut instruction, mem_map),
             STX => self.instr_stx(&mut instruction, mem_map),
             STY => self.instr_sty(&mut instruction, mem_map),
-            // JMP / JSR
-            JMP => {
-                should_advance_pc = false;
-                self.instr_jmp(&instruction.addressing_mode, mem_map)
-            },
+            // Register instructions
+            TAX => self.instr_tax(),
+            TXA => self.instr_txa(),
+            DEX => self.instr_dex(),
+            INX => self.instr_inx(),
+            TAY => self.instr_tay(),
+            TYA => self.instr_tya(),
+            DEY => self.instr_dey(),
+            INY => self.instr_iny(),
             _ => println!("Skipping unimplemented instruction: {}", instruction.token),
         };
 
@@ -172,31 +246,9 @@ impl Cpu {
         Ok(instruction.cycle_count)
     }
 
-
-    fn instr_lda(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
-        self.reg_a = self.read_resolved_addr(instruction, mem_map);
-    }
-
-    fn instr_ldx(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
-        self.reg_x = self.read_resolved_addr(instruction, mem_map);
-    }
-
-    fn instr_ldy(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
-        self.reg_y = self.read_resolved_addr(instruction, mem_map);
-    }
-
-    fn instr_sta(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
-        self.write_resolved_addr(instruction, mem_map, self.reg_a);
-    }
-
-    fn instr_stx(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
-        self.write_resolved_addr(instruction, mem_map, self.reg_x);
-    }
-
-    fn instr_sty(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
-        self.write_resolved_addr(instruction, mem_map, self.reg_y);
-    }
-
+    //
+    // Jump instructions
+    //
     fn instr_jmp(&mut self, addressing_mode: &AddressingMode, mem_map: &mut MemMapped) {
         use core::instructions::AddressingMode::*;
 
@@ -210,6 +262,112 @@ impl Cpu {
             _ => unreachable!()
         }
     }
+    //
+    // Stack instructions
+    //
+    fn instr_txs(&mut self) {
+        self.reg_sp = self.reg_x;
+        self.reg_status.check(self.reg_sp);
+    }
+
+    fn instr_tsx(&mut self) {
+        self.reg_x = self.reg_sp;
+        self.reg_status.check(self.reg_x);
+    }
+
+    fn instr_pha(&mut self, mem_map: &mut MemMapped) {
+        let reg_a = self.reg_a;
+        self.stack_push(mem_map, reg_a);
+    }
+
+    fn instr_pla(&mut self, mem_map: &mut MemMapped) {
+        self.reg_a = self.stack_pull(mem_map);
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_php(&mut self, mem_map: &mut MemMapped) {
+        let reg_status = self.reg_status.to_byte();
+        self.stack_push(mem_map, reg_status);
+    }
+
+    fn instr_plp(&mut self, mem_map: &mut MemMapped) {
+        self.reg_status = StatusReg::from_byte(self.stack_pull(mem_map));
+    }
+    //
+    // Store/Load instructions
+    //
+    fn instr_lda(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
+        self.reg_a = self.read_resolved_addr(instruction, mem_map);
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_ldx(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
+        self.reg_x = self.read_resolved_addr(instruction, mem_map);
+        self.reg_status.check(self.reg_x);
+    }
+
+    fn instr_ldy(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
+        self.reg_y = self.read_resolved_addr(instruction, mem_map);
+        self.reg_status.check(self.reg_y);
+    }
+
+    fn instr_sta(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        self.write_resolved_addr(instruction, mem_map, self.reg_a);
+    }
+
+    fn instr_stx(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        self.write_resolved_addr(instruction, mem_map, self.reg_x);
+    }
+
+    fn instr_sty(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        self.write_resolved_addr(instruction, mem_map, self.reg_y);
+    }
+    //
+    // Register instructions
+    //
+    fn instr_tax(&mut self) {
+        self.reg_x = self.reg_a;
+        self.reg_status.check(self.reg_x);
+    }
+
+    fn instr_txa(&mut self) {
+        self.reg_a = self.reg_x;
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_dex(&mut self) {
+        self.reg_x = self.reg_x.wrapping_sub(1);
+        self.reg_status.check(self.reg_x);
+    }
+
+    fn instr_inx(&mut self) {
+        self.reg_x = self.reg_x.wrapping_add(1);
+        self.reg_status.check(self.reg_x);
+    }
+
+    fn instr_tay(&mut self) {
+        self.reg_y = self.reg_a;
+        self.reg_status.check(self.reg_y);
+    }
+
+    fn instr_tya(&mut self) {
+        self.reg_a = self.reg_y;
+        self.reg_status.check(self.reg_y);
+    }
+
+    fn instr_dey(&mut self) {
+        self.reg_y = self.reg_y.wrapping_sub(1);
+        self.reg_status.check(self.reg_y);
+    }
+
+    fn instr_iny(&mut self) {
+        self.reg_y = self.reg_y.wrapping_add(1);
+        self.reg_status.check(self.reg_y);
+    }
+
+    //
+    // Helpers
+    //
 
     fn read_resolved_addr(&self, instruction: &mut Instruction, mem_map: &MemMapped) -> u8 {
         use core::instructions::AddressingMode::*;
@@ -287,6 +445,28 @@ impl Cpu {
             // Above covers all addresing modes for writing memory
             _ => unreachable!()
         };
+    }
+
+    fn stack_push(&mut self, mem_map: &mut MemMapped, byte: u8) {
+        if self.reg_sp == 0 {
+            println!("Stack overflow detected! Wrapping...");
+        }
+
+        let addr = 0x100 + self.reg_sp as u16;
+        mem_map.write(addr, byte);
+
+        self.reg_sp = self.reg_sp.wrapping_sub(1);
+    }
+
+    fn stack_pull(&mut self, mem_map: &MemMapped) -> u8 {
+        if self.reg_sp == 0xFF {
+            println!("Stack underflow detected! Wrapping...");
+        }
+
+        self.reg_sp = self.reg_sp.wrapping_add(1);
+
+        let addr = 0x100 + self.reg_sp as u16;
+        mem_map.read(addr)
     }
 }
 
