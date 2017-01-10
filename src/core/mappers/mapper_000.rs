@@ -28,7 +28,7 @@ impl NRom {
         // CPU memory map maps maps the cart address space from 0x4020 to 0xFFFF
         // NROM starts mapping ROM at 0x8000
         let index = index - 0x8000;
-        if index > 0x3FFF && self.prg_rom_bytes.len() <= 0x8000 {
+        if index > 0x3FFF && self.prg_rom_bytes.len() < 0x8000 {
             (index - 0x4000) as usize
         }
         else {
