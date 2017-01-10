@@ -200,11 +200,20 @@ impl Cpu {
         let mut should_advance_pc = true;
 
         match instruction.token {
-            // JMP / JSR
+            // Jump instructions
             JMP => {
                 should_advance_pc = false;
                 self.instr_jmp(&instruction.addressing_mode, mem_map)
             },
+            JSR => {
+                should_advance_pc = false;
+                self.instr_jsr(&instruction.addressing_mode, mem_map)
+            }
+            // Return instructions
+            RTS => {
+                should_advance_pc = false;
+                self.instr_rts(mem_map)
+            }
             // Stack instructions
             TXS => self.instr_txs(),
             TSX => self.instr_tsx(),
@@ -261,6 +270,26 @@ impl Cpu {
             }
             _ => unreachable!()
         }
+    }
+    fn instr_jsr(&mut self, addressing_mode: &AddressingMode, mem_map: &mut MemMapped) {
+        use core::instructions::AddressingMode::*;
+
+        match *addressing_mode {
+            Absolute(arg) => {
+                let reg_pc = self.reg_pc;
+                self.stack_push_addr(mem_map, reg_pc + addressing_mode.byte_count() as u16);
+                self.reg_pc = arg;
+            },
+            _ => unreachable!()
+        }
+    }
+    //
+    // Return instructions
+    //
+    fn instr_rts(&mut self, mem_map: &mut MemMapped) {
+        let addr = self.stack_pull_addr(mem_map);
+
+        self.reg_pc = addr;
     }
     //
     // Stack instructions
@@ -467,6 +496,23 @@ impl Cpu {
 
         let addr = 0x100 + self.reg_sp as u16;
         mem_map.read(addr)
+    }
+
+    fn stack_push_addr(&mut self, mem_map: &mut MemMapped, addr: u16) {
+        let addr_high = ((addr & 0xFF00) >> 8) as u8;
+        let addr_low = (addr & 0xFF) as u8;
+
+        self.stack_push(mem_map, addr_low);
+        self.stack_push(mem_map, addr_high);
+    }
+
+    fn stack_pull_addr(&mut self, mem_map: &mut MemMapped) -> u16 {
+        let addr_high = self.stack_pull(mem_map);
+        let addr_low = self.stack_pull(mem_map);
+
+        let addr = ((addr_high as u16) << 8) | addr_low as u16;
+
+        addr
     }
 }
 
