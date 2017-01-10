@@ -108,23 +108,27 @@ impl MemMapped for MemMap {
             0x2000...0x3FFF => {
                 let index = index % 0x0008;
                 // self.ppu.read(index)
-                panic!("Attempted unimplemented read from PPU register: 0x{:X}", index);
+                println!("Attempted unimplemented read from PPU register: 0x{:X}", index);
+                0
             },
             // APU
             0x4000...0x4015 => {
                 let index = index % 0x4000;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented read from APU register: 0x{:X}", index);
+                println!("Attempted unimplemented read from APU register: 0x{:X}", index);
+                0
             }
             // I/O
             0x4016...0x4017 => {
                 let index = index % 0x4016;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented read from APU register: 0x{:X}", index);
+                println!("Attempted unimplemented read from APU register: 0x{:X}", index);
+                0
             }
             0x4018...0x401f => {
                 let index = index % 0x4018;
-                panic!("Attempted unimplemented read from CPU Test Register: 0x{:X}", index);
+                println!("Attempted unimplemented read from CPU Test Register: 0x{:X}", index);
+                0
             }
             0x4020...0xFFFF => {
                 self.mapper.read(index)
@@ -144,23 +148,23 @@ impl MemMapped for MemMap {
             0x2000...0x3FFF => {
                 let index = index % 0x0008;
                 // self.ppu.read(index)
-                panic!("Attempted unimplemented write to PPU register: 0x{:X}", index);
+                println!("Attempted unimplemented write to PPU register: 0x{:X}", index);
             },
             // APU
             0x4000...0x4015 => {
                 let index = index % 0x4000;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented write to APU register: 0x{:X}", index);
+                println!("Attempted unimplemented write to APU register: 0x{:X}", index);
             }
             // I/O
             0x4016...0x4017 => {
                 let index = index % 0x4016;
                 // self.apu.read(index)
-                panic!("Attempted unimplemented write to APU register: 0x{:X}", index);
+                println!("Attempted unimplemented write to APU register: 0x{:X}", index);
             }
             0x4018...0x401F => {
                 let index = index % 0x4018;
-                panic!("Attempted unimplemented write to CPU Test Register: 0x{:X}", index);
+                println!("Attempted unimplemented write to CPU Test Register: 0x{:X}", index);
             }
             0x4020...0xFFFF => {
                 self.mapper.write(index, byte);
