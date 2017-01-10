@@ -197,8 +197,8 @@ impl Cpu {
 
         let addressing_mode = &instruction.addressing_mode;
         match *addressing_mode {
-            ZeroPageIndexedX(arg) => mem_map.read(((arg + self.reg_x) % 0xFF) as u16),
-            ZeroPageIndexedY(arg) => mem_map.read(((arg + self.reg_y) % 0xFF) as u16),
+            ZeroPageIndexedX(arg) => mem_map.read((arg + self.reg_x) as u16 % 0x100),
+            ZeroPageIndexedY(arg) => mem_map.read((arg + self.reg_y) as u16 % 0x100),
             AbsoluteIndexedX(arg) => {
                 if ((arg & 0xFF) as u8) + self.reg_x > 0xFF {
                     instruction.cycle_count += 1;
@@ -213,7 +213,7 @@ impl Cpu {
 
                 mem_map.read(arg + self.reg_y as u16)
             },
-            IndexedIndirectX(arg) => mem_map.read(mem_map.read_word(((arg + self.reg_x) % 0xFF) as u16)),
+            IndexedIndirectX(arg) => mem_map.read(mem_map.read_word((arg + self.reg_x) as u16 % 0x100)),
             IndirectIndexedY(arg) => {
                 let addr = mem_map.read_word(arg as u16) + self.reg_y as u16;
                 if ((addr & 0xFF) as u8) + self.reg_y > 0xFF {
@@ -238,8 +238,8 @@ impl Cpu {
 
         let addressing_mode = &instruction.addressing_mode;
         match *addressing_mode {
-            ZeroPageIndexedX(arg) => mem_map.write(((arg + self.reg_x) % 0xFF) as u16, byte),
-            ZeroPageIndexedY(arg) => mem_map.write(((arg + self.reg_y) % 0xFF) as u16, byte),
+            ZeroPageIndexedX(arg) => mem_map.write(((arg + self.reg_x) as u16 % 0x100), byte),
+            ZeroPageIndexedY(arg) => mem_map.write(((arg + self.reg_y) as u16 % 0x200), byte),
             AbsoluteIndexedX(arg) => {
                 instruction.cycle_count += 1;
 
@@ -251,7 +251,7 @@ impl Cpu {
                 mem_map.write(arg + self.reg_y as u16, byte);
             },
             IndexedIndirectX(arg) => {
-                let addr = mem_map.read_word(((arg + self.reg_x) % 0xFF) as u16);
+                let addr = mem_map.read_word((arg + self.reg_x) as u16 % 0x100);
                 mem_map.write(addr, byte)
             },
             IndirectIndexedY(arg) => {
