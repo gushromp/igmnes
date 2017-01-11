@@ -64,7 +64,7 @@ impl Default for MemMap {
         MemMap {
             rom: Rom::default(),
             ram: Ram::default(),
-            apu: Apu,
+            apu: Apu::default(),
             mapper: def_mapper,
         }
     }
@@ -78,7 +78,7 @@ impl MemMap {
         MemMap {
             rom: rom,
             ram: Ram::new(),
-            apu: Apu,
+            apu: Apu::new(),
             mapper: mapper,
         }
     }

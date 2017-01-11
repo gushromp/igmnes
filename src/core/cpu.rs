@@ -30,8 +30,8 @@ pub struct StatusReg {
     pub sign_flag: bool,
 }
 
-impl StatusReg {
-    pub fn to_byte(&self) -> u8 {
+impl<'a> Into<u8> for &'a StatusReg {
+    fn into(self) -> u8 {
         let mut byte = 0u8;
 
         byte = byte | self.sign_flag as u8;
@@ -45,8 +45,10 @@ impl StatusReg {
 
         byte
     }
+}
 
-    pub fn from_byte(byte: u8) -> StatusReg {
+impl From<u8> for StatusReg {
+    fn from(byte: u8) -> StatusReg {
         StatusReg {
             carry_flag: byte & 0b00000001 == 1,
             zero_flag: (byte >> 1) & 0b00000001 == 1,
@@ -58,6 +60,9 @@ impl StatusReg {
             sign_flag: (byte >> 7) & 0b00000001 == 1,
         }
     }
+}
+
+impl StatusReg {
 
     pub fn check(&mut self, byte: u8) {
         if byte >> 7 == 1 {
@@ -383,12 +388,14 @@ impl Cpu {
     }
 
     fn instr_php(&mut self, mem_map: &mut MemMapped) {
-        let reg_status = self.reg_status.to_byte();
-        self.stack_push(mem_map, reg_status);
+        let reg_status_byte: u8 = {
+            (&self.reg_status).into()
+        };
+        self.stack_push(mem_map, reg_status_byte);
     }
 
     fn instr_plp(&mut self, mem_map: &mut MemMapped) {
-        self.reg_status = StatusReg::from_byte(self.stack_pull(mem_map));
+        self.reg_status = StatusReg::from(self.stack_pull(mem_map));
     }
     //
     // Store/Load instructions
@@ -596,7 +603,7 @@ impl Cpu {
         }
     }
     //
-    // ALU instructions
+    // Read/Modify/Write instructions
     //
     fn instr_asl(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let mut byte = self.read_resolved_addr(instruction, mem_map);
