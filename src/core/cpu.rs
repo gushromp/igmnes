@@ -197,6 +197,7 @@ impl Cpu {
                            mem_map: &mut MemMapped) -> Result<u8, String> {
         use core::instructions::InstructionToken::*;
 
+        let instruction = &mut instruction;
 
         match instruction.token {
             // Jump instructions
@@ -205,14 +206,14 @@ impl Cpu {
             // Return instructions
             RTS => self.instr_rts(mem_map),
             // Branch instructions
-            BPL => self.instr_bpl(&mut instruction),
-            BMI => self.instr_bmi(&mut instruction),
-            BVC => self.instr_bvc(&mut instruction),
-            BVS => self.instr_bvs(&mut instruction),
-            BCC => self.instr_bcc(&mut instruction),
-            BCS => self.instr_bcs(&mut instruction),
-            BNE => self.instr_bne(&mut instruction),
-            BEQ => self.instr_beq(&mut instruction),
+            BPL => self.instr_bpl(instruction),
+            BMI => self.instr_bmi(instruction),
+            BVC => self.instr_bvc(instruction),
+            BVS => self.instr_bvs(instruction),
+            BCC => self.instr_bcc(instruction),
+            BCS => self.instr_bcs(instruction),
+            BNE => self.instr_bne(instruction),
+            BEQ => self.instr_beq(instruction),
             // Stack instructions
             TXS => self.instr_txs(),
             TSX => self.instr_tsx(),
@@ -229,12 +230,12 @@ impl Cpu {
             CLD => self.reg_status.clear_decimal(),
             SED => self.reg_status.set_decimal(),
             // Store/Load instructions
-            LDA => self.instr_lda(&mut instruction, mem_map),
-            LDX => self.instr_ldx(&mut instruction, mem_map),
-            LDY => self.instr_ldy(&mut instruction, mem_map),
-            STA => self.instr_sta(&mut instruction, mem_map),
-            STX => self.instr_stx(&mut instruction, mem_map),
-            STY => self.instr_sty(&mut instruction, mem_map),
+            LDA => self.instr_lda(instruction, mem_map),
+            LDX => self.instr_ldx(instruction, mem_map),
+            LDY => self.instr_ldy(instruction, mem_map),
+            STA => self.instr_sta(instruction, mem_map),
+            STX => self.instr_stx(instruction, mem_map),
+            STY => self.instr_sty(instruction, mem_map),
             // Register instructions
             TAX => self.instr_tax(),
             TXA => self.instr_txa(),
@@ -244,6 +245,16 @@ impl Cpu {
             TYA => self.instr_tya(),
             DEY => self.instr_dey(),
             INY => self.instr_iny(),
+            // ALU instructions
+            ORA => self.instr_ora(instruction, mem_map),
+            AND => self.instr_and(instruction, mem_map),
+            EOR => self.instr_eor(instruction, mem_map),
+            ADC => self.instr_adc(instruction, mem_map),
+            SBC => self.instr_sbc(instruction, mem_map),
+            CMP => self.instr_cmp(instruction, mem_map),
+            CPX => self.instr_cpx(instruction, mem_map),
+            CPY => self.instr_cpy(instruction, mem_map),
+            BIT => self.instr_bit(instruction, mem_map),
             _ => println!("Skipping unimplemented instruction: {}", instruction.token),
         };
 
@@ -442,6 +453,137 @@ impl Cpu {
         self.reg_y = self.reg_y.wrapping_add(1);
         self.reg_status.check(self.reg_y);
     }
+    //
+    // ALU instructions
+    //
+    fn instr_ora(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+
+        self.reg_a |= byte;
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_and(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+
+        self.reg_a &= byte;
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_eor(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+
+        self.reg_a ^= byte;
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_adc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+        let carry = self.reg_status.carry_flag as u8;
+
+        let (result, overflow) = self.reg_a.overflowing_add(byte + carry);
+        self.reg_a = result;
+
+        if overflow {
+            self.reg_status.set_carry();
+        } else {
+            self.reg_status.clear_carry();
+        }
+
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_sbc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+        let carry = self.reg_status.carry_flag as u8;
+
+        let (result, overflow) = self.reg_a.overflowing_sub(byte - (1 - carry));
+        self.reg_a = result;
+
+        if overflow {
+            self.reg_status.clear_carry();
+        } else {
+            self.reg_status.set_carry();
+        }
+
+        self.reg_status.check(self.reg_a);
+    }
+
+    fn instr_cmp(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+
+        if self.reg_a > byte {
+            self.reg_status.set_carry();
+            self.reg_status.clear_zero();
+            self.reg_status.clear_sign();
+        } else if self.reg_a == byte {
+            self.reg_status.set_carry();
+            self.reg_status.set_zero();
+            self.reg_status.clear_sign();
+        } else {
+            self.reg_status.clear_carry();
+            self.reg_status.clear_zero();
+            self.reg_status.set_sign();
+        }
+    }
+
+    fn instr_cpx(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+
+        if self.reg_x > byte {
+            self.reg_status.set_carry();
+            self.reg_status.clear_zero();
+            self.reg_status.clear_sign();
+        } else if self.reg_y == byte {
+            self.reg_status.set_carry();
+            self.reg_status.set_zero();
+            self.reg_status.clear_sign();
+        } else {
+            self.reg_status.clear_carry();
+            self.reg_status.clear_zero();
+            self.reg_status.set_sign();
+        }
+    }
+
+    fn instr_cpy(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+
+        if self.reg_y > byte {
+            self.reg_status.set_carry();
+            self.reg_status.clear_zero();
+            self.reg_status.clear_sign();
+        } else if self.reg_y == byte {
+            self.reg_status.set_carry();
+            self.reg_status.set_zero();
+            self.reg_status.clear_sign();
+        } else {
+            self.reg_status.clear_carry();
+            self.reg_status.clear_zero();
+            self.reg_status.set_sign();
+        }
+    }
+
+    fn instr_bit(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let byte = self.read_resolved_addr(instruction, mem_map);
+
+        if self.reg_a & byte == 0 {
+            self.reg_status.set_zero();
+        } else {
+            self.reg_status.clear_zero();
+        }
+
+        if (byte >> 6) & 0b1 == 1 {
+            self.reg_status.set_overflow();
+        } else {
+            self.reg_status.clear_overflow();
+        }
+
+        if (byte >> 7) & 0b1 == 1 {
+            self.reg_status.set_zero();
+        } else {
+            self.reg_status.clear_zero();
+        }
+    }
 
     //
     // Helpers
@@ -578,7 +720,7 @@ impl Cpu {
             Relative(offset) => {
                 let reg_pc_i32 = self.reg_pc as i32;
                 let test = (reg_pc_i32 & 0xFF) + offset as i32;
-                if  test < 0 || test > 0xFF {
+                if test < 0 || test > 0xFF {
                     // moved to previous or next page, increase cycle count by 1
                     instruction.cycle_count += 1;
                 }

@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Ivan Đorđević <i.djordjevic@itsinbox.com>"]
 
 [dependencies]
+time = "0.1.35"
 sdl2 = "0.25.0"
 
 [dependencies.nom]
