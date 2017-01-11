@@ -4,9 +4,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use nom::*;
 
-const PRG_ROM_BYTES_PER_CHUNK: u16 = 16384;
-const CHR_ROM_BYTES_PER_CHUNK: u16 = 8192;
-const PRG_RAM_BYTES_PER_CHUNK: u16 = 8192;
+const PRG_ROM_BYTES_PER_CHUNK: usize = 16384;
+const CHR_ROM_BYTES_PER_CHUNK: usize = 8192;
+const PRG_RAM_BYTES_PER_CHUNK: usize = 8192;
 
 #[derive(Debug)]
 pub enum TVSystem {
@@ -106,8 +106,8 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
             {
                 let header_type = detect_header_type(flags_7);
 
-                let prg_rom_size = (prg_rom_chunk_count as u16 * PRG_ROM_BYTES_PER_CHUNK) as usize;
-                let chr_rom_size = (chr_rom_chunk_count as u16 * CHR_ROM_BYTES_PER_CHUNK) as usize;
+                let prg_rom_size = prg_rom_chunk_count as usize * PRG_ROM_BYTES_PER_CHUNK;
+                let chr_rom_size = chr_rom_chunk_count as usize * CHR_ROM_BYTES_PER_CHUNK;
 
                 let four_screen_mode = ((flags_6 >> 3) & 0b1) == 0b1;
                 let trainer_present = ((flags_6 >> 2) & 0b1) == 0b1;
@@ -138,7 +138,7 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
                 if prg_ram_chunk_count == 0 {
                  prg_ram_chunk_count = 1;
                 }
-                let prg_ram_size = (prg_ram_chunk_count as u16 * PRG_RAM_BYTES_PER_CHUNK) as usize;
+                let prg_ram_size = prg_ram_chunk_count as usize * PRG_RAM_BYTES_PER_CHUNK;
 
                 let is_playchoice_10 = (flags_7 >> 1) & 0b1 == 0b1;
                 let is_vs_unisystem = flags_7 & 0b1 == 0b1;
