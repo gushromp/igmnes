@@ -821,9 +821,10 @@ impl Cpu {
 
         // increase cycle count by 1
         instruction.cycle_count += 1;
-        // we don't want the cpu to increment the pc
-        // because we'll set it below
-        instruction.should_advance_pc = false;
+
+        // the PC will also be incremented by 2,
+        // so the effective final pc address will be
+        // reg_pc = reg_pc + offset + 2
 
         match instruction.addressing_mode {
             Relative(offset) => {

@@ -163,7 +163,7 @@ impl Instruction {
 }
 
 impl Instruction {
-    pub fn decode(mem_map: &MemMapped, index: u16) -> Result<Instruction, CpuError> {
+    pub fn decode(mem_map: &MemMapped, addr: u16) -> Result<Instruction, CpuError> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 
@@ -172,8 +172,8 @@ impl Instruction {
         //      bbb bits are used to specify addressing mode
         // However, since a lot of instructions don't fit into this pattern,
         // we will match the opcodes one by one instead of looking at the individual bit groups.
-        let op_code = mem_map.read(index);
-        let arg_index = index + 1;
+        let op_code = mem_map.read(addr);
+        let arg_index = addr + 1;
 
         let mut instr = match op_code {
             //
@@ -373,7 +373,7 @@ impl Instruction {
         instr.op_code = op_code;
 
         if let Unknown = instr.token {
-            Err(CpuError::InstructionDecoding(op_code))
+            Err(CpuError::InstructionDecoding(addr, op_code))
         } else {
             Ok(instr)
         }

@@ -17,7 +17,9 @@ fn main() {
 
     let rom_path = Path::new(&args[1]);
 
+    let attach_debugger = (args.len() == 3) && (&args[2] == "--attach-debugger");
+
     let mut core = Core::load_rom(rom_path).unwrap();
-    core.start();
+    core.start(attach_debugger);
 
 }

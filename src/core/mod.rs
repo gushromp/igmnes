@@ -99,7 +99,7 @@ impl Core {
         Ok(core)
     }
 
-    pub fn start(&mut self) {
+    pub fn start(&mut self, attach_debugger: bool) {
         self.is_running = true;
 
         let sdl_context = sdl2::init().unwrap();
@@ -119,6 +119,11 @@ impl Core {
         renderer.present();
 
         let mut cycle_count: u64 = 0;
+
+        if attach_debugger {
+            let debugger = self.attach_debugger();
+            debugger.start_listening();
+        }
 
         'running: loop {
             for event in events.poll_iter() {
