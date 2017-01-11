@@ -3,7 +3,7 @@ use std::fmt;
 use core::memory::MemMapped;
 use core::errors::CpuError;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AddressingMode {
     //
     // indexed addressing modes

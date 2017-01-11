@@ -3,6 +3,7 @@ use std::collections::{HashSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::ops::Range;
 use std::mem;
+use std::cell::RefCell;
 use core::CpuFacade;
 use core::cpu::Cpu;
 use core::memory::{MemMap, MemMapped};
@@ -10,17 +11,17 @@ use core::debugger::Debugger;
 use core::debugger::command::Command;
 use core::debugger::disassembler;
 use core::errors::CpuError;
-use std::thread;
-use std::sync::mpsc;
 
 struct MemMapShim<'a> {
-    mem_map: &'a mut MemMapped
+    mem_map: &'a mut MemMapped,
+    accessed_address: RefCell<Option<u16>>,
 }
 
 impl<'a> MemMapShim<'a> {
     pub fn new(mem_map: &'a mut MemMapped) -> MemMapShim {
         MemMapShim {
-            mem_map: mem_map
+            mem_map: mem_map,
+            accessed_address: RefCell::new(None),
         }
     }
 }
@@ -110,7 +111,7 @@ impl TerminalDebugger {
         println!();
     }
 
-    fn print_memory(&self, range: &Range<u16>){
+    fn print_memory(&self, range: &Range<u16>) {
         let (mut cursor, rows) = if range.start > 0 {
             (range.start, range.end - range.start)
         } else {
@@ -276,7 +277,7 @@ impl TerminalDebugger {
 
     fn disassemble(&self, range: &Range<u16>) {
         let addr = self.cpu.reg_pc;
-        let disassembly = disassembler::disassemble_range(addr, range, &self.mem_map);
+        let disassembly = disassembler::disassemble_range(addr, range, &self.cpu, &self.mem_map);
 
         println!();
         println!("Disassembly:");
@@ -321,7 +322,6 @@ impl Debugger for TerminalDebugger {
                         }
                         ref command @ _ => self.execute_command(command),
                     };
-
                 },
                 Err(err) => println!("{:#?}", err),
             }
@@ -353,8 +353,7 @@ impl CpuFacade for TerminalDebugger {
         if self.breakpoint_set.contains(&reg_pc) {
             if let Some(addr) = self.cur_breakpoint_addr {
                 self.cur_breakpoint_addr = None;
-            }
-            else {
+            } else {
                 println!("Breakpoint hit");
                 self.cur_breakpoint_addr = Some(reg_pc);
                 return Err(CpuError::DebuggerBreakpoint(self.cpu.reg_pc));
@@ -363,16 +362,31 @@ impl CpuFacade for TerminalDebugger {
 
         let mut mem_map_shim = MemMapShim::new(&mut self.mem_map);
 
-        self.cpu.step(&mut mem_map_shim)
+        let cpu_result = self.cpu.step(&mut mem_map_shim);
+
+        if let Some(addr) = *mem_map_shim.accessed_address.borrow() {
+            if self.watchpoint_set.contains(&addr) {
+                println!("Watchpoint hit");
+                return Err(CpuError::DebuggerWatchpoint(addr));
+            }
+        }
+
+        cpu_result
     }
 }
 
 impl<'a> MemMapped for MemMapShim<'a> {
     fn read(&self, index: u16) -> u8 {
+        let mut accessed_address = self.accessed_address.borrow_mut();
+        *accessed_address = Some(index);
+
         self.mem_map.read(index)
     }
 
     fn write(&mut self, index: u16, byte: u8) {
+        let mut accessed_address = self.accessed_address.borrow_mut();
+        *accessed_address = Some(index);
+
         self.mem_map.write(index, byte);
     }
 }
