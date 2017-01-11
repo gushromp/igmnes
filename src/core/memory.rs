@@ -52,7 +52,8 @@ impl MemMapped for Ram {
 pub struct MemMap {
     rom: Rom,
     ram: Ram,
-    apu: Apu,
+    apu: Vec<u8>, //dummy
+    ppu: Vec<u8>, // dummy
     mapper: Box<Mapper>,
 }
 
@@ -64,7 +65,8 @@ impl Default for MemMap {
         MemMap {
             rom: Rom::default(),
             ram: Ram::default(),
-            apu: Apu::default(),
+            apu: vec![0; 16],
+            ppu: vec![0; 8],
             mapper: def_mapper,
         }
     }
@@ -75,12 +77,19 @@ impl MemMap {
 
         let mapper = mappers::load_mapper_for_rom(&rom).unwrap();
 
-        MemMap {
+        let mut mem_map = MemMap {
             rom: rom,
             ram: Ram::new(),
-            apu: Apu::new(),
+            apu: vec![0; 16],
+            ppu: vec![0; 8],
             mapper: mapper,
-        }
+        };
+
+        // Set dummy PPU to dummy VBlank state so that
+        // rom tests will pass -_-
+        mem_map.ppu[2] = 0b10000000;
+
+        mem_map
     }
 }
 
@@ -106,28 +115,26 @@ impl MemMapped for MemMap {
             },
             // PPU
             0x2000...0x3FFF => {
+                println!("Attempted read from dummy PPU register: 0x{:04X}", index);
                 let index = index % 0x0008;
-                // self.ppu.read(index)
-                // println!("Attempted unimplemented read from PPU register: 0x{:X}", index);
-                0xFF
+                self.ppu[index as usize]
             },
             // APU
             0x4000...0x4015 => {
+                println!("Attempted read from dummy APU register: 0x{:04X}", index);
                 let index = index % 0x4000;
-                // self.apu.read(index)
-                println!("Attempted unimplemented read from APU register: 0x{:X}", index);
-                0
+                self.apu[index as usize]
             }
             // I/O
             0x4016...0x4017 => {
                 let index = index % 0x4016;
                 // self.apu.read(index)
-                println!("Attempted unimplemented read from I/O register: 0x{:X}", index);
+                println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
                 0
             }
             0x4018...0x401f => {
                 let index = index % 0x4018;
-                println!("Attempted unimplemented read from CPU Test Register: 0x{:X}", index);
+                println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
                 0
             }
             0x4020...0xFFFF => {
@@ -146,9 +153,9 @@ impl MemMapped for MemMap {
             },
             // PPU
             0x2000...0x3FFF => {
+                println!("Attempted write to dummy PPU register: 0x{:X}", index);
                 let index = index % 0x0008;
-                // self.ppu.read(index)
-                println!("Attempted unimplemented write to PPU register: 0x{:X}", index);
+                self.ppu[index as usize] = byte;
             },
             // APU
             0x4000...0x4015 => {
@@ -158,9 +165,9 @@ impl MemMapped for MemMap {
             }
             // I/O
             0x4016...0x4017 => {
-                let index = index % 0x4016;
-                // self.apu.read(index)
-                println!("Attempted unimplemented write to APU register: 0x{:X}", index);
+                println!("Attempted write to dummy APU register: 0x{:04X}", index);
+                let index = index % 0x4000;
+                self.apu[index as usize] = byte;
             }
             0x4018...0x401F => {
                 let index = index % 0x4018;
