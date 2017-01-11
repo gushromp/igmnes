@@ -9,6 +9,9 @@ use core::memory::{MemMap, MemMapped};
 use core::debugger::Debugger;
 use core::debugger::command::Command;
 use core::debugger::disassembler;
+use core::errors::CpuError;
+use std::thread;
+use std::sync::mpsc;
 
 struct MemMapShim<'a> {
     mem_map: &'a mut MemMapped
@@ -28,6 +31,8 @@ pub struct TerminalDebugger {
     breakpoint_set: HashSet<u16>,
     watchpoint_set: HashSet<u16>,
     label_map: HashMap<u16, String>,
+    is_listening: bool,
+    cur_breakpoint_addr: Option<u16>,
 }
 
 impl TerminalDebugger {
@@ -38,6 +43,8 @@ impl TerminalDebugger {
             breakpoint_set: HashSet::new(),
             watchpoint_set: HashSet::new(),
             label_map: HashMap::new(),
+            is_listening: false,
+            cur_breakpoint_addr: None,
         }
     }
 
@@ -251,7 +258,6 @@ impl TerminalDebugger {
     }
 
     fn repeat_command(&mut self, command: &Box<Command>, count: u16) {
-
         for _i in 0..count {
             self.execute_command(command);
         }
@@ -260,9 +266,12 @@ impl TerminalDebugger {
 
 impl Debugger for TerminalDebugger {
     fn start_listening(&mut self) {
-        let mut stdout = io::stdout();
+        use core::debugger::command::Command::*;
 
-        while true {
+        let mut stdout = io::stdout();
+        self.is_listening = true;
+
+        'debug: loop {
             let pc = self.cpu.reg_pc;
             print!("0x{:X} -> ", pc);
             stdout.flush().unwrap();
@@ -274,13 +283,27 @@ impl Debugger for TerminalDebugger {
             let command = Command::parse(&line);
 
             match command {
-                Ok(ref command) => self.execute_command(command),
+                Ok(ref command) => {
+                    match *command {
+                        Continue => {
+                            self.stop_listening();
+                            break 'debug;
+                        }
+                        ref command @ _ => self.execute_command(command),
+                    };
+
+                },
                 Err(err) => println!("{:#?}", err),
             }
         }
     }
+    fn stop_listening(&mut self) {
+        self.is_listening = false;
+    }
 
-    fn stop_listening(&mut self) {}
+    fn is_listening(&self) -> bool {
+        self.is_listening
+    }
 }
 
 impl CpuFacade for TerminalDebugger {
@@ -294,7 +317,20 @@ impl CpuFacade for TerminalDebugger {
         Some(self)
     }
 
-    fn step(&mut self) -> Result<u8, String> {
+    fn step(&mut self) -> Result<u8, CpuError> {
+        let reg_pc = self.cpu.reg_pc;
+
+        if self.breakpoint_set.contains(&reg_pc) {
+            if let Some(addr) = self.cur_breakpoint_addr {
+                self.cur_breakpoint_addr = None;
+            }
+            else {
+                println!("Breakpoint hit");
+                self.cur_breakpoint_addr = Some(reg_pc);
+                return Err(CpuError::DebuggerBreakpoint(self.cpu.reg_pc));
+            }
+        }
+
         let mut mem_map_shim = MemMapShim::new(&mut self.mem_map);
 
         self.cpu.step(&mut mem_map_shim)

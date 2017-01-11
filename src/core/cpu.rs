@@ -4,6 +4,7 @@ use core::CpuFacade;
 use core::memory::MemMapped;
 use core::instructions::*;
 use core::debugger::Debugger;
+use core::errors::CpuError;
 
 const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32; // 21.477272 MHz
 const CLOCK_DIVISOR_NTSC: i32 = 12;
@@ -187,14 +188,14 @@ impl Cpu {
 
     pub fn soft_reset(&mut self) {}
 
-    pub fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, String> {
+    pub fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, CpuError> {
         let instruction = Instruction::decode(mem_map, self.reg_pc)?;
 
         self.execute_instruction(instruction, mem_map)
     }
 
     fn execute_instruction(&mut self, mut instruction: Instruction,
-                           mem_map: &mut MemMapped) -> Result<u8, String> {
+                           mem_map: &mut MemMapped) -> Result<u8, CpuError> {
         use core::instructions::InstructionToken::*;
 
         let instruction = &mut instruction;

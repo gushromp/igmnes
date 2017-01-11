@@ -20,6 +20,7 @@ fn main() {
 
     let mut core = Core::load_rom(rom_path).unwrap();
     core.attach_debugger();
+    core.start();
 
     let debugger = core.debugger().unwrap();
     debugger.start_listening();

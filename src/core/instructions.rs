@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
 use core::memory::MemMapped;
+use core::errors::CpuError;
 
 #[derive(Debug)]
 pub enum AddressingMode {
@@ -162,7 +163,7 @@ impl Instruction {
 }
 
 impl Instruction {
-    pub fn decode(mem_map: &MemMapped, index: u16) -> Result<Instruction, String> {
+    pub fn decode(mem_map: &MemMapped, index: u16) -> Result<Instruction, CpuError> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 
@@ -372,7 +373,7 @@ impl Instruction {
         instr.op_code = op_code;
 
         if let Unknown = instr.token {
-            Err(format!("Unknown opcode: 0x{:x}", op_code))
+            Err(CpuError::InstructionDecoding(op_code))
         } else {
             Ok(instr)
         }
