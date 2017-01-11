@@ -597,9 +597,9 @@ impl Cpu {
         }
 
         if (byte >> 7) & 0b1 == 1 {
-            self.reg_status.set_zero();
+            self.reg_status.set_sign();
         } else {
-            self.reg_status.clear_zero();
+            self.reg_status.clear_sign();
         }
     }
     //
