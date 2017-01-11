@@ -65,7 +65,7 @@ impl Default for MemMap {
         MemMap {
             rom: Rom::default(),
             ram: Ram::default(),
-            apu: vec![0; 16],
+            apu: vec![0; 22],
             ppu: vec![0; 8],
             mapper: def_mapper,
         }
@@ -80,7 +80,7 @@ impl MemMap {
         let mut mem_map = MemMap {
             rom: rom,
             ram: Ram::new(),
-            apu: vec![0; 16],
+            apu: vec![0; 22],
             ppu: vec![0; 8],
             mapper: mapper,
         };
@@ -159,15 +159,14 @@ impl MemMapped for MemMap {
             },
             // APU
             0x4000...0x4015 => {
-                let index = index % 0x4000;
-                // self.apu.read(index)
-                println!("Attempted unimplemented write to APU register: 0x{:X}", index);
-            }
-            // I/O
-            0x4016...0x4017 => {
                 println!("Attempted write to dummy APU register: 0x{:04X}", index);
                 let index = index % 0x4000;
                 self.apu[index as usize] = byte;
+
+            }
+            // I/O
+            0x4016...0x4017 => {
+                println!("Attempted unimplemented write to I/O register: 0x{:X}", index);
             }
             0x4018...0x401F => {
                 let index = index % 0x4018;
