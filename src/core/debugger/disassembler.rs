@@ -2,7 +2,7 @@ use std::ops::Range;
 use core::instructions::Instruction;
 use core::memory::MemMapped;
 
-pub fn disassemble_range(addr: u16, range: &Range<i16>, mem_map: &MemMapped) -> Vec<String> {
+pub fn disassemble_range(addr: u16, range: &Range<u16>, mem_map: &MemMapped) -> Vec<String> {
     let mut result = Vec::new();
     let mut current_addr = addr;
 

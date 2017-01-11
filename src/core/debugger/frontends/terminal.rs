@@ -54,6 +54,7 @@ impl TerminalDebugger {
         match *command {
             ShowUsage => TerminalDebugger::show_usage(),
             PrintState => self.print_state(),
+            PrintMemory(ref range) => self.print_memory(range),
             PrintBreakpoints => self.print_breakpoints(),
             PrintWatchpoints => self.print_watchpoints(),
             PrintLabels => self.print_labels(),
@@ -71,7 +72,6 @@ impl TerminalDebugger {
             Disassemble(ref range) => self.disassemble(range),
             Continue => self.stop_listening(),
             RepeatCommand(ref command, count) => self.repeat_command(command, count),
-            ref c @ _ => println!("{:?}", c)
         };
     }
 
@@ -107,6 +107,36 @@ impl TerminalDebugger {
         println!("Cpu state:");
         println!("----------");
         println!("{:#?}", self.cpu);
+        println!();
+    }
+
+    fn print_memory(&self, range: &Range<u16>){
+        let (mut cursor, rows) = if range.start > 0 {
+            (range.start, range.end - range.start)
+        } else {
+            (range.end, 8)
+        };
+
+        let columns = 16;
+
+        println!();
+        println!("Memory state (starting at 0x{:04X}):", cursor);
+        println!();
+        println!("         00  01  02  03  04  05  06  07  08  09  0A  0B  0C  0D  0E  0F");
+        println!("       ----------------------------------------------------------------");
+        for i in 0..rows {
+            print!("0x{:04X} | ", cursor);
+            for j in 0..columns {
+                let byte = self.mem_map.read(cursor);
+                print!("{:02X}", byte);
+
+                cursor += 1;
+                if j < columns - 1 {
+                    print!("  ");
+                }
+            }
+            println!();
+        }
         println!();
     }
 
@@ -244,7 +274,7 @@ impl TerminalDebugger {
         self.disassemble(&range);
     }
 
-    fn disassemble(&self, range: &Range<i16>) {
+    fn disassemble(&self, range: &Range<u16>) {
         let addr = self.cpu.reg_pc;
         let disassembly = disassembler::disassemble_range(addr, range, &self.mem_map);
 

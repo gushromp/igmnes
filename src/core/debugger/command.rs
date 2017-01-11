@@ -7,7 +7,7 @@ use nom::IResult::*;
 pub enum Command {
     ShowUsage,
     PrintState,
-    PrintMemory,
+    PrintMemory(Range<u16>),
     PrintBreakpoints,
     PrintWatchpoints,
     PrintLabels,
@@ -20,7 +20,7 @@ pub enum Command {
     ClearBreakpoints,
     ClearWatchpoints,
     ClearLabels,
-    Disassemble(Range<i16>),
+    Disassemble(Range<u16>),
     Goto(u16),
     Step,
     Continue,
@@ -110,12 +110,22 @@ named!(
 
 named!(
     parse_print_memory<Command>,
-    map!(
+    do_parse! (
         alt_complete! (
             tag_no_case!("printmemory") |
-            tag_no_case!("pm")
-        )
-        , |_| Command::PrintMemory
+            tag_no_case!("pm"))                 >>
+        count: opt_default!(
+            preceded!(space,
+                alt_complete!(
+                    parse_range_u16 |
+                    do_parse!(
+                        end: parse_literal_u16  >>
+                        ( 0..end )
+                    )
+                )
+            )
+            , 0..5)                             >>
+        ( Command::PrintMemory(count) )
     )
 );
 
@@ -261,9 +271,9 @@ named!(
         count: opt_default!(
             preceded!(space,
                 alt_complete!(
-                    parse_range_i16 |
+                    parse_range_u16 |
                     do_parse!(
-                        end: parse_literal_i16 >>
+                        end: parse_literal_u16 >>
                         ( 0..end )
                     )
                 )
@@ -324,11 +334,11 @@ named!(
 //
 
 named!(
-    parse_range_i16<Range<i16>>,
+    parse_range_u16<Range<u16>>,
     do_parse!(
-        start: parse_literal_i16    >>
+        start: parse_literal_u16    >>
         tag!("..")                  >>
-        end: parse_literal_i16      >>
+        end: parse_literal_u16      >>
         ( start..end )
     )
 );

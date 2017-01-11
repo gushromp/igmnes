@@ -108,8 +108,8 @@ impl MemMapped for MemMap {
             0x2000...0x3FFF => {
                 let index = index % 0x0008;
                 // self.ppu.read(index)
-                println!("Attempted unimplemented read from PPU register: 0x{:X}", index);
-                0
+                // println!("Attempted unimplemented read from PPU register: 0x{:X}", index);
+                0xFF
             },
             // APU
             0x4000...0x4015 => {
@@ -122,7 +122,7 @@ impl MemMapped for MemMap {
             0x4016...0x4017 => {
                 let index = index % 0x4016;
                 // self.apu.read(index)
-                println!("Attempted unimplemented read from APU register: 0x{:X}", index);
+                println!("Attempted unimplemented read from I/O register: 0x{:X}", index);
                 0
             }
             0x4018...0x401f => {

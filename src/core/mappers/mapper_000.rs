@@ -14,7 +14,7 @@ impl NRom {
         let chr_rom_bytes = rom.chr_rom_bytes.clone();
 
         let prg_ram_size = rom.header.prg_ram_size;
-        let prg_ram_bytes = Vec::with_capacity(prg_ram_size as usize);
+        let prg_ram_bytes: Vec<u8> = vec![0; prg_ram_size as usize];
 
         NRom {
             prg_rom_bytes: prg_rom_bytes,
@@ -59,7 +59,7 @@ impl Mapper for NRom {
 
     fn write_prg_ram(&mut self, index: u16, byte: u8) {
         let index: usize = self.get_prg_ram_index(index);
-        self.prg_rom_bytes[index] = byte;
+        self.prg_ram_bytes[index] = byte;
     }
 
     fn read_chr_rom(&self, index: u16) -> u8 {
@@ -67,11 +67,12 @@ impl Mapper for NRom {
     }
 
     fn read_chr_ram(&self, index: u16) -> u8 {
-        panic!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index);
+        println!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index);
+        0
     }
 
     fn write_chr_ram(&mut self, index: u16, byte: u8) {
-        panic!("Attempted write to non-existent CHR RAM index (untranslated): 0x{:X}", index);
+        println!("Attempted write to non-existent CHR RAM index (untranslated): 0x{:X}", index);
     }
 }
 
@@ -82,14 +83,17 @@ impl MemMapped for NRom {
             0...0x1FFF => self.read_chr_rom(index),
             0x6000...0x7FFF => self.read_prg_ram(index),
             0x8000...0xFFFF => self.read_prg_rom(index),
-            _ => panic!("Attempted read from unmapped address: 0x{:X}", index)
+            _ => {
+                println!("Attempted read from unmapped address: 0x{:X}", index);
+                0
+            }
         }
     }
 
     fn write(&mut self, index: u16, byte: u8) {
         match index {
             0x6000...0x7FFF => self.write_prg_ram(index, byte),
-            _ => panic!("Attempted write to non-RAM address: 0x{:X}", index)
+            _ => println!("Attempted write to non-RAM address: 0x{:X}", index)
         }
     }
 }
