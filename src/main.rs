@@ -7,7 +7,6 @@ mod core;
 use core::Core;
 use std::path::Path;
 
-
 fn main() {
 
     let args: Vec<String> = std::env::args().collect();
@@ -19,9 +18,6 @@ fn main() {
     let rom_path = Path::new(&args[1]);
 
     let mut core = Core::load_rom(rom_path).unwrap();
-    core.attach_debugger();
     core.start();
 
-    let debugger = core.debugger().unwrap();
-    debugger.start_listening();
 }

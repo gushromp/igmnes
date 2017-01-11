@@ -256,6 +256,13 @@ impl Cpu {
             CPX => self.instr_cpx(instruction, mem_map),
             CPY => self.instr_cpy(instruction, mem_map),
             BIT => self.instr_bit(instruction, mem_map),
+            // Read/Modify/Write instructions
+            ASL => self.instr_asl(instruction, mem_map),
+            ROL => self.instr_rol(instruction, mem_map),
+            LSR => self.instr_lsr(instruction, mem_map),
+            ROR => self.instr_ror(instruction, mem_map),
+            DEC => self.instr_dec(instruction, mem_map),
+            INC => self.instr_inc(instruction, mem_map),
             _ => println!("Skipping unimplemented instruction: {}", instruction.token),
         };
 
@@ -401,16 +408,19 @@ impl Cpu {
         self.reg_status.check(self.reg_y);
     }
 
-    fn instr_sta(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
-        self.write_resolved_addr(instruction, mem_map, self.reg_a);
+    fn instr_sta(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let reg_a = self.reg_a;
+        self.write_resolved_addr(instruction, mem_map, reg_a);
     }
 
-    fn instr_stx(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
-        self.write_resolved_addr(instruction, mem_map, self.reg_x);
+    fn instr_stx(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let reg_x = self.reg_x;
+        self.write_resolved_addr(instruction, mem_map, reg_x);
     }
 
-    fn instr_sty(&self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
-        self.write_resolved_addr(instruction, mem_map, self.reg_y);
+    fn instr_sty(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let reg_y = self.reg_y;
+        self.write_resolved_addr(instruction, mem_map, reg_y);
     }
     //
     // Register instructions
@@ -585,11 +595,102 @@ impl Cpu {
             self.reg_status.clear_zero();
         }
     }
+    //
+    // ALU instructions
+    //
+    fn instr_asl(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let mut byte = self.read_resolved_addr(instruction, mem_map);
 
+        let carry = (byte >> 7) == 1;
+        if carry {
+            self.reg_status.set_carry();
+        } else {
+            self.reg_status.clear_carry();
+        }
+
+        byte = byte << 1;
+        self.reg_status.check(byte);
+
+        self.write_resolved_addr(instruction, mem_map, byte);
+    }
+
+    fn instr_rol(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let mut byte = self.read_resolved_addr(instruction, mem_map);
+
+        let old_carry = self.reg_status.carry_flag as i8;
+        let new_carry = (byte >> 7) == 1;
+
+        if new_carry {
+            self.reg_status.set_carry();
+        } else {
+            self.reg_status.clear_carry();
+        }
+
+        byte = byte << 1;
+        byte ^= ((-old_carry as u8) ^ byte) & 1;
+        self.reg_status.check(byte);
+
+        self.write_resolved_addr(instruction, mem_map, byte);
+    }
+
+    fn instr_lsr(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let mut byte = self.read_resolved_addr(instruction, mem_map);
+
+        let carry = (byte & 1) == 1;
+        if carry {
+            self.reg_status.set_carry();
+        } else {
+            self.reg_status.clear_carry();
+        }
+
+        byte = byte >> 1;
+        self.reg_status.check(byte);
+
+        self.write_resolved_addr(instruction, mem_map, byte);
+    }
+
+    fn instr_ror(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let mut byte = self.read_resolved_addr(instruction, mem_map);
+
+        let old_carry = self.reg_status.carry_flag as i8;
+        let new_carry = (byte & 1) == 1;
+
+        if new_carry {
+            self.reg_status.set_carry();
+        } else {
+            self.reg_status.clear_carry();
+        }
+
+        byte = byte >> 1;
+        byte ^= ((-old_carry as u8) ^ byte) & (1 << 7);
+        self.reg_status.check(byte);
+
+        self.write_resolved_addr(instruction, mem_map, byte);
+    }
+
+    fn instr_dec(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let mut byte = self.read_resolved_addr(instruction, mem_map);
+
+        byte = byte.wrapping_sub(1);
+        self.reg_status.check(byte);
+
+        self.write_resolved_addr(instruction, mem_map, byte);
+    }
+
+    fn instr_inc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
+        let mut byte = self.read_resolved_addr(instruction, mem_map);
+
+        byte = byte.wrapping_add(1);
+        self.reg_status.check(byte);
+
+        self.write_resolved_addr(instruction, mem_map, byte);
+    }
+
+    //////////////
     //
     // Helpers
     //
-
+    //////////////
     fn read_resolved_addr(&self, instruction: &mut Instruction, mem_map: &MemMapped) -> u8 {
         use core::instructions::AddressingMode::*;
 
@@ -631,7 +732,7 @@ impl Cpu {
         }
     }
 
-    fn write_resolved_addr(&self, instruction: &mut Instruction, mem_map: &mut MemMapped, byte: u8) {
+    fn write_resolved_addr(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped, byte: u8) {
         use core::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
@@ -662,7 +763,7 @@ impl Cpu {
 
             ZeroPage(arg) => mem_map.write(arg as u16, byte),
             Absolute(arg) => mem_map.write(arg, byte),
-
+            Accumulator => self.reg_a = byte,
             // Above covers all addresing modes for writing memory
             _ => unreachable!()
         };

@@ -142,7 +142,6 @@ impl Core {
                     Ok(cycles) => cycle_count += cycles as u64,
                     Err(error) => match error {
                         CpuError::DebuggerBreakpoint(addr) => {
-
                             if self.is_debugger_attached {
                                 self.debugger().unwrap().start_listening();
                             }
