@@ -688,8 +688,8 @@ impl Cpu {
         let addressing_mode = &instruction.addressing_mode;
 
         match *addressing_mode {
-            ZeroPageIndexedX(arg) => mem_map.read((arg + self.reg_x) as u16 % 0x100),
-            ZeroPageIndexedY(arg) => mem_map.read((arg + self.reg_y) as u16 % 0x100),
+            ZeroPageIndexedX(arg) => mem_map.read(arg.wrapping_add(self.reg_x) as u16 % 0x100),
+            ZeroPageIndexedY(arg) => mem_map.read(arg.wrapping_add(self.reg_x) as u16 % 0x100),
             AbsoluteIndexedX(arg) => {
                 if (arg & 0xFF) + self.reg_x as u16 > 0xFF {
                     instruction.cycle_count += 1;
@@ -705,14 +705,31 @@ impl Cpu {
                 mem_map.read(arg + self.reg_y as u16)
             },
             IndexedIndirectX(arg) => {
-                let addr = arg.wrapping_add(self.reg_x) as u16;
-                let addr_resolved = mem_map.read_word(addr);
+                let arg_plus_x = arg.wrapping_add(self.reg_x);
 
-                mem_map.read(addr_resolved)
+                // This addressing mode wraps around the zero-page
+                // For example:
+                // X: 0; $00 = 05; $FF = 03;
+                // LDA ($FF, X) [-> LDA ($FF)]
+                // since the high byte would be at addr $100
+                // it wraps around and instead takes the high byte
+                // of the destination address from $00
+                // resulting in the address $0503
+
+                let addr_low = mem_map.read(arg_plus_x as u16);
+                let addr_high = mem_map.read(arg_plus_x.wrapping_add(1) as u16);
+
+                let addr = ((addr_high as u16) << 8) | addr_low as u16;
+
+                if addr_high == 0 {
+                    println!("Read Wrap! {:04X}", addr);
+                }
+
+                mem_map.read(addr)
             },
             IndirectIndexedY(arg) => {
                 let arg_resolved = mem_map.read_word(arg as u16);
-                println!("arg: 0x{:02X}; arg_resolved: 0x{:04X}; Y: {:02X}", arg, arg_resolved, self.reg_y);
+                //println!("arg: 0x{:02X}; arg_resolved: 0x{:04X}; Y: {:02X}", arg, arg_resolved, self.reg_y);
                 let addr = arg_resolved.wrapping_add(self.reg_y as u16);
 
                 if (arg_resolved % 0xFF) + self.reg_y as u16 > 0xFF {
@@ -751,14 +768,22 @@ impl Cpu {
                 mem_map.write(arg + self.reg_y as u16, byte);
             },
             IndexedIndirectX(arg) => {
-                let addr = arg.wrapping_add(self.reg_x) as u16;
-                let addr_resolved = mem_map.read_word(addr);
+                let arg_plus_x = arg.wrapping_add(self.reg_x);
 
-                mem_map.write(addr_resolved, byte)
+                let addr_low = mem_map.read(arg_plus_x as u16);
+                let addr_high = mem_map.read(arg_plus_x.wrapping_add(1) as u16);
+
+                // See comment in the read_resolved function above
+                let addr = ((addr_high as u16) << 8) | addr_low as u16;
+                if addr_high == 0 {
+                    println!("Write Wrap! {:04X}", addr);
+                }
+
+                mem_map.write(addr, byte);
             },
             IndirectIndexedY(arg) => {
                 let arg_resolved = mem_map.read_word(arg as u16);
-                println!("arg: 0x{:02X}; arg_resolved: 0x{:04X}; Y: {:02X}", arg, arg_resolved, self.reg_y);
+                //println!("arg: 0x{:02X}; arg_resolved: 0x{:04X}; Y: {:02X}", arg, arg_resolved, self.reg_y);
                 let addr = arg_resolved.wrapping_add(self.reg_y as u16);
 
                 instruction.cycle_count += 1;
