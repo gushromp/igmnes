@@ -271,7 +271,28 @@ impl Cpu {
                 self.reg_pc = arg;
             }
             Indirect(arg) => {
-                self.reg_pc = mem_map.read_word(arg);
+                // Indirect addressing wraps around a single 0x100-byte page
+                // so for example JMP ($01FF) reads the low byte from $01FF
+                // and the high byte from $0100
+
+                // We could move this behavior to the read_word trait
+                // but we keep it localized to indirect addressing
+                // for performance reasons (because this effect can only
+                // happen with indirect addressing)
+
+                let addr_high = arg >> 8;
+                let addr_low_1  = (arg & 0xFF) as u8;
+                let addr_low_2 = addr_low_1.wrapping_add(1);
+
+                let resolved_low = (addr_high << 8) | addr_low_1 as u16;
+                let resolved_high = (addr_high << 8) | addr_low_2 as u16;
+
+                let target_addr_low = mem_map.read(resolved_low);
+                let target_addr_high = mem_map.read(resolved_high);
+
+                let target_addr = ((target_addr_high as u16) << 8) | target_addr_low as u16;
+
+                self.reg_pc = target_addr;
             }
             _ => unreachable!()
         }
@@ -688,21 +709,21 @@ impl Cpu {
         let addressing_mode = &instruction.addressing_mode;
 
         match *addressing_mode {
-            ZeroPageIndexedX(arg) => mem_map.read(arg.wrapping_add(self.reg_x) as u16 % 0x100),
-            ZeroPageIndexedY(arg) => mem_map.read(arg.wrapping_add(self.reg_x) as u16 % 0x100),
+            ZeroPageIndexedX(arg) => mem_map.read(arg.wrapping_add(self.reg_x) as u16),
+            ZeroPageIndexedY(arg) => mem_map.read(arg.wrapping_add(self.reg_x) as u16),
             AbsoluteIndexedX(arg) => {
                 if (arg & 0xFF) + self.reg_x as u16 > 0xFF {
                     instruction.cycle_count += 1;
                 }
 
-                mem_map.read(arg + self.reg_x as u16)
+                mem_map.read(arg.wrapping_add(self.reg_x as u16))
             },
             AbsoluteIndexedY(arg) => {
                 if (arg & 0xFF) + self.reg_y as u16 > 0xFF {
                     instruction.cycle_count += 1;
                 }
 
-                mem_map.read(arg + self.reg_y as u16)
+                mem_map.read(arg.wrapping_add(self.reg_y as u16))
             },
             IndexedIndirectX(arg) => {
                 let arg_plus_x = arg.wrapping_add(self.reg_x);
@@ -755,17 +776,17 @@ impl Cpu {
 
         let addressing_mode = &instruction.addressing_mode;
         match *addressing_mode {
-            ZeroPageIndexedX(arg) => mem_map.write(((arg + self.reg_x) as u16 % 0x100), byte),
-            ZeroPageIndexedY(arg) => mem_map.write(((arg + self.reg_y) as u16 % 0x200), byte),
+            ZeroPageIndexedX(arg) => mem_map.write((arg.wrapping_add(self.reg_x) as u16), byte),
+            ZeroPageIndexedY(arg) => mem_map.write((arg.wrapping_add(self.reg_y) as u16), byte),
             AbsoluteIndexedX(arg) => {
                 instruction.cycle_count += 1;
 
-                mem_map.write(arg + self.reg_x as u16, byte);
+                mem_map.write(arg.wrapping_add(self.reg_x as u16), byte);
             },
             AbsoluteIndexedY(arg) => {
                 instruction.cycle_count += 1;
 
-                mem_map.write(arg + self.reg_y as u16, byte);
+                mem_map.write(arg.wrapping_add(self.reg_y as u16), byte);
             },
             IndexedIndirectX(arg) => {
                 let arg_plus_x = arg.wrapping_add(self.reg_x);

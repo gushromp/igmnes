@@ -39,19 +39,19 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
     let (args, detail) = match *addressing_mode {
         ZeroPageIndexedX(arg) => {
             (format!("${:02X}, X", arg),
-             format!("[${:04X}: ${:02X}]", arg + cpu.reg_x, resolved))
+             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_x), resolved))
         },
         ZeroPageIndexedY(arg) => {
             (format!("${:02X}, Y", arg),
-             format!("[${:04X}: ${:02X}]", arg + cpu.reg_y, resolved))
+             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_y), resolved))
         },
         AbsoluteIndexedX(arg) => {
             (format!("${:04X}, X", arg),
-             format!("[${:04X}: ${:02X}]", arg + cpu.reg_x as u16, resolved))
+             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_x as u16), resolved))
         },
         AbsoluteIndexedY(arg) => {
             (format!("${:04X}, Y", arg),
-             format!("[${:04X}: ${:02X}]", arg + cpu.reg_y as u16, resolved))
+             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_y as u16), resolved))
         },
         IndexedIndirectX(arg) => {
             let arg = arg.wrapping_add(cpu.reg_x);
@@ -78,8 +78,20 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
              format!("[PC -> ${:04X}]", (cpu.reg_pc as i32 + arg as i32) + 2))
         }
         Indirect(arg) => {
+            let addr_high = arg >> 8;
+            let addr_low_1  = (arg & 0xFF) as u8;
+            let addr_low_2 = addr_low_1.wrapping_add(1);
+
+            let resolved_low = (addr_high << 8) | addr_low_1 as u16;
+            let resolved_high = (addr_high << 8) | addr_low_2 as u16;
+
+            let target_addr_low = mem_map.read(resolved_low);
+            let target_addr_high = mem_map.read(resolved_high);
+
+            let target_addr = ((target_addr_high as u16) << 8) | target_addr_low as u16;
+
             (format!("(${:04X})", arg),
-             format!("[${:04X}]", mem_map.read_word(arg)))
+             format!("[${:04X}]", target_addr))
         },
 
         Invalid => (format!(""), format!(""))
