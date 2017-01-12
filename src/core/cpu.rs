@@ -38,8 +38,8 @@ impl<'a> Into<u8> for &'a StatusReg {
 
         byte = byte | self.sign_flag as u8;
         byte = (byte << 1) | self.overflow_flag as u8;
-        byte = (byte << 1) | self.logical_1 as u8;
-        byte = (byte << 1) | self.break_executed as u8;
+        byte = (byte << 1) | 1;
+        byte = (byte << 1) | 1;
         byte = (byte << 1) | self.decimal_mode as u8;
         byte = (byte << 1) | self.interrupt_disable as u8;
         byte = (byte << 1) | self.zero_flag as u8;
@@ -56,7 +56,7 @@ impl From<u8> for StatusReg {
             zero_flag: (byte >> 1) & 0b00000001 == 1,
             interrupt_disable: (byte >> 2) & 0b00000001 == 1,
             decimal_mode: (byte >> 3) & 0b00000001 == 1,
-            break_executed: false,
+            break_executed: true,
             logical_1: true,
             overflow_flag: (byte >> 6) & 0b00000001 == 1,
             sign_flag: (byte >> 7) & 0b00000001 == 1,
@@ -174,9 +174,17 @@ impl Cpu {
     pub fn soft_reset(&mut self) {}
 
     pub fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, CpuError> {
-        let instruction = Instruction::decode(mem_map, self.reg_pc)?;
+        let instruction = Instruction::decode(mem_map, self.reg_pc);
 
-        self.execute_instruction(instruction, mem_map)
+        match instruction {
+            Ok(instr) => self.execute_instruction(instr, mem_map),
+            Err(e) => {
+                self.reg_pc += 2;
+                Err(e)
+            }
+        }
+
+
     }
 
     fn execute_instruction(&mut self, mut instruction: Instruction,
