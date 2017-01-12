@@ -65,7 +65,7 @@ impl From<u8> for StatusReg {
 }
 
 impl StatusReg {
-    pub fn check(&mut self, byte: u8) {
+    pub fn toggle_zero_sign(&mut self, byte: u8) {
         let sign = byte >> 7 == 1;
         self.toggle_sign(sign);
 
@@ -191,6 +191,7 @@ impl Cpu {
             JMP => self.instr_jmp(&instruction.addressing_mode, mem_map),
             JSR => self.instr_jsr(&instruction.addressing_mode, mem_map),
             // Return instructions
+            RTI => self.instr_rti(mem_map),
             RTS => self.instr_rts(mem_map),
             // Branch instructions
             BPL => self.instr_bpl(instruction),
@@ -281,7 +282,11 @@ impl Cpu {
         match *addressing_mode {
             Absolute(arg) => {
                 let reg_pc = self.reg_pc;
-                self.stack_push_addr(mem_map, reg_pc + addressing_mode.byte_count() as u16);
+
+                // note the -1
+                let return_destination = (reg_pc + addressing_mode.byte_count() - 1) as u16;
+
+                self.stack_push_addr(mem_map, return_destination);
                 self.reg_pc = arg;
             },
             _ => unreachable!()
@@ -290,9 +295,18 @@ impl Cpu {
     //
     // Return instructions
     //
-    fn instr_rts(&mut self, mem_map: &mut MemMapped) {
-        let addr = self.stack_pull_addr(mem_map);
+    fn instr_rti(&mut self, mem_map: &mut MemMapped) {
+        let status_byte = self.stack_pull(mem_map);
+        let new_pc = self.stack_pull_addr(mem_map);
 
+        self.reg_status = StatusReg::from(status_byte);
+        self.reg_pc = new_pc;
+    }
+
+    fn instr_rts(&mut self, mem_map: &mut MemMapped) {
+        let mut addr = self.stack_pull_addr(mem_map);
+
+        addr += 1;
         self.reg_pc = addr;
     }
     //
@@ -350,12 +364,11 @@ impl Cpu {
     //
     fn instr_txs(&mut self) {
         self.reg_sp = self.reg_x;
-        self.reg_status.check(self.reg_sp);
     }
 
     fn instr_tsx(&mut self) {
         self.reg_x = self.reg_sp;
-        self.reg_status.check(self.reg_x);
+        self.reg_status.toggle_zero_sign(self.reg_x);
     }
 
     fn instr_pha(&mut self, mem_map: &mut MemMapped) {
@@ -365,7 +378,7 @@ impl Cpu {
 
     fn instr_pla(&mut self, mem_map: &mut MemMapped) {
         self.reg_a = self.stack_pull(mem_map);
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_php(&mut self, mem_map: &mut MemMapped) {
@@ -383,17 +396,17 @@ impl Cpu {
     //
     fn instr_lda(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
         self.reg_a = self.read_resolved(instruction, mem_map);
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_ldx(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
         self.reg_x = self.read_resolved(instruction, mem_map);
-        self.reg_status.check(self.reg_x);
+        self.reg_status.toggle_zero_sign(self.reg_x);
     }
 
     fn instr_ldy(&mut self, instruction: &mut Instruction, mem_map: &MemMapped) {
         self.reg_y = self.read_resolved(instruction, mem_map);
-        self.reg_status.check(self.reg_y);
+        self.reg_status.toggle_zero_sign(self.reg_y);
     }
 
     fn instr_sta(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
@@ -415,42 +428,42 @@ impl Cpu {
     //
     fn instr_tax(&mut self) {
         self.reg_x = self.reg_a;
-        self.reg_status.check(self.reg_x);
+        self.reg_status.toggle_zero_sign(self.reg_x);
     }
 
     fn instr_txa(&mut self) {
         self.reg_a = self.reg_x;
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_dex(&mut self) {
         self.reg_x = self.reg_x.wrapping_sub(1);
-        self.reg_status.check(self.reg_x);
+        self.reg_status.toggle_zero_sign(self.reg_x);
     }
 
     fn instr_inx(&mut self) {
         self.reg_x = self.reg_x.wrapping_add(1);
-        self.reg_status.check(self.reg_x);
+        self.reg_status.toggle_zero_sign(self.reg_x);
     }
 
     fn instr_tay(&mut self) {
         self.reg_y = self.reg_a;
-        self.reg_status.check(self.reg_y);
+        self.reg_status.toggle_zero_sign(self.reg_y);
     }
 
     fn instr_tya(&mut self) {
         self.reg_a = self.reg_y;
-        self.reg_status.check(self.reg_y);
+        self.reg_status.toggle_zero_sign(self.reg_y);
     }
 
     fn instr_dey(&mut self) {
         self.reg_y = self.reg_y.wrapping_sub(1);
-        self.reg_status.check(self.reg_y);
+        self.reg_status.toggle_zero_sign(self.reg_y);
     }
 
     fn instr_iny(&mut self) {
         self.reg_y = self.reg_y.wrapping_add(1);
-        self.reg_status.check(self.reg_y);
+        self.reg_status.toggle_zero_sign(self.reg_y);
     }
     //
     // ALU instructions
@@ -459,21 +472,21 @@ impl Cpu {
         let byte = self.read_resolved(instruction, mem_map);
 
         self.reg_a |= byte;
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_and(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let byte = self.read_resolved(instruction, mem_map);
 
         self.reg_a &= byte;
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_eor(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let byte = self.read_resolved(instruction, mem_map);
 
         self.reg_a ^= byte;
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_adc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
@@ -485,14 +498,14 @@ impl Cpu {
 
         self.reg_status.toggle_carry(carry);
 
-        // two's complement overflow check
-        let overflow = (self.reg_a > 127u8 && addend > 127u8 && result <= 127u8)
-            || (self.reg_a <= 127u8 && addend <= 127u8 && result > 127u8);
+        // two's complement overflow toggle_zero_sign
+        let overflow = (self.reg_a > 127u8 && byte > 127u8 && result <= 127u8)
+            || (self.reg_a <= 127u8 && byte <= 127u8 && result > 127u8);
 
         self.reg_status.toggle_overflow(overflow);
 
         self.reg_a = result;
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_sbc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
@@ -507,14 +520,14 @@ impl Cpu {
         let reverse_carry = !(carry);
         self.reg_status.toggle_carry(reverse_carry);
 
-        // two's complement overflow check
-        let overflow = (self.reg_a > 127u8 && addend <= 127u8 && result >= 127u8)
-            || (self.reg_a <= 127u8 && addend > 127u8 && result <= 127u8);
+        // two's complement overflow toggle_zero_sign
+        let overflow = (self.reg_a > 127u8 && byte <= 127u8 && result <= 127u8)
+            || (self.reg_a <= 127u8 && byte > 127u8 && result <= 127u8);
 
         self.reg_status.toggle_overflow(overflow);
 
         self.reg_a = result;
-        self.reg_status.check(self.reg_a);
+        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_cmp(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
@@ -599,7 +612,7 @@ impl Cpu {
         self.reg_status.toggle_carry(carry);
 
         byte = byte << 1;
-        self.reg_status.check(byte);
+        self.reg_status.toggle_zero_sign(byte);
 
         self.write_resolved(instruction, mem_map, byte);
     }
@@ -614,7 +627,7 @@ impl Cpu {
 
         byte = byte << 1;
         byte ^= ((-old_carry as u8) ^ byte) & 1;
-        self.reg_status.check(byte);
+        self.reg_status.toggle_zero_sign(byte);
 
         self.write_resolved(instruction, mem_map, byte);
     }
@@ -626,7 +639,7 @@ impl Cpu {
         self.reg_status.toggle_carry(carry);
 
         byte = byte >> 1;
-        self.reg_status.check(byte);
+        self.reg_status.toggle_zero_sign(byte);
 
         self.write_resolved(instruction, mem_map, byte);
     }
@@ -641,7 +654,7 @@ impl Cpu {
 
         byte = byte >> 1;
         byte ^= ((-old_carry as u8) ^ byte) & (1 << 7);
-        self.reg_status.check(byte);
+        self.reg_status.toggle_zero_sign(byte);
 
         self.write_resolved(instruction, mem_map, byte);
     }
@@ -650,7 +663,7 @@ impl Cpu {
         let mut byte = self.read_resolved(instruction, mem_map);
 
         byte = byte.wrapping_sub(1);
-        self.reg_status.check(byte);
+        self.reg_status.toggle_zero_sign(byte);
 
         self.write_resolved(instruction, mem_map, byte);
     }
@@ -659,7 +672,7 @@ impl Cpu {
         let mut byte = self.read_resolved(instruction, mem_map);
 
         byte = byte.wrapping_add(1);
-        self.reg_status.check(byte);
+        self.reg_status.toggle_zero_sign(byte);
 
         self.write_resolved(instruction, mem_map, byte);
     }
@@ -673,6 +686,7 @@ impl Cpu {
         use core::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
+
         match *addressing_mode {
             ZeroPageIndexedX(arg) => mem_map.read((arg + self.reg_x) as u16 % 0x100),
             ZeroPageIndexedY(arg) => mem_map.read((arg + self.reg_y) as u16 % 0x100),
@@ -690,12 +704,21 @@ impl Cpu {
 
                 mem_map.read(arg + self.reg_y as u16)
             },
-            IndexedIndirectX(arg) => mem_map.read(mem_map.read_word((arg + self.reg_x) as u16 % 0x100)),
+            IndexedIndirectX(arg) => {
+                let addr = arg.wrapping_add(self.reg_x) as u16;
+                let addr_resolved = mem_map.read_word(addr);
+
+                mem_map.read(addr_resolved)
+            },
             IndirectIndexedY(arg) => {
-                let addr = mem_map.read_word(arg as u16) + self.reg_y as u16;
-                if (addr & 0xFF) + self.reg_y as u16 > 0xFF {
+                let arg_resolved = mem_map.read_word(arg as u16);
+                println!("arg: 0x{:02X}; arg_resolved: 0x{:04X}; Y: {:02X}", arg, arg_resolved, self.reg_y);
+                let addr = arg_resolved.wrapping_add(self.reg_y as u16);
+
+                if (arg_resolved % 0xFF) + self.reg_y as u16 > 0xFF {
                     instruction.cycle_count += 1;
                 }
+
                 mem_map.read(addr)
             }
 
@@ -728,11 +751,15 @@ impl Cpu {
                 mem_map.write(arg + self.reg_y as u16, byte);
             },
             IndexedIndirectX(arg) => {
-                let addr = mem_map.read_word((arg + self.reg_x) as u16 % 0x100);
-                mem_map.write(addr, byte)
+                let addr = arg.wrapping_add(self.reg_x) as u16;
+                let addr_resolved = mem_map.read_word(addr);
+
+                mem_map.write(addr_resolved, byte)
             },
             IndirectIndexedY(arg) => {
-                let addr = mem_map.read_word(arg as u16) + self.reg_y as u16;
+                let arg_resolved = mem_map.read_word(arg as u16);
+                println!("arg: 0x{:02X}; arg_resolved: 0x{:04X}; Y: {:02X}", arg, arg_resolved, self.reg_y);
+                let addr = arg_resolved.wrapping_add(self.reg_y as u16);
 
                 instruction.cycle_count += 1;
 
@@ -752,7 +779,7 @@ impl Cpu {
             println!("Stack overflow detected! Wrapping...");
         }
 
-        let addr = 0x100 + self.reg_sp as u16;
+        let addr = 0x100 + (self.reg_sp as u16);
         mem_map.write(addr, byte);
 
         self.reg_sp = self.reg_sp.wrapping_sub(1);
@@ -766,20 +793,22 @@ impl Cpu {
         self.reg_sp = self.reg_sp.wrapping_add(1);
 
         let addr = 0x100 + self.reg_sp as u16;
-        mem_map.read(addr)
+        let byte = mem_map.read(addr);
+
+        byte
     }
 
     fn stack_push_addr(&mut self, mem_map: &mut MemMapped, addr: u16) {
         let addr_high = ((addr & 0xFF00) >> 8) as u8;
         let addr_low = (addr & 0xFF) as u8;
 
-        self.stack_push(mem_map, addr_low);
         self.stack_push(mem_map, addr_high);
+        self.stack_push(mem_map, addr_low);
     }
 
     fn stack_pull_addr(&mut self, mem_map: &mut MemMapped) -> u16 {
-        let addr_high = self.stack_pull(mem_map);
         let addr_low = self.stack_pull(mem_map);
+        let addr_high = self.stack_pull(mem_map);
 
         let addr = ((addr_high as u16) << 8) | addr_low as u16;
 

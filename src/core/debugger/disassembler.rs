@@ -55,11 +55,11 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
         },
         IndexedIndirectX(arg) => {
             (format!("(${:02X}, X)", arg),
-             format!("[${:04X}: ${:02X}]", mem_map.read_word(arg as u16 + cpu.reg_x as u16), resolved))
+             format!("[${:04X}: ${:02X}]", mem_map.read_word((arg as u16).wrapping_add(cpu.reg_x as u16)), resolved))
         },
         IndirectIndexedY(arg) => {
             (format!("(${:02X}), Y", arg),
-             format!("[${:04X}: ${:02X}]", mem_map.read_word(arg as u16) + cpu.reg_y as u16, resolved))
+             format!("[${:04X}: ${:02X}]", mem_map.read_word(arg as u16).wrapping_add(cpu.reg_y as u16), resolved))
         },
 
         Implicit => (format!(""), format!("")),

@@ -143,6 +143,7 @@ impl fmt::Display for InstructionToken {
 #[derive(Debug)]
 pub struct Instruction {
     pub op_code: u8,
+    pub address: u16,
     pub token: InstructionToken,
     pub addressing_mode: AddressingMode,
     pub cycle_count: u8,
@@ -154,6 +155,7 @@ impl Instruction {
                cycle_count: u8, should_advance_pc: bool) -> Instruction {
         Instruction {
             op_code: 0,
+            address: 0,
             token: token,
             addressing_mode: addressing_mode,
             cycle_count: cycle_count,
@@ -371,6 +373,7 @@ impl Instruction {
         };
 
         instr.op_code = op_code;
+        instr.address = addr;
 
         if let Unknown = instr.token {
             Err(CpuError::InstructionDecoding(addr, op_code))

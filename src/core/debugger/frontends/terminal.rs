@@ -72,6 +72,7 @@ impl TerminalDebugger {
             Step => self.step_cpu(),
             Disassemble(ref range) => self.disassemble(range),
             Continue => self.stop_listening(),
+            Reset => self.reset(),
             RepeatCommand(ref command, count) => self.repeat_command(command, count),
         };
     }
@@ -285,6 +286,14 @@ impl TerminalDebugger {
         for line in disassembly.into_iter() {
             println!("{}", line);
         }
+        println!();
+    }
+
+    fn reset(&mut self) {
+        self.cpu.hard_reset(&self.mem_map);
+
+        println!();
+        println!("CPU has been reset");
         println!();
     }
 
