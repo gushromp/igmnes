@@ -313,7 +313,7 @@ impl Debugger for TerminalDebugger {
 
         'debug: loop {
             let pc = self.cpu.reg_pc;
-            print!("0x{:X} -> ", pc);
+            print!("0x{:04X} -> ", pc);
             stdout.flush().unwrap();
 
             let mut line = String::new();
