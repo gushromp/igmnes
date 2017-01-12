@@ -48,7 +48,7 @@ impl AddressingMode {
             Relative(_) => 2,
             Indirect(_) => 3,
 
-            Invalid => 0,
+            Invalid => 1,
         }
     }
 }

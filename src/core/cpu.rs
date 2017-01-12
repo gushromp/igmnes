@@ -14,15 +14,15 @@ const CLOCK_DIVISOR_NTSC: i32 = 12;
 const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
 const CLOCK_DIVISOR_PAL: i32 = 15;
 
-const RESET_SP: u8 = 0xFD;
 const RESET_PC_VEC: u16 = 0xFFFC;
+const RESET_SP: u8 = 0xFD;
+const BRK_VEC: u16 = 0xFFFE;
 
 #[derive(Debug, Default)]
 pub struct StatusReg {
     pub carry_flag: bool,
     pub zero_flag: bool,
     pub interrupt_disable: bool,
-    // should never be set to true by a NES rom
     pub decimal_mode: bool,
     pub break_executed: bool,
     // unused
@@ -32,8 +32,9 @@ pub struct StatusReg {
     pub sign_flag: bool,
 }
 
-impl<'a> Into<u8> for &'a StatusReg {
-    fn into(self) -> u8 {
+impl StatusReg {
+
+    fn php(&self) -> u8 {
         let mut byte = 0u8;
 
         byte = byte | self.sign_flag as u8;
@@ -47,24 +48,18 @@ impl<'a> Into<u8> for &'a StatusReg {
 
         byte
     }
-}
 
-impl From<u8> for StatusReg {
-    fn from(byte: u8) -> StatusReg {
-        StatusReg {
-            carry_flag: byte & 0b00000001 == 1,
-            zero_flag: (byte >> 1) & 0b00000001 == 1,
-            interrupt_disable: (byte >> 2) & 0b00000001 == 1,
-            decimal_mode: (byte >> 3) & 0b00000001 == 1,
-            break_executed: true,
-            logical_1: true,
-            overflow_flag: (byte >> 6) & 0b00000001 == 1,
-            sign_flag: (byte >> 7) & 0b00000001 == 1,
-        }
+    fn plp(&mut self, byte: u8) {
+        self.carry_flag = byte & 0b00000001 == 1;
+        self.zero_flag = (byte >> 1) & 0b00000001 == 1;
+        self.interrupt_disable = (byte >> 2) & 0b00000001 == 1;
+        self.decimal_mode = (byte >> 3) & 0b00000001 == 1;
+        self.break_executed = false;
+        self.logical_1 = true;
+        self.overflow_flag = (byte >> 6) & 0b00000001 == 1;
+        self.sign_flag = (byte >> 7) & 0b00000001 == 1;
     }
-}
 
-impl StatusReg {
     pub fn toggle_zero_sign(&mut self, byte: u8) {
         let sign = byte >> 7 == 1;
         self.toggle_sign(sign);
@@ -179,12 +174,10 @@ impl Cpu {
         match instruction {
             Ok(instr) => self.execute_instruction(instr, mem_map),
             Err(e) => {
-                self.reg_pc += 2;
+                self.reg_pc = self.reg_pc.wrapping_add(1);
                 Err(e)
             }
         }
-
-
     }
 
     fn execute_instruction(&mut self, mut instruction: Instruction,
@@ -198,7 +191,8 @@ impl Cpu {
             // Jump instructions
             JMP => self.instr_jmp(&instruction.addressing_mode, mem_map),
             JSR => self.instr_jsr(&instruction.addressing_mode, mem_map),
-            // Return instructions
+            // Break/Return instructions
+            BRK => self.instr_brk(mem_map),
             RTI => self.instr_rti(mem_map),
             RTS => self.instr_rts(mem_map),
             // Branch instructions
@@ -292,7 +286,7 @@ impl Cpu {
                 // happen with indirect addressing)
 
                 let addr_high = arg >> 8;
-                let addr_low_1  = (arg & 0xFF) as u8;
+                let addr_low_1 = (arg & 0xFF) as u8;
                 let addr_low_2 = addr_low_1.wrapping_add(1);
 
                 let resolved_low = (addr_high << 8) | addr_low_1 as u16;
@@ -325,13 +319,24 @@ impl Cpu {
         }
     }
     //
-    // Return instructions
+    // Break/Return instructions
     //
+    fn instr_brk(&mut self, mem_map: &mut MemMapped) {
+        let new_reg_pc = self.reg_pc.wrapping_add(2);
+        let status_byte = self.reg_status.php();
+
+        self.stack_push_addr(mem_map, new_reg_pc);
+        self.stack_push(mem_map, status_byte);
+
+        self.reg_status.toggle_break_executed(true);
+        self.reg_pc = BRK_VEC;
+    }
+
     fn instr_rti(&mut self, mem_map: &mut MemMapped) {
         let status_byte = self.stack_pull(mem_map);
         let new_pc = self.stack_pull_addr(mem_map);
 
-        self.reg_status = StatusReg::from(status_byte);
+        self.reg_status.plp(status_byte);
         self.reg_pc = new_pc;
     }
 
@@ -414,14 +419,13 @@ impl Cpu {
     }
 
     fn instr_php(&mut self, mem_map: &mut MemMapped) {
-        let reg_status_byte: u8 = {
-            (&self.reg_status).into()
-        };
-        self.stack_push(mem_map, reg_status_byte);
+        let status_byte = self.reg_status.php();
+        self.stack_push(mem_map, status_byte);
     }
 
     fn instr_plp(&mut self, mem_map: &mut MemMapped) {
-        self.reg_status = StatusReg::from(self.stack_pull(mem_map));
+        let status_byte = self.stack_pull(mem_map);
+        self.reg_status.plp(status_byte);
     }
     //
     // Store/Load instructions
@@ -901,7 +905,7 @@ impl Cpu {
 
 impl Display for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let status_reg_byte: u8 = (&self.reg_status).into();
+        let status_reg_byte: u8 = self.reg_status.php();
         write!(f, "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X}",
                self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp)
     }
