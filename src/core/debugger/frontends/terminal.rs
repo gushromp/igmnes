@@ -1,4 +1,8 @@
-use std::io::{self, Read, Write};
+use std::path::Path;
+use std::io;
+use std::io::prelude::*;
+use std::io::BufWriter;
+use std::fs::File;
 use std::collections::{HashSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::ops::Range;
@@ -6,6 +10,7 @@ use std::mem;
 use std::cell::RefCell;
 use core::CpuFacade;
 use core::cpu::Cpu;
+use core::instructions::Instruction;
 use core::memory::{MemMap, MemMapped};
 use core::debugger::Debugger;
 use core::debugger::command::Command;
@@ -26,6 +31,25 @@ impl<'a> MemMapShim<'a> {
     }
 }
 
+struct Logger {
+    buf_writer: BufWriter<File>,
+}
+
+impl Logger {
+    pub fn new() -> Logger {
+        let file = File::create("log.txt").unwrap();
+        let buf_writer = BufWriter::new(file);
+
+        Logger {
+            buf_writer: buf_writer,
+        }
+    }
+
+    pub fn log_line(&mut self, line: &[u8]) {
+        self.buf_writer.write(line);
+    }
+}
+
 pub struct TerminalDebugger {
     cpu: Cpu,
     mem_map: MemMap,
@@ -34,6 +58,8 @@ pub struct TerminalDebugger {
     label_map: HashMap<u16, String>,
     is_listening: bool,
     cur_breakpoint_addr: Option<u16>,
+    trace_active: bool,
+    logger: Option<Logger>,
 }
 
 impl TerminalDebugger {
@@ -46,6 +72,8 @@ impl TerminalDebugger {
             label_map: HashMap::new(),
             is_listening: false,
             cur_breakpoint_addr: None,
+            trace_active: false,
+            logger: None,
         }
     }
 
@@ -73,6 +101,7 @@ impl TerminalDebugger {
             Disassemble(ref range) => self.disassemble(range),
             Continue => self.stop_listening(),
             Reset => self.reset(),
+            Trace => self.trace(),
             RepeatCommand(ref command, count) => self.repeat_command(command, count),
         };
     }
@@ -297,6 +326,18 @@ impl TerminalDebugger {
         println!();
     }
 
+    fn trace(&mut self) {
+        if let None = self.logger {
+            self.logger = Some(Logger::new());
+        }
+
+        self.trace_active = true;
+
+        println!();
+        println!("Began tracing");
+        println!();
+    }
+
     fn repeat_command(&mut self, command: &Box<Command>, count: u16) {
         for _i in 0..count {
             self.execute_command(command);
@@ -337,6 +378,7 @@ impl Debugger for TerminalDebugger {
         }
     }
     fn stop_listening(&mut self) {
+
         self.is_listening = false;
     }
 
@@ -367,6 +409,22 @@ impl CpuFacade for TerminalDebugger {
                 self.cur_breakpoint_addr = Some(reg_pc);
                 return Err(CpuError::DebuggerBreakpoint(self.cpu.reg_pc));
             }
+        }
+
+        if self.trace_active {
+            let logger = self.logger.as_mut().unwrap();
+
+            let instruction = Instruction::decode(&self.mem_map, reg_pc);
+
+            let line = match instruction {
+                Ok(mut instr) => {
+                     disassembler::disassemble(reg_pc, &mut instr, &self.cpu, &self.mem_map)
+                }
+                Err(e) => e.to_string()
+            };
+
+            let line = format!("{}    {}\n", line, self.cpu);
+            logger.log_line(line.as_bytes());
         }
 
         let mut mem_map_shim = MemMapShim::new(&mut self.mem_map);

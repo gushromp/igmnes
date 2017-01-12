@@ -258,7 +258,10 @@ impl Cpu {
             ROR => self.instr_ror(instruction, mem_map),
             DEC => self.instr_dec(instruction, mem_map),
             INC => self.instr_inc(instruction, mem_map),
-            _ => println!("0x{:04X}: Skipping unimplemented instruction: {}", self.reg_pc, instruction.token),
+            _ => {
+                instruction.should_advance_pc = true;
+                println!("0x{:04X}: Skipping unimplemented instruction: {}", self.reg_pc, instruction.token)
+            },
         };
 
         if instruction.should_advance_pc {

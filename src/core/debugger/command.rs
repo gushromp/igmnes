@@ -25,6 +25,7 @@ pub enum Command {
     Step,
     Continue,
     Reset,
+    Trace,
     RepeatCommand(Box<Command>, u16),
 }
 
@@ -87,6 +88,7 @@ named!(parse_command_non_terminated<Command>,
         parse_step              |
         parse_continue          |
         parse_reset             |
+        parse_trace             |
         parse_repeat_command
     )
 );
@@ -322,6 +324,15 @@ named!(
         alt_complete! (
             tag_no_case!("reset")) >>
         ( Command::Reset )
+    )
+);
+
+named!(
+    parse_trace<Command>,
+    do_parse! (
+        alt_complete! (
+            tag_no_case!("trace")) >>
+        ( Command::Trace )
     )
 );
 
