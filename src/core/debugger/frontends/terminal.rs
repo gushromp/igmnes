@@ -107,7 +107,7 @@ impl TerminalDebugger {
         println!();
         println!("Cpu state:");
         println!("----------");
-        println!("{:#?}", self.cpu);
+        println!("{}", self.cpu);
         println!();
     }
 

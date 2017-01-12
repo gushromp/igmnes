@@ -1,5 +1,7 @@
 // 6502
+use std;
 use std::default::Default;
+use std::fmt::{self, Display};
 use core::CpuFacade;
 use core::memory::MemMapped;
 use core::instructions::*;
@@ -54,7 +56,7 @@ impl From<u8> for StatusReg {
             zero_flag: (byte >> 1) & 0b00000001 == 1,
             interrupt_disable: (byte >> 2) & 0b00000001 == 1,
             decimal_mode: (byte >> 3) & 0b00000001 == 1,
-            break_executed: (byte >> 4) & 0b00000001 == 1,
+            break_executed: false,
             logical_1: true,
             overflow_flag: (byte >> 6) & 0b00000001 == 1,
             sign_flag: (byte >> 7) & 0b00000001 == 1,
@@ -64,65 +66,39 @@ impl From<u8> for StatusReg {
 
 impl StatusReg {
     pub fn check(&mut self, byte: u8) {
-        if byte >> 7 == 1 {
-            self.set_sign();
-        } else {
-            self.clear_sign();
-        }
+        let sign = byte >> 7 == 1;
+        self.toggle_sign(sign);
 
-        if byte == 0 {
-            self.set_zero();
-        } else {
-            self.clear_zero();
-        }
+        let zero = byte == 0;
+        self.toggle_zero(zero);
     }
 
-    pub fn clear_carry(&mut self) {
-        self.carry_flag = false;
+    pub fn toggle_carry(&mut self, value: bool) {
+        self.carry_flag = value;
     }
 
-    pub fn set_carry(&mut self) {
-        self.carry_flag = true;
+    pub fn toggle_zero(&mut self, value: bool) {
+        self.zero_flag = value;
     }
 
-    pub fn clear_zero(&mut self) {
-        self.zero_flag = false;
+    pub fn toggle_interrupt_disable(&mut self, value: bool) {
+        self.interrupt_disable = value;
     }
 
-    pub fn set_zero(&mut self) {
-        self.zero_flag = true;
+    pub fn toggle_break_executed(&mut self, value: bool) {
+        self.break_executed = value;
     }
 
-    pub fn clear_interrupt_disable(&mut self) {
-        self.interrupt_disable = false;
+    pub fn toggle_decimal(&mut self, value: bool) {
+        self.decimal_mode = value;
     }
 
-    pub fn set_interrupt_disable(&mut self) {
-        self.interrupt_disable = true;
+    pub fn toggle_overflow(&mut self, value: bool) {
+        self.overflow_flag = value;
     }
 
-    pub fn clear_overflow(&mut self) {
-        self.overflow_flag = false;
-    }
-
-    pub fn set_overflow(&mut self) {
-        self.overflow_flag = true;
-    }
-
-    pub fn clear_decimal(&mut self) {
-        self.decimal_mode = false;
-    }
-
-    pub fn set_decimal(&mut self) {
-        self.decimal_mode = true;
-    }
-
-    pub fn set_sign(&mut self) {
-        self.sign_flag = true;
-    }
-
-    pub fn clear_sign(&mut self) {
-        self.sign_flag = false;
+    pub fn toggle_sign(&mut self, value: bool) {
+        self.sign_flag = value;
     }
 }
 
@@ -210,6 +186,7 @@ impl Cpu {
         let instruction = &mut instruction;
 
         match instruction.token {
+            NOP => {},
             // Jump instructions
             JMP => self.instr_jmp(&instruction.addressing_mode, mem_map),
             JSR => self.instr_jsr(&instruction.addressing_mode, mem_map),
@@ -232,13 +209,13 @@ impl Cpu {
             PHP => self.instr_php(mem_map),
             PLP => self.instr_plp(mem_map),
             // Flag instructions
-            CLC => self.reg_status.clear_carry(),
-            SEC => self.reg_status.set_carry(),
-            CLI => self.reg_status.clear_interrupt_disable(),
-            SEI => self.reg_status.set_interrupt_disable(),
-            CLV => self.reg_status.clear_overflow(),
-            CLD => self.reg_status.clear_decimal(),
-            SED => self.reg_status.set_decimal(),
+            CLC => self.reg_status.toggle_carry(false),
+            SEC => self.reg_status.toggle_carry(true),
+            CLI => self.reg_status.toggle_interrupt_disable(false),
+            SEI => self.reg_status.toggle_interrupt_disable(true),
+            CLV => self.reg_status.toggle_overflow(false),
+            CLD => self.reg_status.toggle_decimal(false),
+            SED => self.reg_status.toggle_decimal(true),
             // Store/Load instructions
             LDA => self.instr_lda(instruction, mem_map),
             LDX => self.instr_ldx(instruction, mem_map),
@@ -272,7 +249,7 @@ impl Cpu {
             ROR => self.instr_ror(instruction, mem_map),
             DEC => self.instr_dec(instruction, mem_map),
             INC => self.instr_inc(instruction, mem_map),
-            _ => println!("Skipping unimplemented instruction: {}", instruction.token),
+            _ => println!("0x{:04X}: Skipping unimplemented instruction: {}", self.reg_pc, instruction.token),
         };
 
         if instruction.should_advance_pc {
@@ -501,33 +478,42 @@ impl Cpu {
 
     fn instr_adc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let byte = self.read_resolved(instruction, mem_map);
-        let carry = self.reg_status.carry_flag as u8;
+        let old_carry = self.reg_status.carry_flag as u8;
 
-        let (result, overflow) = self.reg_a.overflowing_add(byte + carry);
+        let addend = byte.wrapping_add(old_carry);
+        let (result, carry) = self.reg_a.overflowing_add(addend);
+
+        self.reg_status.toggle_carry(carry);
+
+        // two's complement overflow check
+        let overflow = (self.reg_a > 127u8 && addend > 127u8 && result <= 127u8)
+            || (self.reg_a <= 127u8 && addend <= 127u8 && result > 127u8);
+
+        self.reg_status.toggle_overflow(overflow);
+
         self.reg_a = result;
-
-        if overflow {
-            self.reg_status.set_carry();
-        } else {
-            self.reg_status.clear_carry();
-        }
-
         self.reg_status.check(self.reg_a);
     }
 
     fn instr_sbc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let byte = self.read_resolved(instruction, mem_map);
-        let carry = self.reg_status.carry_flag as u8;
+        let borrow = 1 - self.reg_status.carry_flag as u8;
 
-        let (result, overflow) = self.reg_a.overflowing_sub(byte - (1 - carry));
+        let addend = byte.wrapping_add(borrow);
+
+        let (result, carry) = self.reg_a.overflowing_sub(addend);
+
+        // when subtracting, 6502 sets carry if the result is NOT negative
+        let reverse_carry = !(carry);
+        self.reg_status.toggle_carry(reverse_carry);
+
+        // two's complement overflow check
+        let overflow = (self.reg_a > 127u8 && addend <= 127u8 && result >= 127u8)
+            || (self.reg_a <= 127u8 && addend > 127u8 && result <= 127u8);
+
+        self.reg_status.toggle_overflow(overflow);
+
         self.reg_a = result;
-
-        if overflow {
-            self.reg_status.clear_carry();
-        } else {
-            self.reg_status.set_carry();
-        }
-
         self.reg_status.check(self.reg_a);
     }
 
@@ -535,76 +521,73 @@ impl Cpu {
         let byte = self.read_resolved(instruction, mem_map);
 
         if self.reg_a > byte {
-            self.reg_status.set_carry();
-            self.reg_status.clear_zero();
-            self.reg_status.clear_sign();
+            self.reg_status.toggle_carry(true);
+            self.reg_status.toggle_zero(false);
         } else if self.reg_a == byte {
-            self.reg_status.set_carry();
-            self.reg_status.set_zero();
-            self.reg_status.clear_sign();
+            self.reg_status.toggle_carry(true);
+            self.reg_status.toggle_zero(true);
         } else {
-            self.reg_status.clear_carry();
-            self.reg_status.clear_zero();
-            self.reg_status.set_sign();
+            self.reg_status.toggle_carry(false);
+            self.reg_status.toggle_zero(false);
         }
+
+        let sub = self.reg_a.wrapping_sub(byte);
+        let sign = sub >> 7 == 1;
+
+        self.reg_status.toggle_sign(sign);
     }
 
     fn instr_cpx(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let byte = self.read_resolved(instruction, mem_map);
 
         if self.reg_x > byte {
-            self.reg_status.set_carry();
-            self.reg_status.clear_zero();
-            self.reg_status.clear_sign();
-        } else if self.reg_y == byte {
-            self.reg_status.set_carry();
-            self.reg_status.set_zero();
-            self.reg_status.clear_sign();
+            self.reg_status.toggle_carry(true);
+            self.reg_status.toggle_zero(false);
+        } else if self.reg_x == byte {
+            self.reg_status.toggle_carry(true);
+            self.reg_status.toggle_zero(true);
         } else {
-            self.reg_status.clear_carry();
-            self.reg_status.clear_zero();
-            self.reg_status.set_sign();
+            self.reg_status.toggle_carry(false);
+            self.reg_status.toggle_zero(false);
         }
+
+        let sub = self.reg_x.wrapping_sub(byte);
+        let sign = sub >> 7 == 1;
+
+        self.reg_status.toggle_sign(sign);
     }
 
     fn instr_cpy(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let byte = self.read_resolved(instruction, mem_map);
 
         if self.reg_y > byte {
-            self.reg_status.set_carry();
-            self.reg_status.clear_zero();
-            self.reg_status.clear_sign();
+            self.reg_status.toggle_carry(true);
+            self.reg_status.toggle_zero(false);
         } else if self.reg_y == byte {
-            self.reg_status.set_carry();
-            self.reg_status.set_zero();
-            self.reg_status.clear_sign();
+            self.reg_status.toggle_carry(true);
+            self.reg_status.toggle_zero(true);
         } else {
-            self.reg_status.clear_carry();
-            self.reg_status.clear_zero();
-            self.reg_status.set_sign();
+            self.reg_status.toggle_carry(false);
+            self.reg_status.toggle_zero(false);
         }
+
+        let sub = self.reg_y.wrapping_sub(byte);
+        let sign = sub >> 7 == 1;
+
+        self.reg_status.toggle_sign(sign);
     }
 
     fn instr_bit(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         let byte = self.read_resolved(instruction, mem_map);
 
-        if self.reg_a & byte == 0 {
-            self.reg_status.set_zero();
-        } else {
-            self.reg_status.clear_zero();
-        }
+        let zero = byte & self.reg_a == 0;
+        self.reg_status.toggle_zero(zero);
 
-        if (byte >> 6) & 0b1 == 1 {
-            self.reg_status.set_overflow();
-        } else {
-            self.reg_status.clear_overflow();
-        }
+        let overflow = (byte >> 6) & 0b1 == 1;
+        self.reg_status.toggle_overflow(overflow);
 
-        if (byte >> 7) & 0b1 == 1 {
-            self.reg_status.set_sign();
-        } else {
-            self.reg_status.clear_sign();
-        }
+        let sign = (byte >> 7) & 0b1 == 1;
+        self.reg_status.toggle_sign(sign);
     }
     //
     // Read/Modify/Write instructions
@@ -613,11 +596,7 @@ impl Cpu {
         let mut byte = self.read_resolved(instruction, mem_map);
 
         let carry = (byte >> 7) == 1;
-        if carry {
-            self.reg_status.set_carry();
-        } else {
-            self.reg_status.clear_carry();
-        }
+        self.reg_status.toggle_carry(carry);
 
         byte = byte << 1;
         self.reg_status.check(byte);
@@ -631,11 +610,7 @@ impl Cpu {
         let old_carry = self.reg_status.carry_flag as i8;
         let new_carry = (byte >> 7) == 1;
 
-        if new_carry {
-            self.reg_status.set_carry();
-        } else {
-            self.reg_status.clear_carry();
-        }
+        self.reg_status.toggle_carry(new_carry);
 
         byte = byte << 1;
         byte ^= ((-old_carry as u8) ^ byte) & 1;
@@ -648,11 +623,7 @@ impl Cpu {
         let mut byte = self.read_resolved(instruction, mem_map);
 
         let carry = (byte & 1) == 1;
-        if carry {
-            self.reg_status.set_carry();
-        } else {
-            self.reg_status.clear_carry();
-        }
+        self.reg_status.toggle_carry(carry);
 
         byte = byte >> 1;
         self.reg_status.check(byte);
@@ -666,11 +637,7 @@ impl Cpu {
         let old_carry = self.reg_status.carry_flag as i8;
         let new_carry = (byte & 1) == 1;
 
-        if new_carry {
-            self.reg_status.set_carry();
-        } else {
-            self.reg_status.clear_carry();
-        }
+        self.reg_status.toggle_carry(new_carry);
 
         byte = byte >> 1;
         byte ^= ((-old_carry as u8) ^ byte) & (1 << 7);
@@ -843,6 +810,14 @@ impl Cpu {
             },
             _ => unreachable!()
         }
+    }
+}
+
+impl Display for Cpu {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let status_reg_byte: u8 = (&self.reg_status).into();
+        write!(f, "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X}",
+               self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp)
     }
 }
 
