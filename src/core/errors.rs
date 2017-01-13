@@ -1,17 +1,18 @@
 use std::fmt;
 use core::instructions::Instruction;
-use core::debugger::disassembler;
 
-pub enum CpuError {
+#[derive(Debug)]
+pub enum EmulationError {
     InstructionDecoding(u16, u8),
     InstructionExecution(u16, Instruction),
+    MemoryAccess(String),
     DebuggerBreakpoint(u16),
     DebuggerWatchpoint(u16),
 }
 
-impl fmt::Display for CpuError {
+impl fmt::Display for EmulationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::CpuError::*;
+        use self::EmulationError::*;
 
         match *self {
             InstructionDecoding(addr, op_code) => {
@@ -19,6 +20,9 @@ impl fmt::Display for CpuError {
             }
             InstructionExecution(addr, ref instr) => {
                 write!(f, "Error while executing instruction: 0x{:4X}: {}", addr, instr.token)
+            }
+            MemoryAccess(ref msg) => {
+                write!(f, "Memory access error: {}", msg)
             }
             DebuggerBreakpoint(addr) => {
                 write!(f, "Hit breakpoint at addr: 0x{:04X}", addr)

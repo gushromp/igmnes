@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 use core::memory::MemMapped;
-use core::errors::CpuError;
+use core::errors::EmulationError;
 
 #[derive(Debug, Clone)]
 pub enum AddressingMode {
@@ -165,7 +165,7 @@ impl Instruction {
 }
 
 impl Instruction {
-    pub fn decode(mem_map: &MemMapped, addr: u16) -> Result<Instruction, CpuError> {
+    pub fn decode(mem_map: &MemMapped, addr: u16) -> Result<Instruction, EmulationError> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 
@@ -174,211 +174,215 @@ impl Instruction {
         //      bbb bits are used to specify addressing mode
         // However, since a lot of instructions don't fit into this pattern,
         // we will match the opcodes one by one instead of looking at the individual bit groups.
-        let op_code = mem_map.read(addr);
+        let op_code = mem_map.read(addr)?;
         let arg_index = addr.wrapping_add(1);
 
-        let mut instr = match op_code {
+        let result: Result<Instruction, EmulationError> = match op_code {
             //
             // Control, branch, and stack instructions
             //
-            0x00 => Instruction::new(BRK, Implicit, 7, false), // BReaK
-            0xEA => Instruction::new(NOP, Implicit, 2, true), // NOP (No OPeration)
+            0x00 => Ok(Instruction::new(BRK, Implicit, 7, false)), // BReaK
+            0xEA => Ok(Instruction::new(NOP, Implicit, 2, true)), // NOP (No OPeration)
             // Jump instructions
-            0x20 => Instruction::new(JSR, Absolute(mem_map.read_word(arg_index)), 6, false), // Jump to SubRoutine
-            0x4C => Instruction::new(JMP, Absolute(mem_map.read_word(arg_index)), 3, false), // JuMP (absolute)
-            0x6C => Instruction::new(JMP, Indirect(mem_map.read_word(arg_index)), 5, false), // JuMP (indirect)
+            0x20 => Ok(Instruction::new(JSR, Absolute(mem_map.read_word(arg_index)?), 6, false)), // Jump to SubRoutine
+            0x4C => Ok(Instruction::new(JMP, Absolute(mem_map.read_word(arg_index)?), 3, false)), // JuMP (absolute)
+            0x6C => Ok(Instruction::new(JMP, Indirect(mem_map.read_word(arg_index)?), 5, false)), // JuMP (indirect)
             // Return instructions
-            0x40 => Instruction::new(RTI, Implicit, 6, false), // RTI (ReTurn from Interrupt)
-            0x60 => Instruction::new(RTS, Implicit, 6, false), // RTS (ReTurn from Subroutine)
+            0x40 => Ok(Instruction::new(RTI, Implicit, 6, false)), // RTI (ReTurn from Interrupt)
+            0x60 => Ok(Instruction::new(RTS, Implicit, 6, false)), // RTS (ReTurn from Subroutine)
             // Branch instructions
-            0x10 => Instruction::new(BPL, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on PLus
-            0x30 => Instruction::new(BMI, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on MInus
-            0x50 => Instruction::new(BVC, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on oVerflow Clear
-            0x70 => Instruction::new(BVS, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on oVerflow Set
-            0x90 => Instruction::new(BCC, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on Carry Clear
-            0xB0 => Instruction::new(BCS, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on Carry Set
-            0xD0 => Instruction::new(BNE, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on Not Equal
-            0xF0 => Instruction::new(BEQ, Relative(mem_map.read(arg_index) as i8), 2, true), // Branch on EQual
+            0x10 => Ok(Instruction::new(BPL, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on PLus
+            0x30 => Ok(Instruction::new(BMI, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on MInus
+            0x50 => Ok(Instruction::new(BVC, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on oVerflow Clear
+            0x70 => Ok(Instruction::new(BVS, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on oVerflow Set
+            0x90 => Ok(Instruction::new(BCC, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on Carry Clear
+            0xB0 => Ok(Instruction::new(BCS, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on Carry Set
+            0xD0 => Ok(Instruction::new(BNE, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on Not Equal
+            0xF0 => Ok(Instruction::new(BEQ, Relative(mem_map.read(arg_index)? as i8), 2, true)), // Branch on EQual
             // Stack instructions
-            0x9A => Instruction::new(TXS, Implicit, 2, true), // PusH Processor status
-            0xBA => Instruction::new(TSX, Implicit, 2, true), // PuLl Processor status
-            0x48 => Instruction::new(PHA, Implicit, 3, true), // PusH Accumulator
-            0x68 => Instruction::new(PLA, Implicit, 4, true), // PuLl Accumulator
-            0x08 => Instruction::new(PHP, Implicit, 3, true), // Transfer X to Stack ptr
-            0x28 => Instruction::new(PLP, Implicit, 4, true), // Transfer Stack ptr to X
+            0x9A => Ok(Instruction::new(TXS, Implicit, 2, true)), // PusH Processor status
+            0xBA => Ok(Instruction::new(TSX, Implicit, 2, true)), // PuLl Processor status
+            0x48 => Ok(Instruction::new(PHA, Implicit, 3, true)), // PusH Accumulator
+            0x68 => Ok(Instruction::new(PLA, Implicit, 4, true)), // PuLl Accumulator
+            0x08 => Ok(Instruction::new(PHP, Implicit, 3, true)), // Transfer X to Stack ptr
+            0x28 => Ok(Instruction::new(PLP, Implicit, 4, true)), // Transfer Stack ptr to X
             // Flag instructions
-            0x18 => Instruction::new(CLC, Implicit, 2, true), // CLear Carry
-            0x38 => Instruction::new(SEC, Implicit, 2, true), // SEt Carry
-            0x58 => Instruction::new(CLI, Implicit, 2, true), // CLear Interrupt
-            0x78 => Instruction::new(SEI, Implicit, 2, true), // SEt Interrupt
-            0xB8 => Instruction::new(CLV, Implicit, 2, true), // CLear oVerflow
-            0xD8 => Instruction::new(CLD, Implicit, 2, true), // CLear Decimal
-            0xF8 => Instruction::new(SED, Implicit, 2, true), // SEt Decimal
+            0x18 => Ok(Instruction::new(CLC, Implicit, 2, true)), // CLear Carry
+            0x38 => Ok(Instruction::new(SEC, Implicit, 2, true)), // SEt Carry
+            0x58 => Ok(Instruction::new(CLI, Implicit, 2, true)), // CLear Interrupt
+            0x78 => Ok(Instruction::new(SEI, Implicit, 2, true)), // SEt Interrupt
+            0xB8 => Ok(Instruction::new(CLV, Implicit, 2, true)), // CLear oVerflow
+            0xD8 => Ok(Instruction::new(CLD, Implicit, 2, true)), // CLear Decimal
+            0xF8 => Ok(Instruction::new(SED, Implicit, 2, true)), // SEt Decimal
             //
             // ALU instructions
             //
             // ORA (bitwise OR with Accumulator)
-            0x09 => Instruction::new(ORA, Immediate(mem_map.read(arg_index)), 2, true),
-            0x05 => Instruction::new(ORA, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x15 => Instruction::new(ORA, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0x0D => Instruction::new(ORA, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0x1D => Instruction::new(ORA, AbsoluteIndexedX(mem_map.read_word(arg_index)), 4, true),
-            0x19 => Instruction::new(ORA, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
-            0x01 => Instruction::new(ORA, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0x11 => Instruction::new(ORA, IndirectIndexedY(mem_map.read(arg_index)), 5, true),
+            0x09 => Ok(Instruction::new(ORA, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0x05 => Ok(Instruction::new(ORA, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x15 => Ok(Instruction::new(ORA, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0x0D => Ok(Instruction::new(ORA, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0x1D => Ok(Instruction::new(ORA, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
+            0x19 => Ok(Instruction::new(ORA, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
+            0x01 => Ok(Instruction::new(ORA, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0x11 => Ok(Instruction::new(ORA, IndirectIndexedY(mem_map.read(arg_index)?), 5, true)),
             // AND (bitwise AND with accumulator)
-            0x29 => Instruction::new(AND, Immediate(mem_map.read(arg_index)), 2, true),
-            0x25 => Instruction::new(AND, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x35 => Instruction::new(AND, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0x2D => Instruction::new(AND, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0x3D => Instruction::new(AND, AbsoluteIndexedX(mem_map.read_word(arg_index)), 4, true),
-            0x39 => Instruction::new(AND, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
-            0x21 => Instruction::new(AND, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0x31 => Instruction::new(AND, IndirectIndexedY(mem_map.read(arg_index)), 5, true),
+            0x29 => Ok(Instruction::new(AND, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0x25 => Ok(Instruction::new(AND, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x35 => Ok(Instruction::new(AND, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0x2D => Ok(Instruction::new(AND, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0x3D => Ok(Instruction::new(AND, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
+            0x39 => Ok(Instruction::new(AND, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
+            0x21 => Ok(Instruction::new(AND, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0x31 => Ok(Instruction::new(AND, IndirectIndexedY(mem_map.read(arg_index)?), 5, true)),
             // EOR (bitwise Exclusive OR)
-            0x49 => Instruction::new(EOR, Immediate(mem_map.read(arg_index)), 2, true),
-            0x45 => Instruction::new(EOR, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x55 => Instruction::new(EOR, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0x4D => Instruction::new(EOR, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0x5D => Instruction::new(EOR, AbsoluteIndexedX(mem_map.read_word(arg_index)), 4, true),
-            0x59 => Instruction::new(EOR, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
-            0x41 => Instruction::new(EOR, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0x51 => Instruction::new(EOR, IndirectIndexedY(mem_map.read(arg_index)), 5, true),
+            0x49 => Ok(Instruction::new(EOR, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0x45 => Ok(Instruction::new(EOR, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x55 => Ok(Instruction::new(EOR, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0x4D => Ok(Instruction::new(EOR, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0x5D => Ok(Instruction::new(EOR, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
+            0x59 => Ok(Instruction::new(EOR, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
+            0x41 => Ok(Instruction::new(EOR, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0x51 => Ok(Instruction::new(EOR, IndirectIndexedY(mem_map.read(arg_index)?), 5, true)),
             // ADC (ADd with Carry)
-            0x69 => Instruction::new(ADC, Immediate(mem_map.read(arg_index)), 2, true),
-            0x65 => Instruction::new(ADC, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x75 => Instruction::new(ADC, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0x6D => Instruction::new(ADC, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0x7D => Instruction::new(ADC, AbsoluteIndexedX(mem_map.read_word(arg_index)), 4, true),
-            0x79 => Instruction::new(ADC, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
-            0x61 => Instruction::new(ADC, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0x71 => Instruction::new(ADC, IndirectIndexedY(mem_map.read(arg_index)), 5, true),
+            0x69 => Ok(Instruction::new(ADC, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0x65 => Ok(Instruction::new(ADC, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x75 => Ok(Instruction::new(ADC, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0x6D => Ok(Instruction::new(ADC, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0x7D => Ok(Instruction::new(ADC, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
+            0x79 => Ok(Instruction::new(ADC, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
+            0x61 => Ok(Instruction::new(ADC, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0x71 => Ok(Instruction::new(ADC, IndirectIndexedY(mem_map.read(arg_index)?), 5, true)),
             // CMP (CoMPare accumulator)
-            0xC9 => Instruction::new(CMP, Immediate(mem_map.read(arg_index)), 2, true),
-            0xC5 => Instruction::new(CMP, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0xD5 => Instruction::new(CMP, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0xCD => Instruction::new(CMP, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0xDD => Instruction::new(CMP, AbsoluteIndexedX(mem_map.read_word(arg_index)), 4, true),
-            0xD9 => Instruction::new(CMP, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
-            0xC1 => Instruction::new(CMP, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0xD1 => Instruction::new(CMP, IndirectIndexedY(mem_map.read(arg_index)), 5, true),
+            0xC9 => Ok(Instruction::new(CMP, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xC5 => Ok(Instruction::new(CMP, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0xD5 => Ok(Instruction::new(CMP, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0xCD => Ok(Instruction::new(CMP, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0xDD => Ok(Instruction::new(CMP, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
+            0xD9 => Ok(Instruction::new(CMP, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
+            0xC1 => Ok(Instruction::new(CMP, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0xD1 => Ok(Instruction::new(CMP, IndirectIndexedY(mem_map.read(arg_index)?), 5, true)),
             // SBC (SuBtract with Carry)
-            0xE9 => Instruction::new(SBC, Immediate(mem_map.read(arg_index)), 2, true),
-            0xE5 => Instruction::new(SBC, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0xF5 => Instruction::new(SBC, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0xED => Instruction::new(SBC, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0xFD => Instruction::new(SBC, AbsoluteIndexedX(mem_map.read_word(arg_index)), 4, true),
-            0xF9 => Instruction::new(SBC, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
-            0xE1 => Instruction::new(SBC, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0xF1 => Instruction::new(SBC, IndirectIndexedY(mem_map.read(arg_index)), 5, true),
+            0xE9 => Ok(Instruction::new(SBC, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xE5 => Ok(Instruction::new(SBC, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0xF5 => Ok(Instruction::new(SBC, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0xED => Ok(Instruction::new(SBC, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0xFD => Ok(Instruction::new(SBC, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
+            0xF9 => Ok(Instruction::new(SBC, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
+            0xE1 => Ok(Instruction::new(SBC, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0xF1 => Ok(Instruction::new(SBC, IndirectIndexedY(mem_map.read(arg_index)?), 5, true)),
             // CPX (ComPare X register)
-            0xE0 => Instruction::new(CPX, Immediate(mem_map.read(arg_index)), 2, true),
-            0xE4 => Instruction::new(CPX, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0xEC => Instruction::new(CPX, Absolute(mem_map.read_word(arg_index)), 4, true),
+            0xE0 => Ok(Instruction::new(CPX, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xE4 => Ok(Instruction::new(CPX, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0xEC => Ok(Instruction::new(CPX, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             // CPY (ComPare Y register)
-            0xC0 => Instruction::new(CPY, Immediate(mem_map.read(arg_index)), 2, true),
-            0xC4 => Instruction::new(CPY, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0xCC => Instruction::new(CPY, Absolute(mem_map.read_word(arg_index)), 4, true),
+            0xC0 => Ok(Instruction::new(CPY, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xC4 => Ok(Instruction::new(CPY, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0xCC => Ok(Instruction::new(CPY, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             // BIT (test BITs)
-            0x24 => Instruction::new(BIT, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x2C => Instruction::new(BIT, Absolute(mem_map.read_word(arg_index)), 4, true),
+            0x24 => Ok(Instruction::new(BIT, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x2C => Ok(Instruction::new(BIT, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             //
             // Read/Modify/Write instructions
             //
             // ASL (Arithmetic Shift Left)
-            0x0A => Instruction::new(ASL, Accumulator, 2, true),
-            0x06 => Instruction::new(ASL, ZeroPage(mem_map.read(arg_index)), 5, true),
-            0x16 => Instruction::new(ASL, ZeroPageIndexedX(mem_map.read(arg_index)), 6, true),
-            0x0E => Instruction::new(ASL, Absolute(mem_map.read_word(arg_index)), 6, true),
-            0x1E => Instruction::new(ASL, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7, true),
+            0x0A => Ok(Instruction::new(ASL, Accumulator, 2, true)),
+            0x06 => Ok(Instruction::new(ASL, ZeroPage(mem_map.read(arg_index)?), 5, true)),
+            0x16 => Ok(Instruction::new(ASL, ZeroPageIndexedX(mem_map.read(arg_index)?), 6, true)),
+            0x0E => Ok(Instruction::new(ASL, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x1E => Ok(Instruction::new(ASL, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 7, true)),
             // ROL (ROtate Left)
-            0x2A => Instruction::new(ROL, Accumulator, 2, true),
-            0x26 => Instruction::new(ROL, ZeroPage(mem_map.read(arg_index)), 5, true),
-            0x36 => Instruction::new(ROL, ZeroPageIndexedX(mem_map.read(arg_index)), 6, true),
-            0x2E => Instruction::new(ROL, Absolute(mem_map.read_word(arg_index)), 6, true),
-            0x3E => Instruction::new(ROL, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7, true),
+            0x2A => Ok(Instruction::new(ROL, Accumulator, 2, true)),
+            0x26 => Ok(Instruction::new(ROL, ZeroPage(mem_map.read(arg_index)?), 5, true)),
+            0x36 => Ok(Instruction::new(ROL, ZeroPageIndexedX(mem_map.read(arg_index)?), 6, true)),
+            0x2E => Ok(Instruction::new(ROL, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x3E => Ok(Instruction::new(ROL, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 7, true)),
             // LSR (Logical Shift Right)
-            0x4A => Instruction::new(LSR, Accumulator, 2, true),
-            0x46 => Instruction::new(LSR, ZeroPage(mem_map.read(arg_index)), 5, true),
-            0x56 => Instruction::new(LSR, ZeroPageIndexedX(mem_map.read(arg_index)), 6, true),
-            0x4E => Instruction::new(LSR, Absolute(mem_map.read_word(arg_index)), 6, true),
-            0x5E => Instruction::new(LSR, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7, true),
+            0x4A => Ok(Instruction::new(LSR, Accumulator, 2, true)),
+            0x46 => Ok(Instruction::new(LSR, ZeroPage(mem_map.read(arg_index)?), 5, true)),
+            0x56 => Ok(Instruction::new(LSR, ZeroPageIndexedX(mem_map.read(arg_index)?), 6, true)),
+            0x4E => Ok(Instruction::new(LSR, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x5E => Ok(Instruction::new(LSR, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 7, true)),
             // ROR (ROtate Right)
-            0x6A => Instruction::new(ROR, Accumulator, 2, true),
-            0x66 => Instruction::new(ROR, ZeroPage(mem_map.read(arg_index)), 5, true),
-            0x76 => Instruction::new(ROR, ZeroPageIndexedX(mem_map.read(arg_index)), 6, true),
-            0x6E => Instruction::new(ROR, Absolute(mem_map.read_word(arg_index)), 6, true),
-            0x7E => Instruction::new(ROR, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7, true),
+            0x6A => Ok(Instruction::new(ROR, Accumulator, 2, true)),
+            0x66 => Ok(Instruction::new(ROR, ZeroPage(mem_map.read(arg_index)?), 5, true)),
+            0x76 => Ok(Instruction::new(ROR, ZeroPageIndexedX(mem_map.read(arg_index)?), 6, true)),
+            0x6E => Ok(Instruction::new(ROR, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x7E => Ok(Instruction::new(ROR, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 7, true)),
             // DEC (DECrement memory)
-            0xC6 => Instruction::new(DEC, ZeroPage(mem_map.read(arg_index)), 5, true),
-            0xD6 => Instruction::new(DEC, ZeroPageIndexedX(mem_map.read(arg_index)), 6, true),
-            0xCE => Instruction::new(DEC, Absolute(mem_map.read_word(arg_index)), 6, true),
-            0xDE => Instruction::new(DEC, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7, true),
+            0xC6 => Ok(Instruction::new(DEC, ZeroPage(mem_map.read(arg_index)?), 5, true)),
+            0xD6 => Ok(Instruction::new(DEC, ZeroPageIndexedX(mem_map.read(arg_index)?), 6, true)),
+            0xCE => Ok(Instruction::new(DEC, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0xDE => Ok(Instruction::new(DEC, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 7, true)),
             // INC (INCrement memory)
-            0xE6 => Instruction::new(INC, ZeroPage(mem_map.read(arg_index)), 5, true),
-            0xF6 => Instruction::new(INC, ZeroPageIndexedX(mem_map.read(arg_index)), 6, true),
-            0xEE => Instruction::new(INC, Absolute(mem_map.read_word(arg_index)), 6, true),
-            0xFE => Instruction::new(INC, AbsoluteIndexedX(mem_map.read_word(arg_index)), 7, true),
+            0xE6 => Ok(Instruction::new(INC, ZeroPage(mem_map.read(arg_index)?), 5, true)),
+            0xF6 => Ok(Instruction::new(INC, ZeroPageIndexedX(mem_map.read(arg_index)?), 6, true)),
+            0xEE => Ok(Instruction::new(INC, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0xFE => Ok(Instruction::new(INC, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 7, true)),
             // Register instructions
-            0xAA => Instruction::new(TAX, Implicit, 2, true), // Transfer A to X
-            0x8A => Instruction::new(TXA, Implicit, 2, true), // Transfer X to A
-            0xCA => Instruction::new(DEX, Implicit, 2, true), // DEcrement X
-            0xE8 => Instruction::new(INX, Implicit, 2, true), // INcrement X
-            0xA8 => Instruction::new(TAY, Implicit, 2, true), // Transfer A to Y
-            0x98 => Instruction::new(TYA, Implicit, 2, true), // Transfer Y to A
-            0x88 => Instruction::new(DEY, Implicit, 2, true), // DEcrement Y
-            0xC8 => Instruction::new(INY, Implicit, 2, true), // INcrement Y
+            0xAA => Ok(Instruction::new(TAX, Implicit, 2, true)), // Transfer A to X
+            0x8A => Ok(Instruction::new(TXA, Implicit, 2, true)), // Transfer X to A
+            0xCA => Ok(Instruction::new(DEX, Implicit, 2, true)), // DEcrement X
+            0xE8 => Ok(Instruction::new(INX, Implicit, 2, true)), // INcrement X
+            0xA8 => Ok(Instruction::new(TAY, Implicit, 2, true)), // Transfer A to Y
+            0x98 => Ok(Instruction::new(TYA, Implicit, 2, true)), // Transfer Y to A
+            0x88 => Ok(Instruction::new(DEY, Implicit, 2, true)), // DEcrement Y
+            0xC8 => Ok(Instruction::new(INY, Implicit, 2, true)), // INcrement Y
             //
             // Store/Load instructions
             //
             // LDA (LoaD Accumulator)
-            0xA9 => Instruction::new(LDA, Immediate(mem_map.read(arg_index)), 2, true),
-            0xA5 => Instruction::new(LDA, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0xB5 => Instruction::new(LDA, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0xAD => Instruction::new(LDA, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0xBD => Instruction::new(LDA, AbsoluteIndexedX(mem_map.read_word(arg_index)), 4, true),
-            0xB9 => Instruction::new(LDA, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
-            0xA1 => Instruction::new(LDA, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0xB1 => Instruction::new(LDA, IndirectIndexedY(mem_map.read(arg_index)), 5, true),
+            0xA9 => Ok(Instruction::new(LDA, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xA5 => Ok(Instruction::new(LDA, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0xB5 => Ok(Instruction::new(LDA, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0xAD => Ok(Instruction::new(LDA, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0xBD => Ok(Instruction::new(LDA, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
+            0xB9 => Ok(Instruction::new(LDA, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
+            0xA1 => Ok(Instruction::new(LDA, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0xB1 => Ok(Instruction::new(LDA, IndirectIndexedY(mem_map.read(arg_index)?), 5, true)),
             // LDX (LoaD X register)
-            0xA2 => Instruction::new(LDX, Immediate(mem_map.read(arg_index)), 2, true),
-            0xA6 => Instruction::new(LDX, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0xB6 => Instruction::new(LDX, ZeroPageIndexedY(mem_map.read(arg_index)), 4, true),
-            0xAE => Instruction::new(LDX, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0xBE => Instruction::new(LDX, AbsoluteIndexedY(mem_map.read_word(arg_index)), 4, true),
+            0xA2 => Ok(Instruction::new(LDX, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xA6 => Ok(Instruction::new(LDX, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0xB6 => Ok(Instruction::new(LDX, ZeroPageIndexedY(mem_map.read(arg_index)?), 4, true)),
+            0xAE => Ok(Instruction::new(LDX, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0xBE => Ok(Instruction::new(LDX, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 4, true)),
             // LDY (LoaD Y register)
-            0xA0 => Instruction::new(LDY, Immediate(mem_map.read(arg_index)), 2, true),
-            0xA4 => Instruction::new(LDY, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0xB4 => Instruction::new(LDY, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0xAC => Instruction::new(LDY, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0xBC => Instruction::new(LDY, AbsoluteIndexedX(mem_map.read_word(arg_index)),  4, true),
+            0xA0 => Ok(Instruction::new(LDY, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xA4 => Ok(Instruction::new(LDY, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0xB4 => Ok(Instruction::new(LDY, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0xAC => Ok(Instruction::new(LDY, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0xBC => Ok(Instruction::new(LDY, AbsoluteIndexedX(mem_map.read_word(arg_index)?),  4, true)),
             // STA (STore Accumulator)
-            0x85 => Instruction::new(STA, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x95 => Instruction::new(STA, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0x8D => Instruction::new(STA, Absolute(mem_map.read_word(arg_index)), 4, true),
-            0x9D => Instruction::new(STA, AbsoluteIndexedX(mem_map.read_word(arg_index)), 5, true),
-            0x99 => Instruction::new(STA, AbsoluteIndexedY(mem_map.read_word(arg_index)), 5, true),
-            0x81 => Instruction::new(STA, IndexedIndirectX(mem_map.read(arg_index)), 6, true),
-            0x91 => Instruction::new(STA, IndirectIndexedY(mem_map.read(arg_index)), 6, true),
+            0x85 => Ok(Instruction::new(STA, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x95 => Ok(Instruction::new(STA, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0x8D => Ok(Instruction::new(STA, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0x9D => Ok(Instruction::new(STA, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 5, true)),
+            0x99 => Ok(Instruction::new(STA, AbsoluteIndexedY(mem_map.read_word(arg_index)?), 5, true)),
+            0x81 => Ok(Instruction::new(STA, IndexedIndirectX(mem_map.read(arg_index)?), 6, true)),
+            0x91 => Ok(Instruction::new(STA, IndirectIndexedY(mem_map.read(arg_index)?), 6, true)),
             // STX (STore X register)
-            0x86 => Instruction::new(STX, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x96 => Instruction::new(STX, ZeroPageIndexedY(mem_map.read(arg_index)), 4, true),
-            0x8E => Instruction::new(STX, Absolute(mem_map.read_word(arg_index)), 4, true),
+            0x86 => Ok(Instruction::new(STX, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x96 => Ok(Instruction::new(STX, ZeroPageIndexedY(mem_map.read(arg_index)?), 4, true)),
+            0x8E => Ok(Instruction::new(STX, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             // STY (STore Y register)
-            0x84 => Instruction::new(STY, ZeroPage(mem_map.read(arg_index)), 3, true),
-            0x94 => Instruction::new(STY, ZeroPageIndexedX(mem_map.read(arg_index)), 4, true),
-            0x8C => Instruction::new(STY, Absolute(mem_map.read_word(arg_index)), 4, true),
+            0x84 => Ok(Instruction::new(STY, ZeroPage(mem_map.read(arg_index)?), 3, true)),
+            0x94 => Ok(Instruction::new(STY, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
+            0x8C => Ok(Instruction::new(STY, Absolute(mem_map.read_word(arg_index)?), 4, true)),
 
-            _ => Instruction::new(Unknown, Invalid, 0, true)
+            _ => Ok(Instruction::new(Unknown, Invalid, 0, true))
         };
 
-        instr.op_code = op_code;
-        instr.address = addr;
-
-        if let Unknown = instr.token {
-            Err(CpuError::InstructionDecoding(addr, op_code))
-        } else {
-            Ok(instr)
+        match result {
+            Ok(mut instr) => {
+                instr.op_code = op_code;
+                instr.address = addr;
+                if let Unknown = instr.token {
+                    Err(EmulationError::InstructionDecoding(addr, op_code))
+                } else {
+                    Ok(instr)
+                }
+            }
+            Err(e) => Err(e)
         }
     }
 }

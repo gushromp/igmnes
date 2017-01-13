@@ -2,22 +2,23 @@ use std::default::Default;
 use core::rom::Rom;
 use core::apu::Apu;
 use core::mappers::{self, Mapper};
+use core::errors::EmulationError;
 
 const RAM_SIZE: usize = 0x800;
 
 pub trait MemMapped {
-    fn read(&self, index: u16) -> u8;
-    fn write(&mut self, index: u16, byte: u8);
+    fn read(&self, index: u16) -> Result<u8, EmulationError>;
+    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
 
-    fn read_word(&self, index: u16) -> u16 {
+    fn read_word(&self, index: u16) -> Result<u16, EmulationError> {
 
         // little-endian!
-        let nibble_low = self.read(index);
-        let nibble_high = self.read(index+1);
+        let nibble_low = self.read(index)?;
+        let nibble_high = self.read(index+1)?;
 
         let word: u16 = ((nibble_high as u16) << 8) | nibble_low as u16;
 
-        word
+        Ok(word)
     }
 }
 
@@ -40,12 +41,13 @@ impl Ram {
 }
 
 impl MemMapped for Ram {
-    fn read(&self, index: u16) -> u8 {
-        self.ram[index as usize]
+    fn read(&self, index: u16) -> Result<u8, EmulationError> {
+        Ok(self.ram[index as usize])
     }
 
-    fn write(&mut self, index: u16, byte: u8) {
+    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         self.ram[index as usize] = byte;
+        Ok(())
     }
 }
 
@@ -94,7 +96,7 @@ impl MemMap {
 }
 
 impl MemMapped for MemMap {
-    fn read(&self, index: u16) -> u8 {
+    fn read(&self, index: u16) -> Result<u8, EmulationError> {
 
 //        Address range	Size	Device
 //        $0000-$07FF	$0800	2KB internal RAM
@@ -117,25 +119,25 @@ impl MemMapped for MemMap {
             0x2000...0x3FFF => {
                 println!("Attempted read from dummy PPU register: 0x{:04X}", index);
                 let index = index % 0x0008;
-                self.ppu[index as usize]
+                Ok(self.ppu[index as usize])
             },
             // APU
             0x4000...0x4015 => {
                 println!("Attempted read from dummy APU register: 0x{:04X}", index);
                 let index = index % 0x4000;
-                self.apu[index as usize]
+                Ok(self.apu[index as usize])
             }
             // I/O
             0x4016...0x4017 => {
                 let index = index % 0x4016;
                 // self.apu.read(index)
                 println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
-                0
+                Ok(0)
             }
             0x4018...0x401f => {
                 let index = index % 0x4018;
                 println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
-                0
+                Ok(0)
             }
             0x4020...0xFFFF => {
                 self.mapper.read(index)
@@ -144,36 +146,40 @@ impl MemMapped for MemMap {
         }
     }
 
-    fn write(&mut self, index: u16, byte: u8) {
+    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match index {
             // RAM
             0...0x1FFF => {
                 let index = index % 0x800;
-                self.ram.write(index, byte);
+                self.ram.write(index, byte)
             },
             // PPU
             0x2000...0x3FFF => {
                 println!("Attempted write to dummy PPU register: 0x{:X}", index);
                 let index = index % 0x0008;
                 self.ppu[index as usize] = byte;
+                Ok(())
             },
             // APU
             0x4000...0x4015 => {
                 println!("Attempted write to dummy APU register: 0x{:04X}", index);
                 let index = index % 0x4000;
                 self.apu[index as usize] = byte;
+                Ok(())
 
             }
             // I/O
             0x4016...0x4017 => {
                 println!("Attempted unimplemented write to I/O register: 0x{:X}", index);
+                Ok(())
             }
             0x4018...0x401F => {
                 let index = index % 0x4018;
                 println!("Attempted unimplemented write to CPU Test Register: 0x{:X}", index);
+                Ok(())
             }
             0x4020...0xFFFF => {
-                self.mapper.write(index, byte);
+                self.mapper.write(index, byte)
             }
             _ => unreachable!()
         }

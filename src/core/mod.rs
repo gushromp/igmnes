@@ -21,13 +21,13 @@ use self::cpu::Cpu;
 use self::rom::Rom;
 use self::debugger::Debugger;
 use self::debugger::frontends::terminal::TerminalDebugger;
-use self::errors::CpuError;
+use self::errors::EmulationError;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, MemMap);
     fn debugger(&mut self) -> Option<&mut Debugger>;
 
-    fn step(&mut self) -> Result<u8, CpuError>;
+    fn step(&mut self) -> Result<u8, EmulationError>;
 }
 
 struct DefaultCpuFacade {
@@ -68,7 +68,7 @@ impl CpuFacade for DefaultCpuFacade {
         None
     }
 
-    fn step(&mut self) -> Result<u8, CpuError> {
+    fn step(&mut self) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map)
     }
 }
@@ -146,8 +146,8 @@ impl Core {
                 match result {
                     Ok(cycles) => cycle_count += cycles as u64,
                     Err(error) => match error {
-                        CpuError::DebuggerBreakpoint(_addr) |
-                        CpuError::DebuggerWatchpoint(_addr) => {
+                        EmulationError::DebuggerBreakpoint(_addr) |
+                        EmulationError::DebuggerWatchpoint(_addr) => {
                             if self.is_debugger_attached {
                                 self.debugger().unwrap().start_listening();
                             }
@@ -167,7 +167,7 @@ impl Core {
         self.is_running = false;
     }
 
-    pub fn step(&mut self) -> Result<u8, CpuError> {
+    pub fn step(&mut self) -> Result<u8, EmulationError> {
         self.cpu_facade.step()
     }
 

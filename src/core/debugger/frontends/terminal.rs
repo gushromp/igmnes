@@ -15,18 +15,18 @@ use core::memory::{MemMap, MemMapped};
 use core::debugger::Debugger;
 use core::debugger::command::Command;
 use core::debugger::disassembler;
-use core::errors::CpuError;
+use core::errors::EmulationError;
 
 struct MemMapShim<'a> {
     mem_map: &'a mut MemMapped,
-    accessed_address: RefCell<Option<u16>>,
+    watchpoint_set: &'a HashSet<u16>,
 }
 
 impl<'a> MemMapShim<'a> {
-    pub fn new(mem_map: &'a mut MemMapped) -> MemMapShim {
+    pub fn new(mem_map: &'a mut MemMapped, watchpoint_set: &'a HashSet<u16>) -> MemMapShim<'a> {
         MemMapShim {
             mem_map: mem_map,
-            accessed_address: RefCell::new(None),
+            watchpoint_set: watchpoint_set,
         }
     }
 }
@@ -158,7 +158,7 @@ impl TerminalDebugger {
         for i in 0..rows {
             print!("0x{:04X} | ", cursor);
             for j in 0..columns {
-                let byte = self.mem_map.read(cursor);
+                let byte = self.mem_map.read(cursor).unwrap();
                 print!("{:02X}", byte);
 
                 cursor += 1;
@@ -307,7 +307,7 @@ impl TerminalDebugger {
 
     fn disassemble(&self, range: &Range<u16>) {
         let addr = self.cpu.reg_pc;
-        let disassembly = disassembler::disassemble_range(addr, range, &self.cpu, &self.mem_map);
+        let disassembly = disassembler::disassemble_range(addr, range, &self.cpu, &self.mem_map).unwrap();
 
         println!();
         println!("Disassembly:");
@@ -398,7 +398,7 @@ impl CpuFacade for TerminalDebugger {
         Some(self)
     }
 
-    fn step(&mut self) -> Result<u8, CpuError> {
+    fn step(&mut self) -> Result<u8, EmulationError> {
         let reg_pc = self.cpu.reg_pc;
 
         if self.breakpoint_set.contains(&reg_pc) {
@@ -407,7 +407,7 @@ impl CpuFacade for TerminalDebugger {
             } else {
                 println!("Breakpoint hit");
                 self.cur_breakpoint_addr = Some(reg_pc);
-                return Err(CpuError::DebuggerBreakpoint(self.cpu.reg_pc));
+                return Err(EmulationError::DebuggerBreakpoint(self.cpu.reg_pc));
             }
         }
 
@@ -418,7 +418,7 @@ impl CpuFacade for TerminalDebugger {
 
             let line = match instruction {
                 Ok(mut instr) => {
-                     disassembler::disassemble(reg_pc, &mut instr, &self.cpu, &self.mem_map)
+                     disassembler::disassemble(reg_pc, &mut instr, &self.cpu, &self.mem_map)?
                 }
                 Err(e) => e.to_string()
             };
@@ -427,33 +427,32 @@ impl CpuFacade for TerminalDebugger {
             logger.log_line(line.as_bytes());
         }
 
-        let mut mem_map_shim = MemMapShim::new(&mut self.mem_map);
+        let mut mem_map_shim = MemMapShim::new(&mut self.mem_map, &self.watchpoint_set);
 
         let cpu_result = self.cpu.step(&mut mem_map_shim);
-
-        if let Some(addr) = *mem_map_shim.accessed_address.borrow() {
-            if self.watchpoint_set.contains(&addr) {
-                println!("Watchpoint hit");
-                return Err(CpuError::DebuggerWatchpoint(addr));
-            }
-        }
 
         cpu_result
     }
 }
 
 impl<'a> MemMapped for MemMapShim<'a> {
-    fn read(&self, index: u16) -> u8 {
-        let mut accessed_address = self.accessed_address.borrow_mut();
-        *accessed_address = Some(index);
-
-        self.mem_map.read(index)
+    fn read(&self, index: u16) -> Result<u8, EmulationError> {
+        match self.watchpoint_set.contains(&index) {
+            true => {
+                println!("Watchpoint hit");
+                Err(EmulationError::DebuggerWatchpoint(index))
+            },
+            false => self.mem_map.read(index)
+        }
     }
 
-    fn write(&mut self, index: u16, byte: u8) {
-        let mut accessed_address = self.accessed_address.borrow_mut();
-        *accessed_address = Some(index);
-
-        self.mem_map.write(index, byte);
+    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+        match self.watchpoint_set.contains(&index) {
+            true => {
+                println!("Watchpoint hit");
+                Err(EmulationError::DebuggerWatchpoint(index))
+            },
+            false => self.mem_map.write(index, byte)
+        }
     }
 }
