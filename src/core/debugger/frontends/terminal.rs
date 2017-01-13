@@ -58,6 +58,7 @@ pub struct TerminalDebugger {
     label_map: HashMap<u16, String>,
     is_listening: bool,
     cur_breakpoint_addr: Option<u16>,
+    cur_watchpoint_addr: Option<u16>,
     trace_active: bool,
     logger: Option<Logger>,
 }
@@ -72,6 +73,7 @@ impl TerminalDebugger {
             label_map: HashMap::new(),
             is_listening: false,
             cur_breakpoint_addr: None,
+            cur_watchpoint_addr: None,
             trace_active: false,
             logger: None,
         }
@@ -427,31 +429,42 @@ impl CpuFacade for TerminalDebugger {
             logger.log_line(line.as_bytes());
         }
 
-        let mut mem_map_shim = MemMapShim::new(&mut self.mem_map, &self.watchpoint_set);
+        let cpu_result = {
+            let mut mem_map_shim = MemMapShim::new(&mut self.mem_map, &self.watchpoint_set);
+            self.cpu.step(&mut mem_map_shim)
+        };
 
-        let cpu_result = self.cpu.step(&mut mem_map_shim);
+        match cpu_result {
+            Err(EmulationError::DebuggerWatchpoint(addr)) => {
+                if let Some(addr) = self.cur_watchpoint_addr {
+                    // Already broken into debugger at this watchpoint,
+                    // continue
+                    self.cur_watchpoint_addr = None;
 
-        cpu_result
+                    self.cpu.step(&mut self.mem_map)
+                } else {
+                    println!("Watchpoint hit");
+                    self.cur_watchpoint_addr = Some(addr);
+
+                    Err(EmulationError::DebuggerWatchpoint(addr))
+                }
+            },
+            res @ _ => res
+        }
     }
 }
 
 impl<'a> MemMapped for MemMapShim<'a> {
     fn read(&self, index: u16) -> Result<u8, EmulationError> {
         match self.watchpoint_set.contains(&index) {
-            true => {
-                println!("Watchpoint hit");
-                Err(EmulationError::DebuggerWatchpoint(index))
-            },
+            true => Err(EmulationError::DebuggerWatchpoint(index)),
             false => self.mem_map.read(index)
         }
     }
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match self.watchpoint_set.contains(&index) {
-            true => {
-                println!("Watchpoint hit");
-                Err(EmulationError::DebuggerWatchpoint(index))
-            },
+            true => Err(EmulationError::DebuggerWatchpoint(index)),
             false => self.mem_map.write(index, byte)
         }
     }
