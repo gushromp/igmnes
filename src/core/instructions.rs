@@ -48,7 +48,7 @@ impl AddressingMode {
             Relative(_) => 2,
             Indirect(_) => 3,
 
-            Invalid => 1,
+            Invalid => 2,
         }
     }
 }
@@ -131,6 +131,12 @@ pub enum InstructionToken {
     DEX,
     NOP,
 
+    // Unofficial opcodes
+    ALR,
+    ANC,
+    ARR,
+    AXS,
+
     Unknown,
 }
 
@@ -181,7 +187,7 @@ impl Instruction {
             //
             // Control, branch, and stack instructions
             //
-            0x00 => Ok(Instruction::new(BRK, Implicit, 7, false)), // BReaK
+            0x00 => Ok(Instruction::new(BRK, Immediate(0), 7, false)), // BReaK
             0xEA => Ok(Instruction::new(NOP, Implicit, 2, true)), // NOP (No OPeration)
             // Jump instructions
             0x20 => Ok(Instruction::new(JSR, Absolute(mem_map.read_word(arg_index)?), 6, false)), // Jump to SubRoutine
@@ -351,7 +357,7 @@ impl Instruction {
             0xA4 => Ok(Instruction::new(LDY, ZeroPage(mem_map.read(arg_index)?), 3, true)),
             0xB4 => Ok(Instruction::new(LDY, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
             0xAC => Ok(Instruction::new(LDY, Absolute(mem_map.read_word(arg_index)?), 4, true)),
-            0xBC => Ok(Instruction::new(LDY, AbsoluteIndexedX(mem_map.read_word(arg_index)?),  4, true)),
+            0xBC => Ok(Instruction::new(LDY, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
             // STA (STore Accumulator)
             0x85 => Ok(Instruction::new(STA, ZeroPage(mem_map.read(arg_index)?), 3, true)),
             0x95 => Ok(Instruction::new(STA, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
@@ -368,7 +374,18 @@ impl Instruction {
             0x84 => Ok(Instruction::new(STY, ZeroPage(mem_map.read(arg_index)?), 3, true)),
             0x94 => Ok(Instruction::new(STY, ZeroPageIndexedX(mem_map.read(arg_index)?), 4, true)),
             0x8C => Ok(Instruction::new(STY, Absolute(mem_map.read_word(arg_index)?), 4, true)),
-
+            //
+            // Unofficial opcodes
+            //
+            // 1-byte NOPs
+            0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => Ok(Instruction::new(NOP, Implicit, 2, true)),
+            // 2-byte NOPs
+            0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 | 0xEB => Ok(Instruction::new(NOP, Immediate(mem_map.read(arg_index)?), 2, true)),
+            // ALU/RMW combination instructions
+            0x4B => Ok(Instruction::new(ALR, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0x0B | 0x2B => Ok(Instruction::new(ANC, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0x6B => Ok(Instruction::new(ARR, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xCB => Ok(Instruction::new(AXS, Immediate(mem_map.read(arg_index)?), 2, true)),
             _ => Ok(Instruction::new(Unknown, Invalid, 0, true))
         };
 

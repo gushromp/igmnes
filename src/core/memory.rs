@@ -89,7 +89,7 @@ impl MemMap {
 
         // Set dummy PPU to dummy VBlank state so that
         // rom tests will pass -_-
-        mem_map.ppu[2] = 0b10000000;
+        // mem_map.ppu[2] = 0xFF;
 
         mem_map
     }

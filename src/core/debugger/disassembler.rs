@@ -63,12 +63,16 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
 
             // See comment in the read_resolved function
             let addr = ((addr_high as u16) << 8) | addr_low as u16;
+
             (format!("(${:02X}, X)", arg),
              format!("[${:04X}: ${:02X}]", addr, resolved))
         },
         IndirectIndexedY(arg) => {
+            let arg_resolved = mem_map.read_word(arg as u16)?;
+            let addr = arg_resolved.wrapping_add(cpu.reg_y as u16);
+
             (format!("(${:02X}), Y", arg),
-             format!("[${:04X}: ${:02X}]", mem_map.read_word(arg as u16)?.wrapping_add(cpu.reg_y as u16), resolved))
+             format!("[${:04X}: ${:02X}]", addr, resolved))
         },
 
         Implicit => (format!(""), format!("")),
