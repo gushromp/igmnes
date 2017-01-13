@@ -72,7 +72,7 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
         Immediate(arg) => (format!("#${:02X}", arg), format!("")),
         Accumulator => (format!("A"), format!("[A: {:02X}]", cpu.reg_a)),
         ZeroPage(arg) => (format!("${:02X}", arg), format!("[${:02X}: ${:02X}]", arg, resolved)),
-        Absolute(arg) => (format!("${:04X}", arg), format!("")),
+        Absolute(arg) => (format!("${:04X}", arg), format!("[${:X}]", resolved)),
         Relative(arg) => {
             (format!("${:02X}", arg),
              format!("[PC -> ${:04X}]", (cpu.reg_pc as i32 + arg as i32) + 2))

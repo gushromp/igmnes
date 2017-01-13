@@ -33,6 +33,20 @@ pub struct StatusReg {
 }
 
 impl StatusReg {
+    fn byte(&self) -> u8 {
+        let mut byte = 0u8;
+
+        byte = byte | self.sign_flag as u8;
+        byte = (byte << 1) | self.overflow_flag as u8;
+        byte = (byte << 1) | 1;
+        byte = (byte << 1) | self.break_executed as u8;
+        byte = (byte << 1) | self.decimal_mode as u8;
+        byte = (byte << 1) | self.interrupt_disable as u8;
+        byte = (byte << 1) | self.zero_flag as u8;
+        byte = (byte << 1) | self.carry_flag as u8;
+
+        byte
+    }
 
     fn php(&self) -> u8 {
         let mut byte = 0u8;
@@ -174,7 +188,7 @@ impl Cpu {
         match instruction {
             Ok(instr) => self.execute_instruction(instr, mem_map),
             Err(e) => {
-                self.reg_pc = self.reg_pc.wrapping_add(1);
+                self.reg_pc = self.reg_pc.wrapping_add(2);
                 Err(e)
             }
         }
@@ -189,8 +203,8 @@ impl Cpu {
         match instruction.token {
             NOP => {},
             // Jump instructions
-            JMP => self.instr_jmp(&instruction.addressing_mode, mem_map),
-            JSR => self.instr_jsr(&instruction.addressing_mode, mem_map),
+            JMP => self.instr_jmp(instruction, mem_map),
+            JSR => self.instr_jsr(instruction, mem_map),
             // Break/Return instructions
             BRK => self.instr_brk(mem_map),
             RTI => self.instr_rti(mem_map),
@@ -259,7 +273,7 @@ impl Cpu {
         };
 
         if instruction.should_advance_pc {
-            self.reg_pc += instruction.addressing_mode.byte_count()
+            self.reg_pc = self.reg_pc.wrapping_add(instruction.addressing_mode.byte_count());
         }
 
         Ok(instruction.cycle_count)
@@ -268,8 +282,10 @@ impl Cpu {
     //
     // Jump instructions
     //
-    fn instr_jmp(&mut self, addressing_mode: &AddressingMode, mem_map: &mut MemMapped) {
+    fn instr_jmp(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         use core::instructions::AddressingMode::*;
+
+        let addressing_mode = &instruction.addressing_mode;
 
         match *addressing_mode {
             Absolute(arg) => {
@@ -302,8 +318,11 @@ impl Cpu {
             _ => unreachable!()
         }
     }
-    fn instr_jsr(&mut self, addressing_mode: &AddressingMode, mem_map: &mut MemMapped) {
+
+    fn instr_jsr(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped) {
         use core::instructions::AddressingMode::*;
+
+        let addressing_mode = &instruction.addressing_mode;
 
         match *addressing_mode {
             Absolute(arg) => {
@@ -329,7 +348,7 @@ impl Cpu {
         self.stack_push(mem_map, status_byte);
 
         self.reg_status.toggle_break_executed(true);
-        self.reg_pc = BRK_VEC;
+        self.reg_pc = mem_map.read_word(BRK_VEC);
     }
 
     fn instr_rti(&mut self, mem_map: &mut MemMapped) {
@@ -905,7 +924,7 @@ impl Cpu {
 
 impl Display for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let status_reg_byte: u8 = self.reg_status.php();
+        let status_reg_byte: u8 = self.reg_status.byte();
         write!(f, "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X}",
                self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp)
     }

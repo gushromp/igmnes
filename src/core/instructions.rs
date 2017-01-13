@@ -175,7 +175,7 @@ impl Instruction {
         // However, since a lot of instructions don't fit into this pattern,
         // we will match the opcodes one by one instead of looking at the individual bit groups.
         let op_code = mem_map.read(addr);
-        let arg_index = addr + 1;
+        let arg_index = addr.wrapping_add(1);
 
         let mut instr = match op_code {
             //
