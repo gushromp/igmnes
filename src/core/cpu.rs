@@ -64,14 +64,14 @@ impl StatusReg {
     }
 
     fn plp(&mut self, byte: u8) {
-        self.carry_flag = byte & 0b00000001 == 1;
-        self.zero_flag = (byte >> 1) & 0b00000001 == 1;
-        self.interrupt_disable = (byte >> 2) & 0b00000001 == 1;
-        self.decimal_mode = (byte >> 3) & 0b00000001 == 1;
-        self.break_executed = true;
+        self.carry_flag = byte & 0b_0000_0001 != 0;
+        self.zero_flag = byte & 0b_0000_0010 != 0;
+        self.interrupt_disable = byte & 0b_0000_0100 != 0;
+        self.decimal_mode = byte & 0b_0000_1000 != 0;
+        self.break_executed = false;
         self.logical_1 = true;
-        self.overflow_flag = (byte >> 6) & 0b00000001 == 1;
-        self.sign_flag = (byte >> 7) & 0b00000001 == 1;
+        self.overflow_flag = byte & 0b_0100_0000 != 0;
+        self.sign_flag = byte & 0b_1000_0000 != 0;
     }
 
     pub fn toggle_zero_sign(&mut self, byte: u8) {
@@ -188,7 +188,7 @@ impl Cpu {
         match instruction {
             Ok(instr) => self.execute_instruction(instr, mem_map),
             Err(e) => {
-                self.reg_pc = self.reg_pc.wrapping_add(2);
+                self.reg_pc = self.reg_pc.wrapping_add(1);
                 Err(e)
             }
         }
@@ -683,8 +683,7 @@ impl Cpu {
                  -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
-        let reg = self.reg_a;
-        self.perform_adc(reg, byte);
+        self.perform_adc(byte);
 
         Ok(())
     }
@@ -693,29 +692,28 @@ impl Cpu {
                  -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
-        let reg = !self.reg_a;
-        self.perform_adc(reg, byte);
+        self.perform_adc(!byte);
 
         Ok(())
 
-//        let borrow = 1 - self.reg_status.carry_flag as u8;
-//
-//        let addend = byte.wrapping_add(borrow);
-//
-//        let (result, carry) = self.reg_a.overflowing_sub(addend);
-//
-//        // when subtracting, 6502 sets carry if the result is NOT negative
-//        let reverse_carry = !(carry);
-//        self.reg_status.toggle_carry(reverse_carry);
-//
-//        // two's complement overflow toggle_zero_sign
-//        let overflow = (self.reg_a > 127u8 && byte <= 127u8 && result <= 127u8)
-//            || (self.reg_a <= 127u8 && byte > 127u8 && result <= 127u8);
-//
-//        self.reg_status.toggle_overflow(overflow);
-//
-//        self.reg_a = result;
-//        self.reg_status.toggle_zero_sign(self.reg_a);
+        //        let borrow = 1 - self.reg_status.carry_flag as u8;
+        //
+        //        let addend = byte.wrapping_add(borrow);
+        //
+        //        let (result, carry) = self.reg_a.overflowing_sub(addend);
+        //
+        //        // when subtracting, 6502 sets carry if the result is NOT negative
+        //        let reverse_carry = !(carry);
+        //        self.reg_status.toggle_carry(reverse_carry);
+        //
+        //        // two's complement overflow toggle_zero_sign
+        //        let overflow = (self.reg_a > 127u8 && byte <= 127u8 && result <= 127u8)
+        //            || (self.reg_a <= 127u8 && byte > 127u8 && result <= 127u8);
+        //
+        //        self.reg_status.toggle_overflow(overflow);
+        //
+        //        self.reg_a = result;
+        //        self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
     fn instr_cmp(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped)
@@ -806,7 +804,7 @@ impl Cpu {
     // Read/Modify/Write instructions
     //
     fn instr_asl(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped)
-        -> Result<(), EmulationError>{
+                 -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
         let carry = (byte >> 7) == 1;
@@ -821,7 +819,7 @@ impl Cpu {
     }
 
     fn instr_rol(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped)
-        -> Result<(), EmulationError>{
+                 -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
         let old_carry = self.reg_status.carry_flag as u8;
@@ -839,7 +837,7 @@ impl Cpu {
     }
 
     fn instr_lsr(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped)
-        -> Result<(), EmulationError>{
+                 -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
         let carry = (byte & 1) == 1;
@@ -854,7 +852,7 @@ impl Cpu {
     }
 
     fn instr_ror(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped)
-        -> Result<(), EmulationError>{
+                 -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
         let old_carry = self.reg_status.carry_flag as u8;
@@ -872,7 +870,7 @@ impl Cpu {
     }
 
     fn instr_dec(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped)
-        -> Result<(), EmulationError>{
+                 -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
         byte = byte.wrapping_sub(1);
@@ -884,7 +882,7 @@ impl Cpu {
     }
 
     fn instr_inc(&mut self, instruction: &mut Instruction, mem_map: &mut MemMapped)
-        -> Result<(), EmulationError>{
+                 -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
         byte = byte.wrapping_add(1);
@@ -903,18 +901,19 @@ impl Cpu {
 
     // Due to the complexity of the ADC/SBC instructions, they are
     // performed here for both instr_adc and instr_sbc
-    fn perform_adc(&mut self, reg: u8, byte: u8) {
-        let old_carry = self.reg_status.carry_flag as u8;
+    fn perform_adc(&mut self, byte: u8) {
+        let old_carry = self.reg_status.carry_flag as u16;
 
-        let addend = byte.wrapping_add(old_carry);
-        let (result, carry) = reg.overflowing_add(addend);
+        let sum: u16 = self.reg_a as u16 + byte as u16 + old_carry as u16;
 
+        let carry = sum > 0xFF;
         self.reg_status.toggle_carry(carry);
 
-        let overflow = !(((reg ^ byte) & 0x80) != 0) && (((reg ^ result) & 0x80) != 0);
+        let overflow = !(((self.reg_a as u16 ^ byte as u16) & 0x80) != 0)
+            && (((self.reg_a as u16 ^ sum) & 0x80) != 0);
         self.reg_status.toggle_overflow(overflow);
 
-        self.reg_a = result;
+        self.reg_a = sum as u8;
         self.reg_status.toggle_zero_sign(self.reg_a);
     }
 
@@ -1046,9 +1045,9 @@ impl Cpu {
     }
 
     fn stack_push(&mut self, mem_map: &mut MemMapped, byte: u8) -> Result<(), EmulationError> {
-//        if self.reg_sp == 0 {
-//            println!("Stack overflow detected! Wrapping...");
-//        }
+        //        if self.reg_sp == 0 {
+        //            println!("Stack overflow detected! Wrapping...");
+        //        }
 
         let addr = 0x100 + (self.reg_sp as u16);
         mem_map.write(addr, byte)?;
@@ -1059,9 +1058,9 @@ impl Cpu {
     }
 
     fn stack_pull(&mut self, mem_map: &MemMapped) -> Result<u8, EmulationError> {
-//        if self.reg_sp == 0xFF {
-//            println!("Stack underflow detected! Wrapping...");
-//        }
+        //        if self.reg_sp == 0xFF {
+        //            println!("Stack underflow detected! Wrapping...");
+        //        }
 
         self.reg_sp = self.reg_sp.wrapping_add(1);
 

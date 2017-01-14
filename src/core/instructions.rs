@@ -48,7 +48,7 @@ impl AddressingMode {
             Relative(_) => 2,
             Indirect(_) => 3,
 
-            Invalid => 2,
+            Invalid => 1,
         }
     }
 }
@@ -132,10 +132,21 @@ pub enum InstructionToken {
     NOP,
 
     // Unofficial opcodes
+    // Read 2 bytes and IGNore them (useful for side effects)
+    IGN,
+    // Combined ALU/RMW
+    LAX,
+    SAX,
     ALR,
     ANC,
     ARR,
     AXS,
+    DCP,
+    ISC,
+    RLA,
+    RRA,
+    SLO,
+    SRE,
 
     Unknown,
 }
@@ -187,7 +198,7 @@ impl Instruction {
             //
             // Control, branch, and stack instructions
             //
-            0x00 => Ok(Instruction::new(BRK, Immediate(0), 7, false)), // BReaK
+            0x00 => Ok(Instruction::new(BRK, Implicit, 7, false)), // BReaK
             0xEA => Ok(Instruction::new(NOP, Implicit, 2, true)), // NOP (No OPeration)
             // Jump instructions
             0x20 => Ok(Instruction::new(JSR, Absolute(mem_map.read_word(arg_index)?), 6, false)), // Jump to SubRoutine
@@ -381,11 +392,21 @@ impl Instruction {
             0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => Ok(Instruction::new(NOP, Implicit, 2, true)),
             // 2-byte NOPs
             0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 | 0xEB => Ok(Instruction::new(NOP, Immediate(mem_map.read(arg_index)?), 2, true)),
+            // IGNore
+            0x0C => Ok(Instruction::new(IGN, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             // ALU/RMW combination instructions
+            0xAF => Ok(Instruction::new(LAX, Absolute(mem_map.read_word(arg_index)?), 4, true)),
+            0x8F => Ok(Instruction::new(SAX, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             0x4B => Ok(Instruction::new(ALR, Immediate(mem_map.read(arg_index)?), 2, true)),
             0x0B | 0x2B => Ok(Instruction::new(ANC, Immediate(mem_map.read(arg_index)?), 2, true)),
             0x6B => Ok(Instruction::new(ARR, Immediate(mem_map.read(arg_index)?), 2, true)),
             0xCB => Ok(Instruction::new(AXS, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0xCF => Ok(Instruction::new(DCP, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0xEF => Ok(Instruction::new(ISC, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x2F => Ok(Instruction::new(RLA, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x6F => Ok(Instruction::new(RRA, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x0F => Ok(Instruction::new(SLO, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x4F => Ok(Instruction::new(SRE, Absolute(mem_map.read_word(arg_index)?), 6, true)),
             _ => Ok(Instruction::new(Unknown, Invalid, 0, true))
         };
 
