@@ -54,7 +54,7 @@ impl MemMapped for Ram {
 pub struct MemMap {
     rom: Rom,
     ram: Ram,
-    apu: Vec<u8>, //dummy
+    apu: Apu,
     ppu: Vec<u8>, // dummy
     mapper: Box<Mapper>,
 }
@@ -67,7 +67,7 @@ impl Default for MemMap {
         MemMap {
             rom: Rom::default(),
             ram: Ram::default(),
-            apu: vec![0; 22],
+            apu: Apu::default(),
             ppu: vec![0; 8],
             mapper: def_mapper,
         }
@@ -82,7 +82,7 @@ impl MemMap {
         let mut mem_map = MemMap {
             rom: rom,
             ram: Ram::new(),
-            apu: vec![0; 22],
+            apu: Apu::new(),
             ppu: vec![0; 8],
             mapper: mapper,
         };
@@ -125,14 +125,17 @@ impl MemMapped for MemMap {
             0x4000...0x4015 => {
                 println!("Attempted read from dummy APU register: 0x{:04X}", index);
                 let index = index % 0x4000;
-                Ok(self.apu[index as usize])
+                self.apu.read(index)
             }
             // I/O
-            0x4016...0x4017 => {
-                let index = index % 0x4016;
+            0x4016 => {
                 // self.apu.read(index)
                 println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
                 Ok(0)
+            }
+            // This address is shared by both the APU and I/O so we can from read either one
+            0x4017 => {
+                self.apu.read(index)
             }
             0x4018...0x401f => {
                 let index = index % 0x4018;
@@ -164,13 +167,20 @@ impl MemMapped for MemMap {
             0x4000...0x4015 => {
                 println!("Attempted write to dummy APU register: 0x{:04X}", index);
                 let index = index % 0x4000;
-                self.apu[index as usize] = byte;
+                self.apu.write(index, byte);
                 Ok(())
 
             }
             // I/O
-            0x4016...0x4017 => {
+            0x4016 => {
                 println!("Attempted unimplemented write to I/O register: 0x{:X}", index);
+                Ok(())
+            }
+            // This address is shared by both APU and I/O so we need to write the value to both
+            0x4017 => {
+                self.apu.write(index, byte);
+                //self.io.write(addr, byte);
+
                 Ok(())
             }
             0x4018...0x401F => {

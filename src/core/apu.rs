@@ -126,6 +126,24 @@ pub struct Apu {
     reg_miuuuuuu: u8,
 }
 
+impl Default for Apu {
+    fn default() -> Apu {
+        Apu {
+            pulse1: Pulse::default(),
+            pulse2: Pulse::default(),
+            triangle: Triangle::default(),
+            noise: Noise::default(),
+            dmc: DMC::default(),
+
+            pulse_table: [0; 31],
+            tnd_table: [0; 203],
+
+            reg_uuudntpp: 0,
+            reg_miuuuuuu: 0,
+        }
+    }
+}
+
 impl Apu {
     pub fn new() -> Apu {
         let mut pulse_table: [u8; 31] = [0; 31];
