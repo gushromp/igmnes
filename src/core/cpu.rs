@@ -68,7 +68,7 @@ impl StatusReg {
         self.zero_flag = byte & 0b_0000_0010 != 0;
         self.interrupt_disable = byte & 0b_0000_0100 != 0;
         self.decimal_mode = byte & 0b_0000_1000 != 0;
-        self.break_executed = false;
+        //self.break_executed = byte & 0b_0001_0000 != 0;
         self.logical_1 = true;
         self.overflow_flag = byte & 0b_0100_0000 != 0;
         self.sign_flag = byte & 0b_1000_0000 != 0;
