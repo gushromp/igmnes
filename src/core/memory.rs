@@ -54,8 +54,8 @@ impl MemMapped for Ram {
 pub struct MemMap {
     rom: Rom,
     ram: Ram,
-    apu: Apu,
-    ppu: Vec<u8>, // dummy
+    pub apu: Apu,
+    pub ppu: Vec<u8>, // dummy
     mapper: Box<Mapper>,
 }
 
@@ -122,10 +122,14 @@ impl MemMapped for MemMap {
                 Ok(self.ppu[index as usize])
             },
             // APU
-            0x4000...0x4015 => {
+            0x4000...0x4013 | 0x4015 => {
                 println!("Attempted read from dummy APU register: 0x{:04X}", index);
-                let index = index % 0x4000;
                 self.apu.read(index)
+            }
+            // OAM DMA register
+            0x4014 => {
+                println!("Attempted read from unimplemented OAM DMA register");
+                Ok(0)
             }
             // I/O
             0x4016 => {
@@ -133,7 +137,7 @@ impl MemMapped for MemMap {
                 println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
                 Ok(0)
             }
-            // This address is shared by both the APU and I/O so we can from read either one
+            // I/O, Apu: This address is shared by both the APU and I/O so we can from read either one
             0x4017 => {
                 self.apu.read(index)
             }
@@ -164,10 +168,14 @@ impl MemMapped for MemMap {
                 Ok(())
             },
             // APU
-            0x4000...0x4015 => {
+            0x4000...0x4013 | 0x4015 => {
                 println!("Attempted write to dummy APU register: 0x{:04X}", index);
-                let index = index % 0x4000;
-                self.apu.write(index, byte);
+                self.apu.write(index, byte)
+
+            }
+            // OAM DMA register
+            0x4014 => {
+                println!("Attempted write to dummy APU register: 0x{:04X}", index);
                 Ok(())
 
             }
@@ -178,10 +186,8 @@ impl MemMapped for MemMap {
             }
             // This address is shared by both APU and I/O so we need to write the value to both
             0x4017 => {
-                self.apu.write(index, byte);
+                self.apu.write(index, byte)
                 //self.io.write(addr, byte);
-
-                Ok(())
             }
             0x4018...0x401F => {
                 let index = index % 0x4018;

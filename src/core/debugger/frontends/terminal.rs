@@ -300,7 +300,7 @@ impl TerminalDebugger {
     }
 
     fn step_cpu(&mut self) {
-        self.step();
+        self.step_cpu();
         self.print_state();
 
         let range = 0..5;
@@ -400,7 +400,7 @@ impl CpuFacade for TerminalDebugger {
         Some(self)
     }
 
-    fn step(&mut self) -> Result<u8, EmulationError> {
+    fn step_cpu(&mut self) -> Result<u8, EmulationError> {
         let reg_pc = self.cpu.reg_pc;
 
         if self.breakpoint_set.contains(&reg_pc) {
@@ -451,6 +451,10 @@ impl CpuFacade for TerminalDebugger {
             },
             res @ _ => res
         }
+    }
+
+    fn step_apu(&mut self) {
+        self.mem_map.apu.step();
     }
 }
 

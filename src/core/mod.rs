@@ -27,7 +27,8 @@ pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, MemMap);
     fn debugger(&mut self) -> Option<&mut Debugger>;
 
-    fn step(&mut self) -> Result<u8, EmulationError>;
+    fn step_cpu(&mut self) -> Result<u8, EmulationError>;
+    fn step_apu(&mut self);
 }
 
 struct DefaultCpuFacade {
@@ -68,8 +69,12 @@ impl CpuFacade for DefaultCpuFacade {
         None
     }
 
-    fn step(&mut self) -> Result<u8, EmulationError> {
+    fn step_cpu(&mut self) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map)
+    }
+
+    fn step_apu(&mut self) {
+        self.mem_map.apu.step();
     }
 }
 
@@ -77,7 +82,6 @@ impl CpuFacade for DefaultCpuFacade {
 // contains CPU (nearly identical to MOS 6502) part and APU part
 pub struct Core {
     cpu_facade: Box<CpuFacade>,
-
     is_debugger_attached: bool,
     is_running: bool,
 }
@@ -106,7 +110,7 @@ impl Core {
         let video_subsystem = sdl_context.video().unwrap();
         let mut events = sdl_context.event_pump().unwrap();
 
-        let window = video_subsystem.window("rust-sdl2 demo: Video", 256, 240)
+        let window = video_subsystem.window("IGMNes", 256, 240)
             .position_centered()
             .opengl()
             .build()
@@ -141,10 +145,19 @@ impl Core {
             }
 
             if self.is_running {
-                let result = self.step();
+                let result = self.cpu_facade.step_cpu();
 
                 match result {
-                    Ok(cycles) => cycle_count += cycles as u64,
+                    Ok(cycles) => {
+                        cycle_count += cycles as u64;
+
+                        if cycle_count > 29780 {
+                            self.cpu_facade.step_apu();
+
+                            cycle_count -= 29780;
+                            println!("{}", cycle_count);
+                        }
+                    },
                     Err(error) => match error {
                         EmulationError::DebuggerBreakpoint(_addr) |
                         EmulationError::DebuggerWatchpoint(_addr) => {
@@ -165,10 +178,6 @@ impl Core {
 
     pub fn pause(&mut self) {
         self.is_running = false;
-    }
-
-    pub fn step(&mut self) -> Result<u8, EmulationError> {
-        self.cpu_facade.step()
     }
 
     pub fn attach_debugger(&mut self) -> &mut Debugger {
