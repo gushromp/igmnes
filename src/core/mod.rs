@@ -1,4 +1,5 @@
 extern crate sdl2;
+extern crate time;
 
 mod debugger;
 mod mappers;
@@ -15,6 +16,7 @@ use std::mem;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
+use self::time::{PreciseTime, Duration};
 use self::memory::*;
 use self::apu::Apu;
 use self::cpu::Cpu;
@@ -23,12 +25,20 @@ use self::debugger::Debugger;
 use self::debugger::frontends::terminal::TerminalDebugger;
 use self::errors::EmulationError;
 
+pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32; // 21.477272 MHz
+pub const CLOCK_DIVISOR_NTSC: f32 = 12.0;
+
+const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
+const CLOCK_DIVISOR_PAL: i32 = 15;
+
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, MemMap);
     fn debugger(&mut self) -> Option<&mut Debugger>;
 
     fn step_cpu(&mut self) -> Result<u8, EmulationError>;
-    fn step_apu(&mut self);
+    fn step_apu(&mut self, cpu_cycles: u64) -> bool;
+
+    fn irq(&mut self);
 }
 
 struct DefaultCpuFacade {
@@ -73,8 +83,12 @@ impl CpuFacade for DefaultCpuFacade {
         self.cpu.step(&mut self.mem_map)
     }
 
-    fn step_apu(&mut self) {
-        self.mem_map.apu.step();
+    fn step_apu(&mut self, cpu_cycles: u64) -> bool {
+        self.mem_map.apu.step(cpu_cycles)
+    }
+
+    fn irq(&mut self) {
+        self.cpu.irq(&mut self.mem_map);
     }
 }
 
@@ -108,6 +122,9 @@ impl Core {
 
         let sdl_context = sdl2::init().unwrap();
         let video_subsystem = sdl_context.video().unwrap();
+        let audio_subsystem = sdl_context.audio().unwrap();
+
+
         let mut events = sdl_context.event_pump().unwrap();
 
         let window = video_subsystem.window("IGMNes", 256, 240)
@@ -129,21 +146,9 @@ impl Core {
             debugger.start_listening();
         }
 
+        let mut start_time = PreciseTime::now();
+
         'running: loop {
-            for event in events.poll_iter() {
-                match event {
-                    Event::Quit { .. } => break 'running,
-                    Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
-                        let debugger = self.attach_debugger();
-
-                        if !debugger.is_listening() {
-                            debugger.start_listening();
-                        }
-                    }
-                    _ => {},
-                }
-            }
-
             if self.is_running {
                 let result = self.cpu_facade.step_cpu();
 
@@ -151,11 +156,24 @@ impl Core {
                     Ok(cycles) => {
                         cycle_count += cycles as u64;
 
-                        if cycle_count > 29780 {
-                            self.cpu_facade.step_apu();
+                        let irq = self.cpu_facade.step_apu(cycle_count);
 
-                            cycle_count -= 29780;
-                            println!("{}", cycle_count);
+                        if irq {
+                            self.cpu_facade.irq();
+                        }
+
+                        for event in events.poll_iter() {
+                            match event {
+                                Event::Quit { .. } => break 'running,
+                                Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                                    let debugger = self.attach_debugger();
+
+                                    if !debugger.is_listening() {
+                                        debugger.start_listening();
+                                    }
+                                }
+                                _ => {},
+                            }
                         }
                     },
                     Err(error) => match error {
@@ -170,6 +188,12 @@ impl Core {
                 }
             }
         }
+
+        let cur_time = PreciseTime::now();
+        let seconds = start_time.to(cur_time).num_seconds() as u64;
+        println!("Cycles: {}", cycle_count);
+        println!("Seconds: {}", seconds);
+        println!("Cycles per second: {}", cycle_count / seconds);
     }
 
     pub fn unpause(&mut self) {

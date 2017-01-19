@@ -8,12 +8,6 @@ use core::instructions::*;
 use core::debugger::Debugger;
 use core::errors::EmulationError;
 
-const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32; // 21.477272 MHz
-const CLOCK_DIVISOR_NTSC: i32 = 12;
-
-const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
-const CLOCK_DIVISOR_PAL: i32 = 15;
-
 const RESET_PC_VEC: u16 = 0xFFFC;
 const RESET_SP: u8 = 0xFD;
 const BRK_VEC: u16 = 0xFFFE;
@@ -40,6 +34,21 @@ impl StatusReg {
         byte = (byte << 1) | self.overflow_flag as u8;
         byte = (byte << 1) | 1;
         byte = (byte << 1) | self.break_executed as u8;
+        byte = (byte << 1) | self.decimal_mode as u8;
+        byte = (byte << 1) | self.interrupt_disable as u8;
+        byte = (byte << 1) | self.zero_flag as u8;
+        byte = (byte << 1) | self.carry_flag as u8;
+
+        byte
+    }
+
+    fn irq(&self) -> u8 {
+        let mut byte = 0u8;
+
+        byte = byte | self.sign_flag as u8;
+        byte = (byte << 1) | self.overflow_flag as u8;
+        byte = (byte << 1) | 1;
+        byte = (byte << 1) | 0;
         byte = (byte << 1) | self.decimal_mode as u8;
         byte = (byte << 1) | self.interrupt_disable as u8;
         byte = (byte << 1) | self.zero_flag as u8;
@@ -181,6 +190,20 @@ impl Cpu {
     }
 
     pub fn soft_reset(&mut self) {}
+
+    pub fn irq(&mut self, mem_map: &mut MemMapped) -> Result<(), EmulationError> {
+        if !self.reg_status.interrupt_disable {
+            self.perform_irq(mem_map, true).unwrap();
+        }
+
+        Ok(())
+    }
+
+    pub fn nmi(&mut self, mem_map: &mut MemMapped) -> Result<(), EmulationError> {
+        self.perform_irq(mem_map, true).unwrap();
+
+        Ok(())
+    }
 
     pub fn step(&mut self, mem_map: &mut MemMapped) -> Result<u8, EmulationError> {
         let instruction = Instruction::decode(mem_map, self.reg_pc);
@@ -355,14 +378,7 @@ impl Cpu {
     // Break/Return instructions
     //
     fn instr_brk(&mut self, mem_map: &mut MemMapped) -> Result<(), EmulationError> {
-        let new_reg_pc = self.reg_pc.wrapping_add(2);
-        let status_byte = self.reg_status.php();
-
-        self.stack_push_addr(mem_map, new_reg_pc)?;
-        self.stack_push(mem_map, status_byte)?;
-
-        self.reg_status.toggle_break_executed(true);
-        self.reg_pc = mem_map.read_word(BRK_VEC)?;
+        self.perform_irq(mem_map, false);
 
         Ok(())
     }
@@ -898,6 +914,34 @@ impl Cpu {
     // Helpers
     //
     //////////////
+
+    fn perform_irq(&mut self, mem_map: &mut MemMapped, hardware: bool) -> Result<(), EmulationError> {
+
+        let mut new_reg_pc = self.reg_pc;
+
+        if !hardware {
+            new_reg_pc = new_reg_pc.wrapping_add(2);
+            self.reg_status.toggle_break_executed(true);
+        }
+
+        let status_byte = if hardware {
+            self.reg_status.irq()
+        }
+        else {
+            self.reg_status.php()
+        };
+
+        self.stack_push_addr(mem_map, new_reg_pc)?;
+        self.stack_push(mem_map, status_byte)?;
+
+        if !hardware {
+            self.reg_status.interrupt_disable = true;
+        }
+
+        self.reg_pc = mem_map.read_word(BRK_VEC)?;
+
+        Ok(())
+    }
 
     // Due to the complexity of the ADC/SBC instructions, they are
     // performed here for both instr_adc and instr_sbc

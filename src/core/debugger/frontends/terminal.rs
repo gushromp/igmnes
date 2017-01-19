@@ -453,8 +453,12 @@ impl CpuFacade for TerminalDebugger {
         }
     }
 
-    fn step_apu(&mut self) {
-        self.mem_map.apu.step();
+    fn step_apu(&mut self, cpu_cycles: u64) -> bool {
+        self.mem_map.apu.step(cpu_cycles)
+    }
+
+    fn irq(&mut self) {
+        self.cpu.irq(&mut self.mem_map);
     }
 }
 

@@ -117,13 +117,12 @@ impl MemMapped for MemMap {
             },
             // PPU
             0x2000...0x3FFF => {
-                println!("Attempted read from dummy PPU register: 0x{:04X}", index);
+                //println!("Attempted read from dummy PPU register: 0x{:04X}", index);
                 let index = index % 0x0008;
                 Ok(self.ppu[index as usize])
             },
             // APU
             0x4000...0x4013 | 0x4015 => {
-                println!("Attempted read from dummy APU register: 0x{:04X}", index);
                 self.apu.read(index)
             }
             // OAM DMA register
@@ -162,14 +161,13 @@ impl MemMapped for MemMap {
             },
             // PPU
             0x2000...0x3FFF => {
-                println!("Attempted write to dummy PPU register: 0x{:X}", index);
+                //println!("Attempted write to dummy PPU register: 0x{:X}", index);
                 let index = index % 0x0008;
                 self.ppu[index as usize] = byte;
                 Ok(())
             },
             // APU
             0x4000...0x4013 | 0x4015 => {
-                println!("Attempted write to dummy APU register: 0x{:04X}", index);
                 self.apu.write(index, byte)
 
             }
