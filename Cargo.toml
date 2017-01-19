@@ -6,6 +6,7 @@ authors = ["Ivan Đorđević <i.djordjevic@itsinbox.com>"]
 [dependencies]
 time = "0.1.35"
 sdl2 = "0.25.0"
+sample = "0.6.2"
 
 [dependencies.nom]
 version = "^2.0"

@@ -1,5 +1,7 @@
 // const SAMPLE_RATE: u32 = 8000;
 use std::cell::Cell;
+use core::sample::rate::Converter;
+use core::sample::Sample;
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
@@ -9,8 +11,11 @@ const APU_SAMPLE_RATE: u32 = 1_789_920;
 const OUTPUT_SAMPLE_RATE: u32 = 44_100;
 const STEP_FREQUENCY: u32 = 240; // 240hz steps
 const SAMPLES_PER_STEP: u32 = APU_SAMPLE_RATE / STEP_FREQUENCY;
-const CPU_CYCLES_PER_STEP: u64 = 7_457; // 7457.5 so we will add 1 on odd cpu cycles
-const APU_CYCLES_PER_STEP: u64 = 3_728; // 3728.5
+const CPU_CYCLES_PER_STEP: u64 = 7_457; // 7457 so we will add 1 on odd cpu cycles
+const APU_CYCLES_PER_STEP: f32 = 3_728.5;
+
+const FC_4STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14913, 22371, 29830];
+const FC_5STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14913, 22371, 37282];
 
 const NUM_CHANNELS: usize = 5;
 const PULSE_1: usize = 0;
@@ -40,10 +45,12 @@ trait ApuChannel {
     fn is_enabled(&self) -> bool;
     fn toggle_enabled(&mut self, enabled: bool);
 
+    fn is_audible(&self) -> bool;
+
     fn clock_timer(&mut self);
     fn clock_length_counter(&mut self);
 
-    fn generate_samples(&self) -> Vec<u8>;
+    fn output(&self) -> u8;
 }
 
 //
@@ -98,6 +105,9 @@ impl Pulse {
         let timer_low = self.timer & 0xFF;
         self.timer = (timer_high << 8) | timer_low;
 
+        self.timer_counter = self.timer + 1;
+        self.waveform_counter = 0;
+
         let length_counter_index = (byte >> 3) as usize;
         self.length_counter = if self.enabled {
             LC_LOOKUP_TABLE[length_counter_index]
@@ -105,7 +115,7 @@ impl Pulse {
             0
         };
 
-        println!("{}: {} (enabled: {})", length_counter_index, self.length_counter, self.enabled);
+        println!("Loaded length counter: {}", self.length_counter);
     }
 }
 
@@ -132,6 +142,10 @@ impl ApuChannel for Pulse {
         }
     }
 
+    fn is_audible(&self) -> bool {
+        self.enabled && self.length_counter > 0 && self.timer >= 8
+    }
+
     fn clock_timer(&mut self) {
         if self.timer_counter == 0 {
             self.timer_counter = self.timer + 1;
@@ -152,24 +166,13 @@ impl ApuChannel for Pulse {
         }
     }
 
-    fn generate_samples(&self) -> Vec<u8> {
-        let sample_count = SAMPLES_PER_STEP;
-        let period_in_cycles = 8 * (self.timer as u32 + 1);
-        let periods_in_step: f32 = APU_CYCLES_PER_STEP as f32 / period_in_cycles as f32;
-
-        //        println!("Pulse: {}, {}", periods_in_step, SAMPLES_PER_STEP);
-        let mut samples: Vec<u8> = Vec::new();
-
-        for _i in 0..sample_count {
-            samples.push(0);
+    fn output(&self) -> u8 {
+        if self.is_audible() {
+            PULSE_DUTY[self.duty as usize][self.waveform_counter] * self.volume
         }
-        //        if self.enabled && self.length_counter > 0 {
-        //            self.volume
-        //        } else {
-        //            0
-        //        }
-
-        samples
+        else {
+            0
+        }
     }
 }
 
@@ -243,6 +246,10 @@ impl ApuChannel for Triangle {
         }
     }
 
+    fn is_audible(&self) -> bool {
+        self.enabled && self.length_counter > 0 && self.timer >= 8
+    }
+
     fn clock_timer(&mut self) {
         if self.timer_counter == 0 {
             self.timer_counter = self.timer + 1;
@@ -263,24 +270,8 @@ impl ApuChannel for Triangle {
         }
     }
 
-    fn generate_samples(&self) -> Vec<u8> {
-        let sample_count = SAMPLES_PER_STEP;
-        let period_in_cycles = 8 * (self.timer as u32 + 1);
-        let periods_in_step: f32 = APU_CYCLES_PER_STEP as f32 / period_in_cycles as f32;
-
-        //        println!("Triangle: {}", periods_in_step);
-        let mut samples: Vec<u8> = Vec::new();
-
-        for _i in 0..sample_count {
-            samples.push(0);
-        }
-        //        if self.enabled && self.length_counter > 0 {
-        //            self.volume
-        //        } else {
-        //            0
-        //        }
-
-        samples
+    fn output(&self) -> u8 {
+        0
     }
 }
 
@@ -348,6 +339,10 @@ impl ApuChannel for Noise {
         }
     }
 
+    fn is_audible(&self) -> bool {
+        self.enabled && self.length_counter > 0
+    }
+
     fn clock_timer(&mut self) {}
 
     fn clock_length_counter(&mut self) {
@@ -356,21 +351,8 @@ impl ApuChannel for Noise {
         }
     }
 
-    fn generate_samples(&self) -> Vec<u8> {
-        let sample_count = SAMPLES_PER_STEP;
-
-        let mut samples: Vec<u8> = Vec::new();
-
-        for _i in 0..sample_count {
-            samples.push(0);
-        }
-        //        if self.enabled && self.length_counter > 0 {
-        //            self.volume
-        //        } else {
-        //            0
-        //        }
-
-        samples
+    fn output(&self) -> u8 {
+        0
     }
 }
 
@@ -429,25 +411,16 @@ impl ApuChannel for DMC {
         self.enabled = enabled;
     }
 
+    fn is_audible(&self) -> bool {
+        false
+    }
+
     fn clock_timer(&mut self) {}
 
     fn clock_length_counter(&mut self) {}
 
-    fn generate_samples(&self) -> Vec<u8> {
-        let sample_count = SAMPLES_PER_STEP;
-
-        let mut samples: Vec<u8> = Vec::new();
-
-        for _i in 0..sample_count {
-            samples.push(0);
-        }
-        //        if self.enabled && self.length_counter > 0 {
-        //            self.volume
-        //        } else {
-        //            0
-        //        }
-
-        samples
+    fn output(&self) -> u8 {
+        0
     }
 }
 
@@ -479,6 +452,8 @@ impl Default for FrameCounterMode {
 #[derive(Default)]
 struct FrameCounter {
     mode: FrameCounterMode,
+    cycle_table: Vec<u64>,
+    cycles: u64,
     current_step: i32,
     frame_completed: bool,
 
@@ -491,6 +466,7 @@ struct FrameCounter {
 impl FrameCounter {
     fn new() -> FrameCounter {
         let mut frame_counter = FrameCounter::default();
+        frame_counter.cycle_table = FC_4STEP_CYCLE_TABLE_NTSC.to_vec();
         frame_counter.reset();
 
         frame_counter
@@ -498,38 +474,34 @@ impl FrameCounter {
 
     fn reset(&mut self) {
         self.current_step = -1;
+        self.cycles = 0;
     }
 
     fn set_mode(&mut self, mode: FrameCounterMode) {
         self.mode = mode;
+
+        self.cycle_table = if mode == FrameCounterMode::Mode4Step {
+            FC_4STEP_CYCLE_TABLE_NTSC.to_vec()
+        } else {
+            FC_5STEP_CYCLE_TABLE_NTSC.to_vec()
+        }
     }
 
-    fn step(&mut self) -> bool {
-        let steps = self.mode.steps();
-        self.current_step = (self.current_step + 1) % steps;
+    fn quarter_frame(&self) -> bool {
+        self.cycles == self.cycle_table[0]
+            || self.cycles == self.cycle_table[1]
+            || self.cycles == self.cycle_table[2]
+            || self.cycles == self.cycle_table[3]
+    }
 
-        // Step 5 in 5-step mode essentially does nothing
-        // it is only there to alter timing
-        if self.current_step != 4 {
-            if self.current_step % 2 == 0 {
-                self.clock_envelope = true;
-                self.clock_sweep = false;
-                self.clock_linear_counter = true;
-                self.clock_length_counter = false;
-            } else {
-                self.clock_envelope = true;
-                self.clock_sweep = true;
-                self.clock_linear_counter = true;
-                self.clock_length_counter = true;
-            }
-        }
+    fn half_frame(&self) -> bool {
+        self.cycles == self.cycle_table[1]
+            || self.cycles == self.cycle_table[3]
+    }
 
-        let final_step = self.current_step == steps - 1;
-        self.frame_completed = final_step;
-
-        let irq = self.mode == FrameCounterMode::Mode4Step && final_step;
-
-        irq
+    fn irq(&self) -> bool {
+        self.cycles == self.cycle_table[3] - 1 ||
+            self.cycles == self.cycle_table[3]
     }
 }
 
@@ -538,8 +510,8 @@ pub struct Apu {
     channels: [Box<ApuChannel>; 5],
 
     // Mixer
-    pulse_table: [u8; 31],
-    tnd_table: [u8; 203],
+    pulse_table: [f32; 31],
+    tnd_table: [f32; 203],
 
     // Status register
     // Enable DMC (D), noise (N), triangle (T), and pulse channels (p2/p1)
@@ -547,18 +519,18 @@ pub struct Apu {
     // Frame counter
     // Mode (M, 0 = 4-step, 1 = 5-step), IRQ inhibit flag (I), unused (U)
     frame_counter: FrameCounter,
-    frame_counter_new_mode: bool,
+    delayed_frame_counter_write: Option<u8>,
 
     irq_inhibit: bool,
     frame_irq: Cell<bool>,
     dmc_irq: bool,
 
-    apu_cycles: u64,
-    remaining_cycles: u64,
+    cpu_cycles: u64,
+    apu_cycles: f64,
 
     channel_samples: Vec<Vec<u8>>,
-    nes_samples: Vec<u8>,
-    pub out_samples: Vec<u8>,
+    nes_samples: Vec<f32>,
+    pub out_samples: Vec<f32>,
 }
 
 impl Default for Apu {
@@ -579,18 +551,18 @@ impl Default for Apu {
         Apu {
             channels: channels,
 
-            pulse_table: [0; 31],
-            tnd_table: [0; 203],
+            pulse_table: [0.0; 31],
+            tnd_table: [0.0; 203],
 
-            frame_counter: FrameCounter::default(),
-            frame_counter_new_mode: false,
+            frame_counter: FrameCounter::new(),
+            delayed_frame_counter_write: None,
 
             irq_inhibit: false,
             frame_irq: Cell::new(false),
             dmc_irq: false,
 
-            apu_cycles: 0,
-            remaining_cycles: 0,
+            cpu_cycles: 0,
+            apu_cycles: 0.0,
 
             channel_samples: channel_samples,
             nes_samples: Vec::new(),
@@ -601,20 +573,20 @@ impl Default for Apu {
 
 impl Apu {
     pub fn new() -> Apu {
-        let mut pulse_table: [u8; 31] = [0; 31];
-        let mut tnd_table: [u8; 203] = [0; 203];
+        let mut pulse_table: [f32; 31] = [0.0; 31];
+        let mut tnd_table: [f32; 203] = [0.0; 203];
 
         // Avoid division by 0
-        pulse_table[0] = 0;
+        pulse_table[0] = 0.0;
         for n in 1..31 {
             let pulse_n: f32 = 95.52 / (8128.0 / n as f32 + 100.0);
-            pulse_table[n] = (pulse_n * u8::max_value() as f32) as u8;
+            pulse_table[n] = pulse_n;
         }
 
-        tnd_table[0] = 0;
+        tnd_table[0] = 0.0;
         for n in 1..203 {
             let tnd_n: f32 = 163.67 / (24329.0 / n as f32 + 100.0);
-            tnd_table[n] = (tnd_n * u8::max_value() as f32) as u8;
+            tnd_table[n] = tnd_n;
         }
 
         let mut apu = Apu::default();
@@ -669,6 +641,7 @@ impl Apu {
     }
 
     fn write_frame_counter(&mut self, byte: u8) {
+        println!("Frame counter write: {:08b}, Apu clocks on write: {}", byte, self.apu_cycles);
         let frame_counter_mode = byte >> 7;
         let frame_counter_mode = match frame_counter_mode {
             0 => FrameCounterMode::Mode4Step,
@@ -684,14 +657,12 @@ impl Apu {
         }
 
         self.frame_counter.set_mode(frame_counter_mode);
-
         self.frame_counter.reset();
+
         if self.frame_counter.mode == FrameCounterMode::Mode5Step {
-            self.frame_counter.current_step = 0;
-            self.step_frame_counter();
+            self.clock_channels(true);
         }
 
-        self.frame_counter_new_mode = true;
         //println!("Frame sequencer write: {:08b}", byte);
     }
 
@@ -701,101 +672,104 @@ impl Apu {
         }
     }
 
-    fn generate_samples(&mut self) {
-        for i in 0..NUM_CHANNELS {
-            let mut generated_samples = self.channels[i as usize].generate_samples();
-
-            self.channel_samples[i as usize].append(&mut generated_samples);
-        }
-
-        self.mix();
+    fn generate_output_samples(&mut self) {
+        self.resample();
         self.clear_channel_samples();
     }
 
-    fn mix(&mut self) {
-        // All channel sample buffers have same sizes
-        let buffer_len = self.channel_samples[0].len();
 
-        for i in 0..buffer_len {
-            // We add outputs of pulse1 and pulse 2 channels
-            // and use that value as an index into the pulse output lookup table
-            let pulse_output_index: usize
-            = self.channel_samples[PULSE_1][i] as usize + self.channel_samples[PULSE_2][i] as usize;
+    fn resample(&mut self) {
 
-            // We use outputs of triangle, noise and DMC channels
-            // as an index into the tnd output lookup table
-            let tnd_output_index: usize
-            = 3 * self.channel_samples[TRIANGLE][i] as usize + 2 * self.channel_samples[NOISE][i] as usize
-            + self.channel_samples[DMC][i] as usize;
+        let samples: Vec<[f32; 1]> = self.nes_samples.iter().map(|s| [s.to_sample()]).collect();
+        let conv = Converter::from_hz_to_hz(samples.iter().cloned(), APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
 
-            let pulse_output = self.pulse_table[pulse_output_index];
-            let tnd_output = self.tnd_table[tnd_output_index];
+        for frame in conv {
+            self.out_samples.push(frame[0].to_sample::<f32>());
+        }
 
-            let output: u8 = pulse_output.wrapping_add(tnd_output);
+        self.nes_samples.clear();
+    }
 
-            self.nes_samples.push(output);
+    fn clock_frame_counter(&mut self) {
+        let cycles_per_frame = self.frame_counter.cycle_table[self.frame_counter.cycle_table.len() as usize - 1];
+        let next_step = (self.frame_counter.current_step + 1) as usize;
+
+        self.frame_counter.cycles += 1;
+
+        self.clock_channels(false);
+
+        let irq = self.frame_counter.irq() && !self.irq_inhibit;
+        if irq {
+            self.frame_irq.set(true);
+        }
+
+        // End of frame, generate output samples and reset frame counter
+        if self.frame_counter.cycles == cycles_per_frame {
+            self.frame_counter.reset();
+
+            self.generate_output_samples();
         }
     }
 
-    fn step_timers(&mut self) {
+    fn clock_channels(&mut self, forced: bool) {
+        for channel in &mut self.channels {
+            if self.frame_counter.quarter_frame() || forced {
+                // Envelope / Linear counter
+            }
+
+            if self.frame_counter.half_frame() || forced {
+                channel.clock_length_counter();
+                // Sweep
+            }
+        }
+    }
+
+    fn clock_timers(&mut self) {
         for i in 0..NUM_CHANNELS {
             self.channels[i].clock_timer();
         }
     }
 
-    fn step_frame_counter(&mut self) {
-        let irq = self.frame_counter.step();
+    fn clock_channel_output(&mut self) {
+        // We add outputs of pulse1 and pulse 2 channels
+        // and use that value as an index into the pulse output lookup table
+        let pulse_output_index: usize
+        = self.channels[PULSE_1].output() as usize + self.channels[PULSE_2].output() as usize;
 
-        for channel in &mut self.channels {
-            if self.frame_counter.clock_envelope {
-                //
-            }
-            if self.frame_counter.clock_sweep {
-                //
-            }
-            if self.frame_counter.clock_linear_counter {
-                //
-            }
-            if self.frame_counter.clock_length_counter {
-                channel.clock_length_counter();
-            }
+        // We use outputs of triangle, noise and DMC channels
+        // as an index into the tnd output lookup table
+        let tnd_output_index: usize
+        = 3 * self.channels[TRIANGLE].output() as usize + 2 * self.channels[NOISE].output() as usize
+        + self.channels[DMC].output() as usize;
+
+        let pulse_output = self.pulse_table[pulse_output_index];
+        let tnd_output = self.tnd_table[tnd_output_index];
+
+        let output = pulse_output + tnd_output;
+        if output > 0.0 {
+            println!("OUTPUT: {}", output);
         }
-
-        self.generate_samples();
-
-        if irq && !self.irq_inhibit {
-            self.frame_irq.set(true);
-        }
+        self.nes_samples.push(output);
     }
 
     pub fn step(&mut self, cpu_cycles: u64) -> bool {
-        let odd_cycle = cpu_cycles % 2 != 0;
-        let target_cycles = self.remaining_cycles + cpu_cycles / 2;
-
-        if self.apu_cycles > target_cycles {
-            return false;
+        if let Some(byte) = self.delayed_frame_counter_write.take() {
+            self.write_frame_counter(byte);
         }
 
-        let cycles_to_run: u64 = target_cycles - self.apu_cycles;
-        let mut apu_cycles_per_step = APU_CYCLES_PER_STEP;
-        if odd_cycle {
-            apu_cycles_per_step += 1;
-        }
-
-        let frame_steps_to_run = cycles_to_run / apu_cycles_per_step;
-
-        let remaining_cycles = cycles_to_run % apu_cycles_per_step;
-        for i in 0..frame_steps_to_run {
-            self.step_timers();
-            self.step_frame_counter();
+        let cycles_to_run = cpu_cycles - self.cpu_cycles;
+        for i in 0..cycles_to_run {
+            self.clock_timers();
+            self.clock_channel_output();
+            self.clock_frame_counter();
 
             if self.frame_counter.frame_completed {
                 // output
             }
         }
-        //
-        self.apu_cycles += frame_steps_to_run * APU_CYCLES_PER_STEP;
-        self.remaining_cycles = remaining_cycles;
+
+        self.cpu_cycles = cpu_cycles;
+        self.apu_cycles = cpu_cycles as f64 / 2.0;
 
         let irq = self.frame_irq.get() && !self.irq_inhibit;
 
@@ -808,10 +782,10 @@ impl MemMapped for Apu {
         match addr {
             // Status register
             0x4015 => {
+                println!("IRQ before read {}", self.frame_irq.get());
                 let status = self.read_status();
                 // Clear frame_irq on read
                 self.frame_irq.set(false);
-                println!("{}", self.frame_irq.get());
                 Ok(status)
             },
             // The rest of the registers cannot be read from
@@ -945,7 +919,13 @@ impl MemMapped for Apu {
             // This register is used for both APU and I/O manipulation
             // The APU only uses bits 6 and 7
             0x4017 => {
-                self.write_frame_counter(byte);
+                // Odd cycle, delayed write
+                if self.cpu_cycles & 1 != 0 {
+                    self.delayed_frame_counter_write = Some(byte)
+                } else {
+                    self.write_frame_counter(byte);
+                }
+
                 Ok(())
             },
 

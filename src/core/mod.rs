@@ -1,5 +1,6 @@
 extern crate sdl2;
 extern crate time;
+extern crate sample;
 
 mod debugger;
 mod mappers;
@@ -16,6 +17,7 @@ use std::mem;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
+use sdl2::audio::AudioSpecDesired;
 use self::time::{PreciseTime, Duration};
 use self::memory::*;
 use self::apu::Apu;
@@ -37,6 +39,8 @@ pub trait CpuFacade {
 
     fn step_cpu(&mut self) -> Result<u8, EmulationError>;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
+
+    fn apu(&mut self) -> &mut Apu;
 
     fn irq(&mut self);
 }
@@ -87,6 +91,10 @@ impl CpuFacade for DefaultCpuFacade {
         self.mem_map.apu.step(cpu_cycles)
     }
 
+    fn apu(&mut self) -> &mut Apu {
+        &mut self.mem_map.apu
+    }
+
     fn irq(&mut self) {
         self.cpu.irq(&mut self.mem_map);
     }
@@ -124,6 +132,14 @@ impl Core {
         let video_subsystem = sdl_context.video().unwrap();
         let audio_subsystem = sdl_context.audio().unwrap();
 
+        let audio_spec_desired = AudioSpecDesired {
+            freq: Some(44100),
+            channels: Some(1),
+            samples: None,
+        };
+
+        let audio_queue = audio_subsystem.open_queue::<f32>(None, &audio_spec_desired).unwrap();
+        audio_queue.resume();
 
         let mut events = sdl_context.event_pump().unwrap();
 
@@ -175,6 +191,13 @@ impl Core {
                                 _ => {},
                             }
                         }
+                        let apu = self.cpu_facade.apu();
+                        if apu.out_samples.len() >= 2048 {
+                            audio_queue.queue(&apu.out_samples);
+                            apu.out_samples.clear();
+                        }
+
+
                     },
                     Err(error) => match error {
                         EmulationError::DebuggerBreakpoint(_addr) |

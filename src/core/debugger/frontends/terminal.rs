@@ -10,6 +10,7 @@ use std::mem;
 use std::cell::RefCell;
 use core::CpuFacade;
 use core::cpu::Cpu;
+use core::apu::Apu;
 use core::instructions::Instruction;
 use core::memory::{MemMap, MemMapped};
 use core::debugger::Debugger;
@@ -455,6 +456,10 @@ impl CpuFacade for TerminalDebugger {
 
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {
         self.mem_map.apu.step(cpu_cycles)
+    }
+
+    fn apu(&mut self) -> &mut Apu {
+        &mut self.mem_map.apu
     }
 
     fn irq(&mut self) {
