@@ -11,11 +11,9 @@ const APU_SAMPLE_RATE: u32 = 1_789_920;
 const OUTPUT_SAMPLE_RATE: u32 = 44_100;
 const STEP_FREQUENCY: u32 = 240; // 240hz steps
 const SAMPLES_PER_STEP: u32 = APU_SAMPLE_RATE / STEP_FREQUENCY;
-const CPU_CYCLES_PER_STEP: u64 = 7_457; // 7457 so we will add 1 on odd cpu cycles
-const APU_CYCLES_PER_STEP: f32 = 3_728.5;
 
-const FC_4STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14913, 22371, 29830];
-const FC_5STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14913, 22371, 37282];
+const FC_4STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14914, 22374, 29830];
+const FC_5STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14914, 22374, 37282];
 
 const NUM_CHANNELS: usize = 5;
 const PULSE_1: usize = 0;
@@ -106,7 +104,7 @@ impl Pulse {
         self.timer = (timer_high << 8) | timer_low;
 
         self.timer_counter = self.timer + 1;
-        self.waveform_counter = 0;
+        self.waveform_counter = 1;
 
         let length_counter_index = (byte >> 3) as usize;
         self.length_counter = if self.enabled {
@@ -115,7 +113,7 @@ impl Pulse {
             0
         };
 
-        println!("Loaded length counter: {}", self.length_counter);
+        //println!("Loaded length counter: {}, timer period: {}", self.length_counter, self.timer);
     }
 }
 
@@ -151,7 +149,7 @@ impl ApuChannel for Pulse {
             self.timer_counter = self.timer + 1;
 
             if self.waveform_counter == 0 {
-                self.waveform_counter == 7;
+                self.waveform_counter = 7;
             } else {
                 self.waveform_counter -= 1;
             }
@@ -168,7 +166,8 @@ impl ApuChannel for Pulse {
 
     fn output(&self) -> u8 {
         if self.is_audible() {
-            PULSE_DUTY[self.duty as usize][self.waveform_counter] * self.volume
+            let waveform = PULSE_DUTY[self.duty as usize][self.waveform_counter];
+            waveform * self.volume
         }
         else {
             0
@@ -454,8 +453,8 @@ struct FrameCounter {
     mode: FrameCounterMode,
     cycle_table: Vec<u64>,
     cycles: u64,
-    current_step: i32,
-    frame_completed: bool,
+    reset_after_cycles: u32,
+    odd_frame: bool,
 
     clock_envelope: bool,
     clock_sweep: bool,
@@ -466,14 +465,14 @@ struct FrameCounter {
 impl FrameCounter {
     fn new() -> FrameCounter {
         let mut frame_counter = FrameCounter::default();
-        frame_counter.cycle_table = FC_4STEP_CYCLE_TABLE_NTSC.to_vec();
+
+        frame_counter.set_mode(FrameCounterMode::Mode4Step);
         frame_counter.reset();
 
         frame_counter
     }
 
     fn reset(&mut self) {
-        self.current_step = -1;
         self.cycles = 0;
     }
 
@@ -500,8 +499,7 @@ impl FrameCounter {
     }
 
     fn irq(&self) -> bool {
-        self.cycles == self.cycle_table[3] - 1 ||
-            self.cycles == self.cycle_table[3]
+        self.cycles == self.cycle_table[3]
     }
 }
 
@@ -528,7 +526,6 @@ pub struct Apu {
     cpu_cycles: u64,
     apu_cycles: f64,
 
-    channel_samples: Vec<Vec<u8>>,
     nes_samples: Vec<f32>,
     pub out_samples: Vec<f32>,
 }
@@ -542,11 +539,6 @@ impl Default for Apu {
             Box::new(Noise::default()) as Box<ApuChannel>,
             Box::new(DMC::default()) as Box<ApuChannel>
         ];
-
-        let mut channel_samples = Vec::with_capacity(NUM_CHANNELS);
-        for _i in 0..NUM_CHANNELS {
-            channel_samples.push(Vec::new());
-        }
 
         Apu {
             channels: channels,
@@ -564,7 +556,6 @@ impl Default for Apu {
             cpu_cycles: 0,
             apu_cycles: 0.0,
 
-            channel_samples: channel_samples,
             nes_samples: Vec::new(),
             out_samples: Vec::new(),
         }
@@ -619,7 +610,7 @@ impl Apu {
         byte = (byte << 1) | pulse2_enabled as u8;
         byte = (byte << 1) | pulse1_enabled as u8;
 
-        println!("Status read: {:08b}", byte);
+        //println!("Status read: {:08b}", byte);
 
         byte
     }
@@ -637,11 +628,11 @@ impl Apu {
         self.channels[NOISE].toggle_enabled(noise_enabled);
         self.channels[DMC].toggle_enabled(dmc_enabled);
 
-        println!("Status write: {:08b}", byte);
+        //println!("Status write: {:08b}", byte);
     }
 
     fn write_frame_counter(&mut self, byte: u8) {
-        println!("Frame counter write: {:08b}, Apu clocks on write: {}", byte, self.apu_cycles);
+        //println!("Frame counter write: {:08b}, Apu clocks on write: {}", byte, self.apu_cycles);
         let frame_counter_mode = byte >> 7;
         let frame_counter_mode = match frame_counter_mode {
             0 => FrameCounterMode::Mode4Step,
@@ -657,76 +648,14 @@ impl Apu {
         }
 
         self.frame_counter.set_mode(frame_counter_mode);
-        self.frame_counter.reset();
+        self.frame_counter.reset_after_cycles = if self.cpu_cycles % 2 == 0 {
+            2
+        } else {
+            3
+        };
 
         if self.frame_counter.mode == FrameCounterMode::Mode5Step {
             self.clock_channels(true);
-        }
-
-        //println!("Frame sequencer write: {:08b}", byte);
-    }
-
-    fn clear_channel_samples(&mut self) {
-        for i in 0..NUM_CHANNELS {
-            self.channel_samples[i as usize].clear();
-        }
-    }
-
-    fn generate_output_samples(&mut self) {
-        self.resample();
-        self.clear_channel_samples();
-    }
-
-
-    fn resample(&mut self) {
-
-        let samples: Vec<[f32; 1]> = self.nes_samples.iter().map(|s| [s.to_sample()]).collect();
-        let conv = Converter::from_hz_to_hz(samples.iter().cloned(), APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
-
-        for frame in conv {
-            self.out_samples.push(frame[0].to_sample::<f32>());
-        }
-
-        self.nes_samples.clear();
-    }
-
-    fn clock_frame_counter(&mut self) {
-        let cycles_per_frame = self.frame_counter.cycle_table[self.frame_counter.cycle_table.len() as usize - 1];
-        let next_step = (self.frame_counter.current_step + 1) as usize;
-
-        self.frame_counter.cycles += 1;
-
-        self.clock_channels(false);
-
-        let irq = self.frame_counter.irq() && !self.irq_inhibit;
-        if irq {
-            self.frame_irq.set(true);
-        }
-
-        // End of frame, generate output samples and reset frame counter
-        if self.frame_counter.cycles == cycles_per_frame {
-            self.frame_counter.reset();
-
-            self.generate_output_samples();
-        }
-    }
-
-    fn clock_channels(&mut self, forced: bool) {
-        for channel in &mut self.channels {
-            if self.frame_counter.quarter_frame() || forced {
-                // Envelope / Linear counter
-            }
-
-            if self.frame_counter.half_frame() || forced {
-                channel.clock_length_counter();
-                // Sweep
-            }
-        }
-    }
-
-    fn clock_timers(&mut self) {
-        for i in 0..NUM_CHANNELS {
-            self.channels[i].clock_timer();
         }
     }
 
@@ -746,29 +675,87 @@ impl Apu {
         let tnd_output = self.tnd_table[tnd_output_index];
 
         let output = pulse_output + tnd_output;
-        if output > 0.0 {
-            println!("OUTPUT: {}", output);
-        }
+
         self.nes_samples.push(output);
     }
 
-    pub fn step(&mut self, cpu_cycles: u64) -> bool {
-        if let Some(byte) = self.delayed_frame_counter_write.take() {
-            self.write_frame_counter(byte);
+    fn generate_output_samples(&mut self) {
+        let samples: Vec<[f32; 1]> = self.nes_samples.iter().map(|s| [s.to_sample()]).collect();
+        let conv = Converter::from_hz_to_hz(samples.into_iter(), APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
+
+        for frame in conv {
+            let new_sample = frame[0].to_sample::<f32>();
+            self.out_samples.push(new_sample);
         }
 
+        self.nes_samples.clear();
+    }
+
+    fn clock_frame_counter(&mut self) {
+        let cycles_per_frame
+        = self.frame_counter.cycle_table[self.frame_counter.cycle_table.len() as usize - 1];
+
+        self.frame_counter.cycles += 1;
+
+        self.clock_channels(false);
+        let irq = self.frame_counter.irq() && !self.irq_inhibit;
+        if irq {
+            self.frame_irq.set(true);
+        }
+
+        if self.frame_counter.cycles == cycles_per_frame {
+            self.generate_output_samples();
+
+            self.frame_counter.reset();
+        }
+    }
+
+    fn clock_channels(&mut self, forced: bool) {
+        for channel in &mut self.channels {
+            if self.frame_counter.quarter_frame() || forced {
+                // Envelope / Linear counter
+            }
+
+            if self.frame_counter.half_frame() || forced {
+                channel.clock_length_counter();
+                // Sweep
+            }
+        }
+    }
+
+    fn clock_timers(&mut self) {
+        // Triangle's timer is clocked on every CPU clock, the rest of the channels' timers
+        // are clocked on every other CPU clock
+        self.channels[TRIANGLE].clock_timer();
+
+        if self.cpu_cycles % 2 == 0 {
+            self.channels[PULSE_1].clock_timer();
+            self.channels[PULSE_2].clock_timer();
+            self.channels[NOISE].clock_timer();
+            self.channels[DMC].clock_timer();
+        }
+    }
+
+    pub fn step(&mut self, cpu_cycles: u64) -> bool {
+
         let cycles_to_run = cpu_cycles - self.cpu_cycles;
+
         for i in 0..cycles_to_run {
+            // Delayed reset of the frame counter after a write occurs to $4017
+            if self.frame_counter.reset_after_cycles > 0 {
+                self.frame_counter.reset_after_cycles -= 1;
+                if self.frame_counter.reset_after_cycles == 0 {
+                    self.frame_counter.reset();
+                }
+            }
+
+            self.cpu_cycles += 1;
+
             self.clock_timers();
             self.clock_channel_output();
             self.clock_frame_counter();
-
-            if self.frame_counter.frame_completed {
-                // output
-            }
         }
 
-        self.cpu_cycles = cpu_cycles;
         self.apu_cycles = cpu_cycles as f64 / 2.0;
 
         let irq = self.frame_irq.get() && !self.irq_inhibit;
@@ -782,7 +769,7 @@ impl MemMapped for Apu {
         match addr {
             // Status register
             0x4015 => {
-                println!("IRQ before read {}", self.frame_irq.get());
+                //println!("IRQ before read {}", self.frame_irq.get());
                 let status = self.read_status();
                 // Clear frame_irq on read
                 self.frame_irq.set(false);
@@ -919,13 +906,7 @@ impl MemMapped for Apu {
             // This register is used for both APU and I/O manipulation
             // The APU only uses bits 6 and 7
             0x4017 => {
-                // Odd cycle, delayed write
-                if self.cpu_cycles & 1 != 0 {
-                    self.delayed_frame_counter_write = Some(byte)
-                } else {
-                    self.write_frame_counter(byte);
-                }
-
+                self.write_frame_counter(byte);
                 Ok(())
             },
 

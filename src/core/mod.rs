@@ -192,12 +192,9 @@ impl Core {
                             }
                         }
                         let apu = self.cpu_facade.apu();
-                        if apu.out_samples.len() >= 2048 {
-                            audio_queue.queue(&apu.out_samples);
-                            apu.out_samples.clear();
-                        }
 
-
+                        audio_queue.queue(&apu.out_samples);
+                        apu.out_samples.clear();
                     },
                     Err(error) => match error {
                         EmulationError::DebuggerBreakpoint(_addr) |
