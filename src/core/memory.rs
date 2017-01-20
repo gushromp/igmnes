@@ -83,19 +83,16 @@ impl MemMap {
             rom: rom,
             ram: Ram::new(),
             apu: Apu::new(),
-            ppu: vec![0; 8],
+            ppu: vec![0xFF; 8],
             mapper: mapper,
         };
-
-        // Set dummy PPU to dummy VBlank state so that
-        // rom tests will pass -_-
-        // mem_map.ppu[2] = 0xFF;
 
         mem_map
     }
 }
 
 impl MemMapped for MemMap {
+    #[inline]
     fn read(&self, index: u16) -> Result<u8, EmulationError> {
 
 //        Address range	Size	Device
@@ -152,6 +149,7 @@ impl MemMapped for MemMap {
         }
     }
 
+    #[inline]
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match index {
             // RAM

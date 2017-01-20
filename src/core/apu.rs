@@ -12,8 +12,8 @@ const OUTPUT_SAMPLE_RATE: u32 = 44_100;
 const STEP_FREQUENCY: u32 = 240; // 240hz steps
 const SAMPLES_PER_STEP: u32 = APU_SAMPLE_RATE / STEP_FREQUENCY;
 
-const FC_4STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14914, 22374, 29830];
-const FC_5STEP_CYCLE_TABLE_NTSC: [u64; 4] = [7457, 14914, 22374, 37282];
+const FC_4STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14914, 22372, 29830];
+const FC_5STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14914, 22372, 37282];
 
 const NUM_CHANNELS: usize = 5;
 const PULSE_1: usize = 0;
@@ -454,6 +454,7 @@ struct FrameCounter {
     cycle_table: Vec<u64>,
     cycles: u64,
     reset_after_cycles: u32,
+    cycles_since_interrupt: u64,
     odd_frame: bool,
 
     clock_envelope: bool,
@@ -583,7 +584,6 @@ impl Apu {
         let mut apu = Apu::default();
         apu.pulse_table = pulse_table;
         apu.tnd_table = tnd_table;
-        apu.frame_counter.reset();
 
         apu
     }
@@ -648,7 +648,8 @@ impl Apu {
         }
 
         self.frame_counter.set_mode(frame_counter_mode);
-        self.frame_counter.reset_after_cycles = if self.cpu_cycles % 2 == 0 {
+
+        self.frame_counter.reset_after_cycles += if self.cpu_cycles % 2 == 0 {
             2
         } else {
             3
@@ -692,15 +693,18 @@ impl Apu {
     }
 
     fn clock_frame_counter(&mut self) {
-        let cycles_per_frame
-        = self.frame_counter.cycle_table[self.frame_counter.cycle_table.len() as usize - 1];
+        let cycles_per_frame = *self.frame_counter.cycle_table.last().unwrap();
 
         self.frame_counter.cycles += 1;
+        self.frame_counter.cycles_since_interrupt += 1;
 
         self.clock_channels(false);
-        let irq = self.frame_counter.irq() && !self.irq_inhibit;
+        let irq = self.frame_counter.irq();
         if irq {
-            self.frame_irq.set(true);
+            if !self.irq_inhibit {
+                self.frame_irq.set(true);
+            }
+            self.frame_counter.cycles_since_interrupt = 0;
         }
 
         if self.frame_counter.cycles == cycles_per_frame {
@@ -769,10 +773,12 @@ impl MemMapped for Apu {
         match addr {
             // Status register
             0x4015 => {
-                //println!("IRQ before read {}", self.frame_irq.get());
                 let status = self.read_status();
-                // Clear frame_irq on read
-                self.frame_irq.set(false);
+                // Clear frame_irq on read but only if the interrupt hasn't occurred
+                // at the same time the status register is being read
+                if self.frame_counter.cycles_since_interrupt > 0 {
+                    self.frame_irq.set(false);
+                }
                 Ok(status)
             },
             // The rest of the registers cannot be read from
