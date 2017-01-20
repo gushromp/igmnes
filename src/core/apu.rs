@@ -726,12 +726,15 @@ impl Apu {
 
     pub fn step(&mut self, cpu_cycles: u64) -> bool {
         let cycles_to_run = cpu_cycles - self.cpu_cycles;
-        let even_cycle = self.cpu_cycles % 2 == 0;
+        let even_cycle = cpu_cycles % 2 == 0;
 
         // Delayed reset of the frame counter after a write occurs to $4017
-        // TODO find a way to reslove odd cycle jitter without breaking timing
         if self.frame_counter.delayed_reset {
-            self.frame_counter.reset_after_cycles = cycles_to_run;
+            self.frame_counter.reset_after_cycles = if even_cycle {
+                3
+            } else {
+                4
+            };
 
             self.frame_counter.delayed_reset = false;
         }
@@ -739,13 +742,14 @@ impl Apu {
         for _ in 0..cycles_to_run {
             self.cpu_cycles += 1;
 
+            self.clock_frame_counter();
+
             if self.frame_counter.reset_after_cycles > 0 {
                 self.frame_counter.reset_after_cycles -= 1;
                 if self.frame_counter.reset_after_cycles == 0 {
                     self.frame_counter.reset();
                 }
             }
-            self.clock_frame_counter();
 
             self.clock_timers();
             self.clock_length_counters(false);

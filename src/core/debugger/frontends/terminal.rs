@@ -101,10 +101,10 @@ impl TerminalDebugger {
             ClearLabels => self.clear_labels(),
             Goto(addr) => self.goto(addr),
             Disassemble(ref range) => self.disassemble(range),
-            Continue => self.stop_listening(),
             Reset => self.reset(),
             Trace => self.trace(),
             RepeatCommand(ref command, count) => self.repeat_command(command, count),
+            _ => unreachable!(),
         };
     }
 

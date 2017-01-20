@@ -126,21 +126,19 @@ pub struct Cpu {
 
     // Accumulator
     pub reg_a: u8,
-
     // X index register
     pub reg_x: u8,
-
     // Y index register
     pub reg_y: u8,
-
     // status register
     pub reg_status: StatusReg,
-
     // stack pointer register
     pub reg_sp: u8,
-
     // program counter register
     pub reg_pc: u16,
+
+    // Cycle count
+    pub cycle_count: u64,
 }
 
 impl Cpu {
@@ -163,6 +161,8 @@ impl Cpu {
 
             reg_sp: RESET_SP,
             reg_pc: 0,
+
+            cycle_count: 0,
         };
         cpu.hard_reset(mem_map);
 
@@ -188,6 +188,8 @@ impl Cpu {
 
         self.reg_sp = RESET_SP;
         self.reg_pc = mem_map.read_word(RESET_PC_VEC).unwrap();
+
+        self.cycle_count = 0;
     }
 
     #[inline]
@@ -214,7 +216,15 @@ impl Cpu {
         let instruction = Instruction::decode(mem_map, self.reg_pc);
 
         match instruction {
-            Ok(instr) => self.execute_instruction(instr, mem_map),
+            Ok(instr) => {
+                match self.execute_instruction(instr, mem_map) {
+                    Ok(cycles) => {
+                        self.cycle_count += cycles as u64;
+                        Ok(cycles)
+                    },
+                    Err(e) => Err(e)
+                }
+            },
             Err(e) => {
                 self.reg_pc = self.reg_pc.wrapping_add(1);
                 Err(e)
@@ -1078,7 +1088,7 @@ impl Cpu {
 
                 let addr = arg_resolved.wrapping_add(self.reg_y as u16);
 
-                if (arg_resolved % 0xFF) + self.reg_y as u16 > 0xFF {
+                if (arg_resolved & 0xFF) + self.reg_y as u16 > 0xFF {
                     instruction.cycle_count += 1;
                 }
 
@@ -1106,13 +1116,9 @@ impl Cpu {
             ZeroPageIndexedX(arg) => mem_map.write((arg.wrapping_add(self.reg_x) as u16), byte),
             ZeroPageIndexedY(arg) => mem_map.write((arg.wrapping_add(self.reg_y) as u16), byte),
             AbsoluteIndexedX(arg) => {
-                instruction.cycle_count += 1;
-
                 mem_map.write(arg.wrapping_add(self.reg_x as u16), byte)
             },
             AbsoluteIndexedY(arg) => {
-                instruction.cycle_count += 1;
-
                 mem_map.write(arg.wrapping_add(self.reg_y as u16), byte)
             },
             IndexedIndirectX(arg) => {
@@ -1133,8 +1139,6 @@ impl Cpu {
 
                 // See comment in the read_resolved function above
                 let addr = arg_resolved.wrapping_add(self.reg_y as u16);
-
-                instruction.cycle_count += 1;
 
                 mem_map.write(addr, byte)
             }
@@ -1208,14 +1212,18 @@ impl Cpu {
 
         match instruction.addressing_mode {
             Relative(offset) => {
+                // The offset is added AFTER the PC has been incremented by 2
+                // (which happens regardless of whether the branch is being taken or not)
+                // So we need to check for page boundary crossing AFTER the PC has been incremented
+                // by 2
+                let old_reg_pc = self.reg_pc + 2;
                 let reg_pc_i32 = self.reg_pc as i32;
-                let test = (reg_pc_i32 & 0xFF) + offset as i32;
-                if test < 0 || test > 0xFF {
+                self.reg_pc = reg_pc_i32.wrapping_add(offset as i32) as u16;
+
+                if old_reg_pc & 0xFF00 != self.reg_pc & 0xFF00 {
                     // moved to previous or next page, increase cycle count by 1
                     instruction.cycle_count += 1;
                 }
-
-                self.reg_pc = reg_pc_i32.wrapping_add(offset as i32) as u16;
             },
             _ => unreachable!()
         }
@@ -1225,8 +1233,8 @@ impl Cpu {
 impl Display for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let status_reg_byte: u8 = self.reg_status.byte();
-        write!(f, "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X}",
-               self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp)
+        write!(f, "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X} CYC:{}",
+               self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp, self.cycle_count)
     }
 }
 
