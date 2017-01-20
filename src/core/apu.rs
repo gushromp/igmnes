@@ -9,11 +9,11 @@ use core::errors::EmulationError;
 // we need something divisible by 240
 const APU_SAMPLE_RATE: u32 = 1_789_920;
 const OUTPUT_SAMPLE_RATE: u32 = 44_100;
-const STEP_FREQUENCY: u32 = 240; // 240hz steps
-const SAMPLES_PER_STEP: u32 = APU_SAMPLE_RATE / STEP_FREQUENCY;
+//const STEP_FREQUENCY: u32 = 240; // 240hz steps
+//const SAMPLES_PER_STEP: u32 = APU_SAMPLE_RATE / STEP_FREQUENCY;
 
-const FC_4STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14914, 22372, 29830];
-const FC_5STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14914, 22372, 37282];
+const FC_4STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 29829];
+const FC_5STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 37281];
 
 const NUM_CHANNELS: usize = 5;
 const PULSE_1: usize = 0;
@@ -168,8 +168,7 @@ impl ApuChannel for Pulse {
         if self.is_audible() {
             let waveform = PULSE_DUTY[self.duty as usize][self.waveform_counter];
             waveform * self.volume
-        }
-        else {
+        } else {
             0
         }
     }
@@ -433,15 +432,6 @@ enum FrameCounterMode {
     Mode5Step,
 }
 
-impl FrameCounterMode {
-    fn steps(&self) -> i32 {
-        match *self {
-            FrameCounterMode::Mode4Step => 4,
-            FrameCounterMode::Mode5Step => 5,
-        }
-    }
-}
-
 impl Default for FrameCounterMode {
     fn default() -> FrameCounterMode {
         FrameCounterMode::Mode4Step
@@ -453,7 +443,8 @@ struct FrameCounter {
     mode: FrameCounterMode,
     cycle_table: Vec<u64>,
     cycles: u64,
-    reset_after_cycles: u32,
+    delayed_reset: bool,
+    reset_after_cycles: u64,
     cycles_since_interrupt: u64,
     odd_frame: bool,
 
@@ -468,7 +459,9 @@ impl FrameCounter {
         let mut frame_counter = FrameCounter::default();
 
         frame_counter.set_mode(FrameCounterMode::Mode4Step);
-        frame_counter.reset();
+        //        frame_counter.cycles = 6;
+        //        frame_counter.reset_after_cycles = 6;
+        //        frame_counter.delayed_reset = true;
 
         frame_counter
     }
@@ -500,7 +493,10 @@ impl FrameCounter {
     }
 
     fn irq(&self) -> bool {
-        self.cycles == self.cycle_table[3]
+        self.mode == FrameCounterMode::Mode4Step &&
+            self.cycles == self.cycle_table[3] ||
+            self.cycles == self.cycle_table[3] - 1 ||
+            self.cycles == 0
     }
 }
 
@@ -648,15 +644,10 @@ impl Apu {
         }
 
         self.frame_counter.set_mode(frame_counter_mode);
-
-        self.frame_counter.reset_after_cycles += if self.cpu_cycles % 2 == 0 {
-            2
-        } else {
-            3
-        };
+        self.frame_counter.delayed_reset = true;
 
         if self.frame_counter.mode == FrameCounterMode::Mode5Step {
-            self.clock_channels(true);
+            self.clock_length_counters(true);
         }
     }
 
@@ -696,25 +687,18 @@ impl Apu {
         let cycles_per_frame = *self.frame_counter.cycle_table.last().unwrap();
 
         self.frame_counter.cycles += 1;
-        self.frame_counter.cycles_since_interrupt += 1;
 
-        self.clock_channels(false);
-        let irq = self.frame_counter.irq();
-        if irq {
-            if !self.irq_inhibit {
-                self.frame_irq.set(true);
-            }
-            self.frame_counter.cycles_since_interrupt = 0;
+        if self.frame_counter.cycles == cycles_per_frame + 1 {
+            self.frame_counter.reset();
+            self.generate_output_samples();
         }
 
-        if self.frame_counter.cycles == cycles_per_frame {
-            self.generate_output_samples();
-
-            self.frame_counter.reset();
+        if self.frame_counter.irq() && !self.irq_inhibit {
+            self.frame_irq.set(true);
         }
     }
 
-    fn clock_channels(&mut self, forced: bool) {
+    fn clock_length_counters(&mut self, forced: bool) {
         for channel in &mut self.channels {
             if self.frame_counter.quarter_frame() || forced {
                 // Envelope / Linear counter
@@ -741,26 +725,34 @@ impl Apu {
     }
 
     pub fn step(&mut self, cpu_cycles: u64) -> bool {
-
         let cycles_to_run = cpu_cycles - self.cpu_cycles;
+        let even_cycle = self.cpu_cycles % 2 == 0;
 
-        for i in 0..cycles_to_run {
-            // Delayed reset of the frame counter after a write occurs to $4017
+        // Delayed reset of the frame counter after a write occurs to $4017
+        // TODO find a way to reslove odd cycle jitter without breaking timing
+        if self.frame_counter.delayed_reset {
+            self.frame_counter.reset_after_cycles = cycles_to_run;
+
+            self.frame_counter.delayed_reset = false;
+        }
+
+        for _ in 0..cycles_to_run {
+            self.cpu_cycles += 1;
+
             if self.frame_counter.reset_after_cycles > 0 {
                 self.frame_counter.reset_after_cycles -= 1;
                 if self.frame_counter.reset_after_cycles == 0 {
                     self.frame_counter.reset();
                 }
             }
-
-            self.cpu_cycles += 1;
+            self.clock_frame_counter();
 
             self.clock_timers();
+            self.clock_length_counters(false);
             self.clock_channel_output();
-            self.clock_frame_counter();
         }
 
-        self.apu_cycles = cpu_cycles as f64 / 2.0;
+        self.apu_cycles = self.cpu_cycles as f64 / 2.0;
 
         let irq = self.frame_irq.get() && !self.irq_inhibit;
 
@@ -776,9 +768,9 @@ impl MemMapped for Apu {
                 let status = self.read_status();
                 // Clear frame_irq on read but only if the interrupt hasn't occurred
                 // at the same time the status register is being read
-                if self.frame_counter.cycles_since_interrupt > 0 {
-                    self.frame_irq.set(false);
-                }
+                // if self.frame_counter.cycles_since_interrupt > 0 {
+                self.frame_irq.set(false);
+                // }
                 Ok(status)
             },
             // The rest of the registers cannot be read from
