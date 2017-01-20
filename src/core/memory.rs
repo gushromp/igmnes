@@ -124,13 +124,13 @@ impl MemMapped for MemMap {
             }
             // OAM DMA register
             0x4014 => {
-                println!("Attempted read from unimplemented OAM DMA register");
+                //println!("Attempted read from unimplemented OAM DMA register");
                 Ok(0)
             }
             // I/O
             0x4016 => {
                 // self.apu.read(index)
-                println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
+                //println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
                 Ok(0)
             }
             // I/O, Apu: This address is shared by both the APU and I/O so we can from read either one
@@ -139,7 +139,7 @@ impl MemMapped for MemMap {
             }
             0x4018...0x401f => {
                 let index = index % 0x4018;
-                println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
+                //println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
                 Ok(0)
             }
             0x4020...0xFFFF => {

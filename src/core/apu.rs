@@ -774,7 +774,10 @@ impl MemMapped for Apu {
                 Ok(status)
             },
             // The rest of the registers cannot be read from
-            _ => Err(EmulationError::MemoryAccess(format!("Attempted invalid read from APU register: 0x{:04X}", addr)))
+            _ => {
+                //println!("Attempted invalid read from APU register: 0x{:04X}", addr);
+                Ok(0)
+            }
         }
     }
 

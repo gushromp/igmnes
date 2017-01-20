@@ -166,6 +166,13 @@ impl Core {
 
         'running: loop {
             if self.is_running {
+
+                if let Some(debugger) = self.cpu_facade.debugger() {
+                    if debugger.is_listening() {
+                        debugger.break_into();
+                    }
+                }
+
                 let result = self.cpu_facade.step_cpu();
 
                 match result {

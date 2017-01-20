@@ -100,7 +100,6 @@ impl TerminalDebugger {
             ClearWatchpoints => self.clear_watchpoints(),
             ClearLabels => self.clear_labels(),
             Goto(addr) => self.goto(addr),
-            Step => self.step_cpu(),
             Disassemble(ref range) => self.disassemble(range),
             Continue => self.stop_listening(),
             Reset => self.reset(),
@@ -300,14 +299,6 @@ impl TerminalDebugger {
         println!();
     }
 
-    fn step_cpu(&mut self) {
-        self.step_cpu();
-        self.print_state();
-
-        let range = 0..5;
-        self.disassemble(&range);
-    }
-
     fn disassemble(&self, range: &Range<u16>) {
         let addr = self.cpu.reg_pc;
         let disassembly = disassembler::disassemble_range(addr, range, &self.cpu, &self.mem_map).unwrap();
@@ -334,10 +325,15 @@ impl TerminalDebugger {
             self.logger = Some(Logger::new());
         }
 
-        self.trace_active = true;
+        self.trace_active = !self.trace_active;
 
         println!();
-        println!("Began tracing");
+        if self.trace_active {
+            println!("Began tracing");
+        } else {
+            println!("Stopped tracing");
+        }
+
         println!();
     }
 
@@ -349,11 +345,10 @@ impl TerminalDebugger {
 }
 
 impl Debugger for TerminalDebugger {
-    fn start_listening(&mut self) {
+    fn break_into(&mut self) {
         use core::debugger::command::Command::*;
 
         let mut stdout = io::stdout();
-        self.is_listening = true;
 
         'debug: loop {
             let pc = self.cpu.reg_pc;
@@ -369,6 +364,9 @@ impl Debugger for TerminalDebugger {
             match command {
                 Ok(ref command) => {
                     match *command {
+                        Step => {
+                            break 'debug;
+                        }
                         Continue => {
                             self.stop_listening();
                             break 'debug;
@@ -380,14 +378,19 @@ impl Debugger for TerminalDebugger {
             }
         }
     }
-    fn stop_listening(&mut self) {
 
+
+    fn start_listening(&mut self) {
+        self.is_listening = true;
+    }
+    fn stop_listening(&mut self) {
         self.is_listening = false;
     }
 
     fn is_listening(&self) -> bool {
         self.is_listening
     }
+
 }
 
 impl CpuFacade for TerminalDebugger {
@@ -437,9 +440,9 @@ impl CpuFacade for TerminalDebugger {
 
         match cpu_result {
             Err(EmulationError::DebuggerWatchpoint(addr)) => {
-                if let Some(addr) = self.cur_watchpoint_addr {
+                if let Some(_addr) = self.cur_watchpoint_addr {
                     // Already broken into debugger at this watchpoint,
-                    // continue
+                    // Execute this instruction
                     self.cur_watchpoint_addr = None;
 
                     self.cpu.step(&mut self.mem_map)

@@ -7,6 +7,8 @@ use core::CpuFacade;
 use core::cpu::Cpu;
 
 pub trait Debugger: CpuFacade {
+    fn break_into(&mut self);
+
     fn start_listening(&mut self);
     fn stop_listening(&mut self);
 

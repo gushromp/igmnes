@@ -310,7 +310,7 @@ impl Cpu {
                 Ok(instruction.cycle_count)
             }
             Err(e) => {
-                self.reg_pc = self.reg_pc.wrapping_add(instruction.addressing_mode.byte_count());
+                //self.reg_pc = self.reg_pc.wrapping_add(instruction.addressing_mode.byte_count());
 
                 Err(e)
             }

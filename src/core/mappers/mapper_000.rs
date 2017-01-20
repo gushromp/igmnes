@@ -84,7 +84,7 @@ impl MemMapped for NRom {
             0x6000...0x7FFF => self.read_prg_ram(index),
             0x8000...0xFFFF => self.read_prg_rom(index),
             _ => {
-                println!("Attempted read from unmapped address: 0x{:X}", index);
+                //println!("Attempted read from unmapped address: 0x{:X}", index);
                 Ok(0)
 
             }
@@ -95,7 +95,7 @@ impl MemMapped for NRom {
         match index {
             0x6000...0x7FFF => self.write_prg_ram(index, byte),
             _ => {
-                println!("Attempted write to non-RAM address: 0x{:X}", index);
+                //println!("Attempted write to non-RAM address: 0x{:X}", index);
                 Ok(())
             }
         }
