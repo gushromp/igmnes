@@ -198,7 +198,7 @@ impl Triangle {
         self.linear_counter_load = byte & 0b0111_1111;
     }
 
-    fn write_uuuuuuuu(&mut self, byte: u8) {}
+    fn write_uuuuuuuu(&mut self, _byte: u8) {}
 
     fn write_tttttttt(&mut self, byte: u8) {
         let timer_high = self.timer >> 8;
@@ -296,7 +296,7 @@ impl Noise {
         self.volume = byte & 0b1111;
     }
 
-    fn write_uuuuuuuu(&mut self, byte: u8) {}
+    fn write_uuuuuuuu(&mut self, _byte: u8) {}
 
     fn write_luuupppp(&mut self, byte: u8) {
         self.looping = byte & 0b1000_0000 != 0;
@@ -501,7 +501,7 @@ impl FrameCounter {
 
 pub struct Apu {
     // Waveform/Sample generators
-    channels: [Box<ApuChannel>; 5],
+    channels: [Box<dyn ApuChannel>; 5],
 
     // Mixer
     pulse_table: [f32; 31],
@@ -529,11 +529,11 @@ pub struct Apu {
 impl Default for Apu {
     fn default() -> Apu {
         let channels = [
-            Box::new(Pulse::default()) as Box<ApuChannel>,
-            Box::new(Pulse::default()) as Box<ApuChannel>,
-            Box::new(Triangle::default()) as Box<ApuChannel>,
-            Box::new(Noise::default()) as Box<ApuChannel>,
-            Box::new(DMC::default()) as Box<ApuChannel>
+            Box::new(Pulse::default()) as Box<dyn ApuChannel>,
+            Box::new(Pulse::default()) as Box<dyn ApuChannel>,
+            Box::new(Triangle::default()) as Box<dyn ApuChannel>,
+            Box::new(Noise::default()) as Box<dyn ApuChannel>,
+            Box::new(DMC::default()) as Box<dyn ApuChannel>
         ];
 
         Apu {

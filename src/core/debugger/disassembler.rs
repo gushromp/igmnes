@@ -4,13 +4,13 @@ use core::memory::MemMapped;
 use core::cpu::Cpu;
 use core::errors::EmulationError;
 
-pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &MemMapped)
+pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &dyn MemMapped)
                          -> Result<Vec<String>, EmulationError> {
     let mut result = Vec::new();
     let mut current_addr = addr;
 
     let range = range.clone();
-    for i in range {
+    for _i in range {
         let index = current_addr as u16;
         let mut instruction = Instruction::decode(mem_map, index);
 
@@ -29,7 +29,7 @@ pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &Mem
     Ok(result)
 }
 
-pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map: &MemMapped)
+pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map: &dyn MemMapped)
                    -> Result<String, EmulationError> {
     use core::instructions::AddressingMode::*;
 

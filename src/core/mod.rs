@@ -18,7 +18,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::audio::AudioSpecDesired;
-use self::time::{PreciseTime, Duration};
+use self::time::PreciseTime;
 use self::memory::*;
 use self::apu::Apu;
 use self::cpu::Cpu;
@@ -35,7 +35,7 @@ const CLOCK_DIVISOR_PAL: i32 = 15;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, MemMap);
-    fn debugger(&mut self) -> Option<&mut Debugger>;
+    fn debugger(&mut self) -> Option<&mut dyn Debugger>;
 
     fn step_cpu(&mut self) -> Result<u8, EmulationError>;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
@@ -79,7 +79,7 @@ impl CpuFacade for DefaultCpuFacade {
     }
 
     // This is the real cpu, not a debugger
-    fn debugger(&mut self) -> Option<&mut Debugger> {
+    fn debugger(&mut self) -> Option<&mut dyn Debugger> {
         None
     }
 
@@ -96,27 +96,27 @@ impl CpuFacade for DefaultCpuFacade {
     }
 
     fn irq(&mut self) {
-        self.cpu.irq(&mut self.mem_map);
+        self.cpu.irq(&mut self.mem_map).unwrap();
     }
 }
 
 // 2A03 (NTSC) and 2A07 (PAL) emulation
 // contains CPU (nearly identical to MOS 6502) part and APU part
 pub struct Core {
-    cpu_facade: Box<CpuFacade>,
+    cpu_facade: Box<dyn CpuFacade>,
     is_debugger_attached: bool,
     is_running: bool,
 }
 
 impl Core {
-    pub fn load_rom(file_path: &Path) -> Result<Core, Box<Error>> {
+    pub fn load_rom(file_path: &Path) -> Result<Core, Box<dyn Error>> {
         let rom = Rom::load_rom(file_path)?;
         let mem_map = MemMap::new(rom);
 
         let cpu = Cpu::new(&mem_map);
-        let cpu_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<CpuFacade>;
+        let cpu_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<dyn CpuFacade>;
 
-        let mut core = Core {
+        let core = Core {
             cpu_facade: cpu_facade,
             is_debugger_attached: false,
             is_running: false,
@@ -162,7 +162,7 @@ impl Core {
             debugger.start_listening();
         }
 
-        let mut start_time = PreciseTime::now();
+        let start_time = PreciseTime::now();
 
         'running: loop {
             if self.is_running {
@@ -231,11 +231,11 @@ impl Core {
         self.is_running = false;
     }
 
-    pub fn attach_debugger(&mut self) -> &mut Debugger {
+    pub fn attach_debugger(&mut self) -> &mut dyn Debugger {
         if !self.is_debugger_attached {
             let dummy_facade = self.get_dummy_facade();
             let (cpu, mem_map) = mem::replace(&mut self.cpu_facade, dummy_facade).consume();
-            let new_facade = Box::new(TerminalDebugger::new(cpu, mem_map)) as Box<CpuFacade>;
+            let new_facade = Box::new(TerminalDebugger::new(cpu, mem_map)) as Box<dyn CpuFacade>;
 
             self.cpu_facade = new_facade;
             self.is_debugger_attached = true;
@@ -248,20 +248,20 @@ impl Core {
         if self.is_debugger_attached {
             let dummy_facade = self.get_dummy_facade();
             let (cpu, mem_map) = mem::replace(&mut self.cpu_facade, dummy_facade).consume();
-            let new_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<CpuFacade>;
+            let new_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<dyn CpuFacade>;
 
             self.cpu_facade = new_facade;
             self.is_debugger_attached = false;
         }
     }
 
-    pub fn debugger(&mut self) -> Option<&mut Debugger> {
+    pub fn debugger(&mut self) -> Option<&mut dyn Debugger> {
         self.cpu_facade.debugger()
     }
 
-    fn get_dummy_facade(&mut self) -> Box<CpuFacade> {
+    fn get_dummy_facade(&mut self) -> Box<dyn CpuFacade> {
         let dummy_device = DefaultCpuFacade::default();
-        let dummy_facade = Box::new(dummy_device) as Box<CpuFacade>;
+        let dummy_facade = Box::new(dummy_device) as Box<dyn CpuFacade>;
 
         dummy_facade
     }

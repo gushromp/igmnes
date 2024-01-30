@@ -19,15 +19,15 @@ pub trait Mapper : MemMapped {
     fn write_chr_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
 }
 
-pub fn load_mapper_for_rom(rom: &Rom) -> Result<Box<Mapper>, String> {
+pub fn load_mapper_for_rom(rom: &Rom) -> Result<Box<dyn Mapper>, String> {
     match rom.header.mapper_number {
-        0 => Ok(Box::new(NRom::new(rom)) as Box<Mapper>),
+        0 => Ok(Box::new(NRom::new(rom)) as Box<dyn Mapper>),
         mapper_num @ _ => Err(format!("Unsupported mapper number: {}", mapper_num)),
     }
 }
 
-pub fn default_mapper() -> Box<Mapper> {
+pub fn default_mapper() -> Box<dyn Mapper> {
     let def_rom = Rom::default();
 
-    Box::new(NRom::new(&def_rom)) as Box<Mapper>
+    Box::new(NRom::new(&def_rom)) as Box<dyn Mapper>
 }

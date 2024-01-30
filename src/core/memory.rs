@@ -56,7 +56,7 @@ pub struct MemMap {
     ram: Ram,
     pub apu: Apu,
     pub ppu: Vec<u8>, // dummy
-    mapper: Box<Mapper>,
+    mapper: Box<dyn Mapper>,
 }
 
 impl Default for MemMap {
@@ -79,7 +79,7 @@ impl MemMap {
 
         let mapper = mappers::load_mapper_for_rom(&rom).unwrap();
 
-        let mut mem_map = MemMap {
+        let mem_map = MemMap {
             rom: rom,
             ram: Ram::new(),
             apu: Apu::new(),
@@ -108,18 +108,18 @@ impl MemMapped for MemMap {
 
         match index {
             // RAM
-            0...0x1FFF => {
+            0..=0x1FFF => {
                 let index = index % 0x800;
                 self.ram.read(index)
             },
             // PPU
-            0x2000...0x3FFF => {
+            0x2000..=0x3FFF => {
                 //println!("Attempted read from dummy PPU register: 0x{:04X}", index);
                 let index = index % 0x0008;
                 Ok(self.ppu[index as usize])
             },
             // APU
-            0x4000...0x4013 | 0x4015 => {
+            0x4000..=0x4013 | 0x4015 => {
                 self.apu.read(index)
             }
             // OAM DMA register
@@ -137,12 +137,12 @@ impl MemMapped for MemMap {
             0x4017 => {
                 self.apu.read(index)
             }
-            0x4018...0x401f => {
-                let index = index % 0x4018;
+            0x4018..=0x401f => {
+                let _index = index % 0x4018;
                 //println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
                 Ok(0)
             }
-            0x4020...0xFFFF => {
+            0x4020..=0xFFFF => {
                 self.mapper.read(index)
             }
             _ => unreachable!()
@@ -153,19 +153,19 @@ impl MemMapped for MemMap {
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match index {
             // RAM
-            0...0x1FFF => {
+            0..=0x1FFF => {
                 let index = index % 0x800;
                 self.ram.write(index, byte)
             },
             // PPU
-            0x2000...0x3FFF => {
+            0x2000..=0x3FFF => {
                 //println!("Attempted write to dummy PPU register: 0x{:X}", index);
                 let index = index % 0x0008;
                 self.ppu[index as usize] = byte;
                 Ok(())
             },
             // APU
-            0x4000...0x4013 | 0x4015 => {
+            0x4000..=0x4013 | 0x4015 => {
                 self.apu.write(index, byte)
 
             }
@@ -185,12 +185,12 @@ impl MemMapped for MemMap {
                 self.apu.write(index, byte)
                 //self.io.write(addr, byte);
             }
-            0x4018...0x401F => {
+            0x4018..=0x401F => {
                 let index = index % 0x4018;
                 println!("Attempted unimplemented write to CPU Test Register: 0x{:X}", index);
                 Ok(())
             }
-            0x4020...0xFFFF => {
+            0x4020..=0xFFFF => {
                 self.mapper.write(index, byte)
             }
             _ => unreachable!()

@@ -1,4 +1,4 @@
-use std::error::Error;
+
 use std::fmt;
 use core::memory::MemMapped;
 use core::errors::EmulationError;
@@ -182,7 +182,7 @@ impl Instruction {
 }
 
 impl Instruction {
-    pub fn decode(mem_map: &MemMapped, addr: u16) -> Result<Instruction, EmulationError> {
+    pub fn decode(mem_map: &dyn MemMapped, addr: u16) -> Result<Instruction, EmulationError> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 

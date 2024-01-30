@@ -1,4 +1,4 @@
-use std::path::Path;
+
 use std::io;
 use std::io::prelude::*;
 use std::io::BufWriter;
@@ -6,8 +6,8 @@ use std::fs::File;
 use std::collections::{HashSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::ops::Range;
-use std::mem;
-use std::cell::RefCell;
+
+
 use core::CpuFacade;
 use core::cpu::Cpu;
 use core::apu::Apu;
@@ -19,12 +19,12 @@ use core::debugger::disassembler;
 use core::errors::EmulationError;
 
 struct MemMapShim<'a> {
-    mem_map: &'a mut MemMapped,
+    mem_map: &'a mut dyn MemMapped,
     watchpoint_set: &'a HashSet<u16>,
 }
 
 impl<'a> MemMapShim<'a> {
-    pub fn new(mem_map: &'a mut MemMapped, watchpoint_set: &'a HashSet<u16>) -> MemMapShim<'a> {
+    pub fn new(mem_map: &'a mut dyn MemMapped, watchpoint_set: &'a HashSet<u16>) -> MemMapShim<'a> {
         MemMapShim {
             mem_map: mem_map,
             watchpoint_set: watchpoint_set,
@@ -47,7 +47,7 @@ impl Logger {
     }
 
     pub fn log_line(&mut self, line: &[u8]) {
-        self.buf_writer.write(line);
+        self.buf_writer.write(line).unwrap();
     }
 }
 
@@ -157,7 +157,7 @@ impl TerminalDebugger {
         println!();
         println!("         00  01  02  03  04  05  06  07  08  09  0A  0B  0C  0D  0E  0F");
         println!("       ----------------------------------------------------------------");
-        for i in 0..rows {
+        for _i in 0..rows {
             print!("0x{:04X} | ", cursor);
             for j in 0..columns {
                 let byte = self.mem_map.read(cursor).unwrap();
@@ -357,7 +357,7 @@ impl Debugger for TerminalDebugger {
 
             let mut line = String::new();
             let stdin = io::stdin();
-            stdin.read_line(&mut line);
+            stdin.read_line(&mut line).unwrap();
 
             let command = Command::parse(&line);
 
@@ -400,7 +400,7 @@ impl CpuFacade for TerminalDebugger {
         (this.cpu, this.mem_map)
     }
 
-    fn debugger(&mut self) -> Option<&mut Debugger> {
+    fn debugger(&mut self) -> Option<&mut dyn Debugger> {
         Some(self)
     }
 
@@ -408,7 +408,7 @@ impl CpuFacade for TerminalDebugger {
         let reg_pc = self.cpu.reg_pc;
 
         if self.breakpoint_set.contains(&reg_pc) {
-            if let Some(addr) = self.cur_breakpoint_addr {
+            if let Some(_addr) = self.cur_breakpoint_addr {
                 self.cur_breakpoint_addr = None;
             } else {
                 println!("Breakpoint hit");
@@ -466,7 +466,7 @@ impl CpuFacade for TerminalDebugger {
     }
 
     fn irq(&mut self) {
-        self.cpu.irq(&mut self.mem_map);
+        self.cpu.irq(&mut self.mem_map).unwrap();
     }
 }
 

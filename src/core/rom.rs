@@ -77,7 +77,7 @@ pub struct Rom {
 }
 
 impl Rom {
-    pub fn load_rom(file_path: &Path) -> Result<Rom, Box<Error>> {
+    pub fn load_rom(file_path: &Path) -> Result<Rom, Box<dyn Error>> {
         let mut file = File::open(file_path)?;
         let mut bytes = Vec::new();
 
@@ -117,7 +117,7 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
                     true => MirroringMode::Vertical,
                 };
 
-                let (mut prg_ram_chunk_count, mapper_number, submapper_number) = match header_type {
+                let (mut prg_ram_chunk_count, mapper_number, _submapper_number) = match header_type {
                     HeaderType::Standard => {
                         (
                             byte_8,

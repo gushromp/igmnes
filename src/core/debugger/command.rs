@@ -1,6 +1,6 @@
 use std::str::{self, FromStr};
 use std::ops::Range;
-use nom::{self, IResult, line_ending, space, digit, alphanumeric, eol, ErrorKind};
+use nom::{IResult, line_ending, space, digit, alphanumeric, eol};
 use nom::IResult::*;
 
 #[derive(Debug)]
