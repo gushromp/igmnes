@@ -1,7 +1,8 @@
 
 use std::fmt;
-use core::memory::MemMapped;
+use core::memory::{MemMap, MemMapped};
 use core::errors::EmulationError;
+use core::instructions::InstructionToken::NOP;
 
 #[derive(Debug, Clone)]
 pub enum AddressingMode {
@@ -53,7 +54,7 @@ impl AddressingMode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum InstructionToken {
     // instruction opcodes are byte-wide
     //
@@ -157,14 +158,14 @@ impl fmt::Display for InstructionToken {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Instruction {
     pub op_code: u8,
     pub address: u16,
     pub token: InstructionToken,
     pub addressing_mode: AddressingMode,
     pub cycle_count: u8,
-    pub should_advance_pc: bool,
+    pub should_advance_pc: bool
 }
 
 impl Instruction {
@@ -176,13 +177,13 @@ impl Instruction {
             token: token,
             addressing_mode: addressing_mode,
             cycle_count: cycle_count,
-            should_advance_pc: should_advance_pc,
+            should_advance_pc: should_advance_pc
         }
     }
 }
 
 impl Instruction {
-    pub fn decode(mem_map: &dyn MemMapped, addr: u16) -> Result<Instruction, EmulationError> {
+    pub fn decode(mem_map: &MemMap, addr: u16) -> Result<Instruction, EmulationError> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 
@@ -391,7 +392,9 @@ impl Instruction {
             // 1-byte NOPs
             0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => Ok(Instruction::new(NOP, Implicit, 2, true)),
             // 2-byte NOPs
-            0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 | 0xEB => Ok(Instruction::new(NOP, Immediate(mem_map.read(arg_index)?), 2, true)),
+            0x04 | 0x14 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 | 0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 | 0xEB | 0xD4 | 0xF4 => Ok(Instruction::new(NOP, Immediate(mem_map.read(arg_index)?), 2, true)),
+            // 3-byte NOPs
+            0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => Ok(Instruction::new(NOP, Absolute(mem_map.read_word(arg_index)?), 2, true)),
             // IGNore
             0x0C => Ok(Instruction::new(IGN, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             // ALU/RMW combination instructions

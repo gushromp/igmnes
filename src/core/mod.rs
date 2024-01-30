@@ -1,6 +1,7 @@
 extern crate sdl2;
 extern crate time;
 extern crate dasp;
+extern crate dyn_clone;
 
 mod debugger;
 mod mappers;
@@ -10,14 +11,17 @@ mod cpu;
 mod memory;
 mod instructions;
 mod errors;
+mod debug;
 
 use std::error::Error;
 use std::path::Path;
 use std::mem;
+use std::ops::DerefMut;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::audio::AudioSpecDesired;
+use core::debug::Tracer;
 use self::time::PreciseTime;
 use self::memory::*;
 use self::apu::Apu;
@@ -37,12 +41,17 @@ pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, MemMap);
     fn debugger(&mut self) -> Option<&mut dyn Debugger>;
 
-    fn step_cpu(&mut self) -> Result<u8, EmulationError>;
+    fn cpu(&mut self) -> &mut Cpu;
+
+    fn step_cpu(&mut self, tracer: &mut Option<&mut Tracer>) -> Result<u8, EmulationError>;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
 
     fn apu(&mut self) -> &mut Apu;
 
     fn irq(&mut self);
+
+    fn mem_map(&self) -> &MemMap;
+
 }
 
 struct DefaultCpuFacade {
@@ -83,8 +92,10 @@ impl CpuFacade for DefaultCpuFacade {
         None
     }
 
-    fn step_cpu(&mut self) -> Result<u8, EmulationError> {
-        self.cpu.step(&mut self.mem_map)
+    fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
+
+    fn step_cpu(&mut self, tracer: &mut Option<&mut Tracer>) -> Result<u8, EmulationError> {
+        self.cpu.step(&mut self.mem_map, tracer)
     }
 
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {
@@ -98,11 +109,14 @@ impl CpuFacade for DefaultCpuFacade {
     fn irq(&mut self) {
         self.cpu.irq(&mut self.mem_map).unwrap();
     }
+
+    fn mem_map(&self) -> &MemMap { &self.mem_map }
 }
 
 // 2A03 (NTSC) and 2A07 (PAL) emulation
 // contains CPU (nearly identical to MOS 6502) part and APU part
 pub struct Core {
+    // cpu_facade: DefaultCpuFacade, //Box<dyn CpuFacade>,
     cpu_facade: Box<dyn CpuFacade>,
     is_debugger_attached: bool,
     is_running: bool,
@@ -115,9 +129,10 @@ impl Core {
 
         let cpu = Cpu::new(&mem_map);
         let cpu_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<dyn CpuFacade>;
+        // let cpu_facade = DefaultCpuFacade::new(cpu, mem_map);
 
         let core = Core {
-            cpu_facade: cpu_facade,
+            cpu_facade,
             is_debugger_attached: false,
             is_running: false,
         };
@@ -125,7 +140,7 @@ impl Core {
         Ok(core)
     }
 
-    pub fn start(&mut self, attach_debugger: bool) {
+    pub fn start(&mut self, attach_debugger: bool, enable_tracing: bool, entry_point: Option<u16>) {
         self.is_running = true;
 
         let sdl_context = sdl2::init().unwrap();
@@ -162,22 +177,40 @@ impl Core {
             debugger.start_listening();
         }
 
+
+        let mut tr = Tracer::default();
+        let mut tracer = if enable_tracing {
+            Some(&mut tr)
+        } else {
+            None
+        };
+
+        if let Some(entry_point) = entry_point {
+            self.cpu_facade.cpu().reg_pc = entry_point;
+        }
+
         let start_time = PreciseTime::now();
 
         'running: loop {
             if self.is_running {
-
                 if let Some(debugger) = self.cpu_facade.debugger() {
                     if debugger.is_listening() {
                         debugger.break_into();
                     }
                 }
 
-                let result = self.cpu_facade.step_cpu();
+                if let Some(ref mut tracer) = tracer {
+                    tracer.start_new_trace();
+                }
+                let result = self.cpu_facade.step_cpu(&mut tracer);
 
                 match result {
                     Ok(cycles) => {
                         cycle_count += cycles as u64;
+
+                        if let Some(ref mut tracer) = tracer {
+                            tracer.set_cycle_count(cycle_count)
+                        }
 
                         let irq = self.cpu_facade.step_apu(cycle_count);
 
@@ -214,6 +247,10 @@ impl Core {
                     }
                 }
             }
+        }
+
+        if let Some(ref mut tracer) = tracer {
+            tracer.write_to_file(Path::new("./trace.log"));
         }
 
         let cur_time = PreciseTime::now();

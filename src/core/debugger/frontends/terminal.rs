@@ -11,6 +11,7 @@ use std::ops::Range;
 use core::CpuFacade;
 use core::cpu::Cpu;
 use core::apu::Apu;
+use core::debug::Tracer;
 use core::instructions::Instruction;
 use core::memory::{MemMap, MemMapped};
 use core::debugger::Debugger;
@@ -48,6 +49,10 @@ impl Logger {
 
     pub fn log_line(&mut self, line: &[u8]) {
         self.buf_writer.write(line).unwrap();
+    }
+
+    pub fn close(&mut self) {
+        self.buf_writer.flush().unwrap();
     }
 }
 
@@ -332,6 +337,9 @@ impl TerminalDebugger {
             println!("Began tracing");
         } else {
             println!("Stopped tracing");
+            if let Some(ref mut logger) = self.logger {
+                logger.close();
+            }
         }
 
         println!();
@@ -404,7 +412,9 @@ impl CpuFacade for TerminalDebugger {
         Some(self)
     }
 
-    fn step_cpu(&mut self) -> Result<u8, EmulationError> {
+    fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
+
+    fn step_cpu(&mut self, tracer: &mut Option<&mut Tracer>) -> Result<u8, EmulationError> {
         let reg_pc = self.cpu.reg_pc;
 
         if self.breakpoint_set.contains(&reg_pc) {
@@ -434,8 +444,8 @@ impl CpuFacade for TerminalDebugger {
         }
 
         let cpu_result = {
-            let mut mem_map_shim = MemMapShim::new(&mut self.mem_map, &self.watchpoint_set);
-            self.cpu.step(&mut mem_map_shim)
+            // let mut mem_map_shim = MemMapShim::new(&mut self.mem_map, &self.watchpoint_set);
+            self.cpu.step(&mut self.mem_map, &mut None)
         };
 
         match cpu_result {
@@ -445,7 +455,7 @@ impl CpuFacade for TerminalDebugger {
                     // Execute this instruction
                     self.cur_watchpoint_addr = None;
 
-                    self.cpu.step(&mut self.mem_map)
+                    self.cpu.step(&mut self.mem_map, &mut None)
                 } else {
                     println!("Watchpoint hit");
                     self.cur_watchpoint_addr = Some(addr);
@@ -468,6 +478,8 @@ impl CpuFacade for TerminalDebugger {
     fn irq(&mut self) {
         self.cpu.irq(&mut self.mem_map).unwrap();
     }
+
+    fn mem_map(&self) -> &MemMap { &self.mem_map }
 }
 
 impl<'a> MemMapped for MemMapShim<'a> {

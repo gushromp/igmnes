@@ -4,8 +4,9 @@ use self::mapper_000::NRom;
 use core::memory::MemMapped;
 use core::rom::Rom;
 use core::errors::EmulationError;
+use core::dyn_clone::DynClone;
 
-pub trait Mapper : MemMapped {
+pub trait Mapper : MemMapped + DynClone {
 
     // Reads from PRG ROM
     fn read_prg_rom(&self, index: u16) -> Result<u8, EmulationError>;

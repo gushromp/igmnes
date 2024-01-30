@@ -3,6 +3,7 @@ use core::rom::Rom;
 use core::apu::Apu;
 use core::mappers::{self, Mapper};
 use core::errors::EmulationError;
+use core::dyn_clone::clone_box;
 
 const RAM_SIZE: usize = 0x800;
 
@@ -22,6 +23,7 @@ pub trait MemMapped {
     }
 }
 
+#[derive(Clone)]
 pub struct Ram {
     ram: [u8; RAM_SIZE],
 }
@@ -57,6 +59,15 @@ pub struct MemMap {
     pub apu: Apu,
     pub ppu: Vec<u8>, // dummy
     mapper: Box<dyn Mapper>,
+}
+
+impl Clone for MemMap {
+    fn clone(&self) -> Self {
+        MemMap {
+            mapper: clone_box(&*self.mapper),
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for MemMap {

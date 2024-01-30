@@ -252,7 +252,7 @@ impl ApuChannel for Triangle {
             self.timer_counter = self.timer + 1;
 
             if self.waveform_counter == 0 {
-                self.waveform_counter == 7;
+                self.waveform_counter = 7;
             } else {
                 self.waveform_counter -= 1;
             }

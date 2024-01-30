@@ -8,7 +8,7 @@ const PRG_ROM_BYTES_PER_CHUNK: usize = 16384;
 const CHR_ROM_BYTES_PER_CHUNK: usize = 8192;
 const PRG_RAM_BYTES_PER_CHUNK: usize = 8192;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TVSystem {
     NTSC,
     PAL,
@@ -21,7 +21,7 @@ impl Default for TVSystem {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum HeaderType {
     Standard,
     Extended,
@@ -33,7 +33,7 @@ impl Default for HeaderType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MirroringMode {
     Horizontal,
     Vertical,
@@ -45,13 +45,13 @@ impl Default for MirroringMode {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct HeaderExtension {
     pub mapper_number: u16,
     pub submapper_number: u8,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Header {
     pub header_type: HeaderType,
     pub prg_rom_size: usize,
@@ -68,7 +68,7 @@ pub struct Header {
     pub extension: Option<HeaderExtension>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Rom {
     pub header: Header,
     pub trainer_bytes: Option<Vec<u8>>,

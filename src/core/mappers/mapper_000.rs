@@ -3,6 +3,7 @@ use core::memory::MemMapped;
 use core::rom::Rom;
 use core::errors::EmulationError::{self, MemoryAccess};
 
+#[derive(Clone)]
 pub struct NRom {
     prg_rom_bytes: Vec<u8>,
     chr_rom_bytes: Vec<u8>,
