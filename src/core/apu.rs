@@ -1,7 +1,6 @@
 // const SAMPLE_RATE: u32 = 8000;
 use std::cell::Cell;
-use core::sample::rate::Converter;
-use core::sample::Sample;
+use core::dasp::{Sample, signal, ring_buffer, Signal, interpolate::sinc::Sinc};
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
@@ -672,15 +671,19 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        let samples: Vec<[f32; 1]> = self.nes_samples.iter().map(|s| [s.to_sample()]).collect();
-        let conv = Converter::from_hz_to_hz(samples.into_iter(), APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
+        
+        let samples = self.nes_samples.iter().cloned().map(f32::to_sample::<f64>);
+        let signal = signal::from_interleaved_samples_iter(samples);
+        let ring_buffer = ring_buffer::Fixed::from([[0.0]; 100]);
+        let sinc = Sinc::new(ring_buffer);
+        let conv = signal.from_hz_to_hz(sinc, APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
 
-        for frame in conv {
+        for frame in conv.until_exhausted() {
             let new_sample = frame[0].to_sample::<f32>();
             self.out_samples.push(new_sample);
         }
 
-        self.nes_samples.clear();
+        self.nes_samples.clear()
     }
 
     fn clock_frame_counter(&mut self) {

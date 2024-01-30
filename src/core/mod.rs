@@ -1,6 +1,6 @@
 extern crate sdl2;
 extern crate time;
-extern crate sample;
+extern crate dasp;
 
 mod debugger;
 mod mappers;
@@ -138,7 +138,7 @@ impl Core {
             samples: None,
         };
 
-        let audio_queue = audio_subsystem.open_queue::<f32>(None, &audio_spec_desired).unwrap();
+        let audio_queue = audio_subsystem.open_queue::<f32, _>(None, &audio_spec_desired).unwrap();
         audio_queue.resume();
 
         let mut events = sdl_context.event_pump().unwrap();
@@ -149,7 +149,7 @@ impl Core {
             .build()
             .unwrap();
 
-        let mut renderer = window.renderer().build().unwrap();
+        let mut renderer = window.into_canvas().build().unwrap();
 
         renderer.set_draw_color(Color::RGB(0, 0, 0));
         renderer.clear();
@@ -198,9 +198,9 @@ impl Core {
                                 _ => {},
                             }
                         }
-                        let apu = self.cpu_facade.apu();
 
-                        audio_queue.queue(&apu.out_samples);
+                        let apu = self.cpu_facade.apu();
+                        audio_queue.queue_audio(&apu.out_samples).unwrap();
                         apu.out_samples.clear();
                     },
                     Err(error) => match error {
