@@ -777,7 +777,7 @@ impl Apu {
 }
 
 impl MemMapped for Apu {
-    fn read(&self, addr: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, addr: u16) -> Result<u8, EmulationError> {
         match addr {
             // Status register
             0x4015 => {

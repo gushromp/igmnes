@@ -78,7 +78,7 @@ impl Mapper for NRom {
 }
 
 impl MemMapped for NRom {
-    fn read(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
 
         match index {
             0..=0x1FFF => self.read_chr_rom(index),

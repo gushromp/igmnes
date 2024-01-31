@@ -23,8 +23,9 @@ use sdl2::audio::AudioSpecDesired;
 use core::debug::Tracer;
 use self::time::PreciseTime;
 use self::memory::*;
-use self::apu::Apu;
 use self::cpu::Cpu;
+use self::ppu::Ppu;
+use self::apu::Apu;
 use self::rom::Rom;
 use self::debugger::Debugger;
 use self::debugger::frontends::terminal::TerminalDebugger;
@@ -37,7 +38,7 @@ const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
 const CLOCK_DIVISOR_PAL: i32 = 15;
 
 pub trait CpuFacade {
-    fn consume(self: Box<Self>) -> (Cpu, MemMap);
+    fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
     fn debugger(&mut self) -> Option<&mut dyn Debugger>;
 
     fn cpu(&mut self) -> &mut Cpu;
@@ -49,17 +50,17 @@ pub trait CpuFacade {
 
     fn irq(&mut self);
 
-    fn mem_map(&self) -> &MemMap;
+    fn mem_map(&self) -> &CpuMemMap;
 
 }
 
 struct DefaultCpuFacade {
     cpu: Cpu,
-    mem_map: MemMap
+    mem_map: CpuMemMap
 }
 
 impl DefaultCpuFacade {
-    pub fn new(cpu: Cpu, mem_map: MemMap) -> DefaultCpuFacade {
+    pub fn new(cpu: Cpu, mem_map: CpuMemMap) -> DefaultCpuFacade {
         DefaultCpuFacade {
             cpu: cpu,
             mem_map: mem_map,
@@ -70,7 +71,7 @@ impl DefaultCpuFacade {
 impl Default for DefaultCpuFacade {
     fn default() -> DefaultCpuFacade {
         let dummy_cpu: Cpu = Cpu::default();
-        let dummy_mem_map: MemMap = MemMap::default();
+        let dummy_mem_map: CpuMemMap = CpuMemMap::default();
 
         DefaultCpuFacade {
             cpu: dummy_cpu,
@@ -80,7 +81,7 @@ impl Default for DefaultCpuFacade {
 }
 
 impl CpuFacade for DefaultCpuFacade {
-    fn consume(self: Box<Self>) -> (Cpu, MemMap) {
+    fn consume(self: Box<Self>) -> (Cpu, CpuMemMap) {
         let this = *self;
 
         (this.cpu, this.mem_map)
@@ -109,7 +110,7 @@ impl CpuFacade for DefaultCpuFacade {
         self.cpu.irq(&mut self.mem_map).unwrap();
     }
 
-    fn mem_map(&self) -> &MemMap { &self.mem_map }
+    fn mem_map(&self) -> &CpuMemMap { &self.mem_map }
 }
 
 // 2A03 (NTSC) and 2A07 (PAL) emulation
@@ -124,11 +125,10 @@ pub struct Core {
 impl Core {
     pub fn load_rom(file_path: &Path) -> Result<Core, Box<dyn Error>> {
         let rom = Rom::load_rom(file_path)?;
-        let mem_map = MemMap::new(rom);
+        let mut mem_map = CpuMemMap::new(rom);
 
-        let cpu = Cpu::new(&mem_map);
+        let cpu = Cpu::new(&mut mem_map);
         let cpu_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<dyn CpuFacade>;
-        // let cpu_facade = DefaultCpuFacade::new(cpu, mem_map);
 
         let core = Core {
             cpu_facade,

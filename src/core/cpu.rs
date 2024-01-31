@@ -146,7 +146,7 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new(mem_map: &dyn MemMapped) -> Cpu {
+    pub fn new(mem_map: &mut dyn MemMapped) -> Cpu {
         let mut cpu = Cpu {
             reg_a: 0,
             reg_x: 0,
@@ -175,7 +175,7 @@ impl Cpu {
     }
 
     #[inline]
-    pub fn hard_reset(&mut self, mem_map: &dyn MemMapped) {
+    pub fn hard_reset(&mut self, mem_map: &mut dyn MemMapped) {
         self.reg_a = 0;
         self.reg_x = 0;
         self.reg_y = 0;
@@ -624,7 +624,7 @@ impl Cpu {
     fn instr_lda(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &dyn MemMapped,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         self.reg_a = self.read_resolved(instruction, mem_map)?;
         self.reg_status.toggle_zero_sign(self.reg_a);
@@ -636,7 +636,7 @@ impl Cpu {
     fn instr_ldx(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &dyn MemMapped,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         self.reg_x = self.read_resolved(instruction, mem_map)?;
         self.reg_status.toggle_zero_sign(self.reg_x);
@@ -648,7 +648,7 @@ impl Cpu {
     fn instr_ldy(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &dyn MemMapped,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         self.reg_y = self.read_resolved(instruction, mem_map)?;
         self.reg_status.toggle_zero_sign(self.reg_y);
@@ -1106,7 +1106,7 @@ impl Cpu {
     pub fn read_resolved(
         &self,
         instruction: &mut Instruction,
-        mem_map: &dyn MemMapped,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<u8, EmulationError> {
         use core::instructions::AddressingMode::*;
 
@@ -1241,7 +1241,7 @@ impl Cpu {
         Ok(())
     }
 
-    fn stack_pull(&mut self, mem_map: &dyn MemMapped) -> Result<u8, EmulationError> {
+    fn stack_pull(&mut self, mem_map: &mut dyn MemMapped) -> Result<u8, EmulationError> {
         //        if self.reg_sp == 0xFF {
         //            println!("Stack underflow detected! Wrapping...");
         //        }

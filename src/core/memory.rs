@@ -1,16 +1,19 @@
+use std::cell::RefCell;
 use std::default::Default;
+use std::rc::Rc;
 use core::rom::Rom;
 use core::apu::Apu;
 use core::mappers::{self, Mapper};
 use core::errors::EmulationError;
+use core::ppu::Ppu;
 
 const RAM_SIZE: usize = 0x800;
 
 pub trait MemMapped {
-    fn read(&self, index: u16) -> Result<u8, EmulationError>;
+    fn read(&mut self, index: u16) -> Result<u8, EmulationError>;
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
 
-    fn read_word(&self, index: u16) -> Result<u16, EmulationError> {
+    fn read_word(&mut self, index: u16) -> Result<u16, EmulationError> {
 
         // little-endian!
         let nibble_low = self.read(index)?;
@@ -42,7 +45,7 @@ impl Ram {
 }
 
 impl MemMapped for Ram {
-    fn read(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         Ok(self.ram[index as usize])
     }
 
@@ -52,50 +55,77 @@ impl MemMapped for Ram {
     }
 }
 
-pub struct MemMap {
-    rom: Rom,
+pub struct PpuMemMap {
     ram: Ram,
-    pub apu: Apu,
-    pub ppu: Vec<u8>,
-    // dummy
-    mapper: Box<dyn Mapper>,
+    mapper: Rc<RefCell<Box<dyn Mapper>>>
 }
 
-impl Default for MemMap {
-    fn default() -> MemMap {
+impl Default for PpuMemMap {
+    fn default() -> Self {
+        let def_mapper = Rc::new(RefCell::new(mappers::default_mapper()));
 
-        let def_mapper = mappers::default_mapper();
-
-        MemMap {
-            rom: Rom::default(),
+        PpuMemMap {
             ram: Ram::default(),
-            apu: Apu::default(),
-            ppu: vec![0; 8],
             mapper: def_mapper,
         }
     }
 }
 
-impl MemMap {
-    pub fn new(rom: Rom) -> MemMap {
+impl PpuMemMap {
+    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> PpuMemMap {
+        PpuMemMap {
+            ram: Ram::default(),
+            mapper,
+        }
+    }
+}
 
-        let mapper = mappers::load_mapper_for_rom(&rom).unwrap();
+pub struct CpuMemMap {
+    rom: Rom,
+    ram: Ram,
+    pub apu: Apu,
+    pub ppu: Ppu,
+    mapper: Rc<RefCell<Box<dyn Mapper>>>,
+}
 
-        let mem_map = MemMap {
-            rom: rom,
+impl Default for CpuMemMap {
+    fn default() -> CpuMemMap {
+
+        let def_mapper = Rc::new(RefCell::new(mappers::default_mapper()));
+
+        CpuMemMap {
+            rom: Rom::default(),
+            ram: Ram::default(),
+            apu: Apu::default(),
+            ppu: Ppu::default(),
+            mapper: def_mapper,
+        }
+    }
+}
+
+impl CpuMemMap {
+    pub fn new(rom: Rom) -> CpuMemMap {
+
+        let mapper = Rc::new(RefCell::new(mappers::load_mapper_for_rom(&rom).unwrap()));
+
+        let ppu_mem_map = PpuMemMap::new(mapper.clone());
+        let mem_map = CpuMemMap {
+            rom,
             ram: Ram::new(),
             apu: Apu::new(),
-            ppu: vec![0xFF; 8],
-            mapper: mapper,
+            ppu: Ppu::new(ppu_mem_map),
+            mapper: mapper.clone(),
         };
 
         mem_map
     }
 }
 
-impl MemMapped for MemMap {
+//
+
+impl MemMapped for CpuMemMap {
     #[inline]
-    fn read(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
 
 //        Address range	Size	Device
 //        $0000-$07FF	$0800	2KB internal RAM
@@ -116,9 +146,8 @@ impl MemMapped for MemMap {
             },
             // PPU
             0x2000..=0x3FFF => {
-                println!("Attempted read from dummy PPU register: 0x{:04X}", index);
                 let index = index % 0x0008;
-                Ok(self.ppu[index as usize])
+                self.ppu.read(index)
             },
             // APU
             0x4000..=0x4013 | 0x4015 => {
@@ -145,7 +174,7 @@ impl MemMapped for MemMap {
                 Ok(0)
             }
             0x4020..=0xFFFF => {
-                self.mapper.read(index)
+                self.mapper.borrow_mut().read(index)
             }
         }
     }
@@ -160,10 +189,8 @@ impl MemMapped for MemMap {
             },
             // PPU
             0x2000..=0x3FFF => {
-                //println!("Attempted write to dummy PPU register: 0x{:X}", index);
                 let index = index % 0x0008;
-                self.ppu[index as usize] = byte;
-                Ok(())
+                self.ppu.write(index, byte)
             },
             // APU
             0x4000..=0x4013 | 0x4015 => {
@@ -192,11 +219,36 @@ impl MemMapped for MemMap {
                 Ok(())
             }
             0x4020..=0xFFFF => {
-                self.mapper.write(index, byte)
+                self.mapper.borrow_mut().write(index, byte)
             }
         }
     }
 }
 
+impl MemMapped for PpuMemMap {
+    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
+        match index {
+            0x0000..=0x1FFF => {
+                self.mapper.borrow_mut().read(index)
+            },
+            0x2000..=0x2FFF => {
+                self.ram.read(index)
+            },
+            0x3000..=0x3EFF => {
+                // Mirror of 0x2000..=0x2EFF
+                self.ram.read(index - 0x1000)
+            },
+            0x3F00..=0x3FFF => {
+                let index = index % 20;
+                todo!("Palette RAM")
+            },
+            _ => unreachable!()
+        }
+    }
+
+    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+        todo!()
+    }
+}
 
 

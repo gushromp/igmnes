@@ -10,14 +10,14 @@ use core::CpuFacade;
 use core::cpu::Cpu;
 use core::apu::Apu;
 use core::debug::Tracer;
-use core::memory::{MemMap, MemMapped};
+use core::memory::{CpuMemMap, MemMapped};
 use core::debugger::Debugger;
 use core::debugger::command::Command;
 use core::debugger::disassembler;
 use core::errors::EmulationError;
 
 struct MemMapShim<'a> {
-    mem_map: &'a mut MemMap,
+    mem_map: &'a mut CpuMemMap,
     watchpoint_set: &'a HashSet<u16>,
 }
 
@@ -28,7 +28,7 @@ impl<'a> Clone for MemMapShim<'a> {
 }
 
 impl<'a> MemMapShim<'a> {
-    pub fn new(mem_map: &'a mut MemMap, watchpoint_set: &'a HashSet<u16>) -> MemMapShim<'a> {
+    pub fn new(mem_map: &'a mut CpuMemMap, watchpoint_set: &'a HashSet<u16>) -> MemMapShim<'a> {
         MemMapShim {
             mem_map,
             watchpoint_set,
@@ -38,7 +38,7 @@ impl<'a> MemMapShim<'a> {
 
 pub struct TerminalDebugger {
     cpu: Cpu,
-    mem_map: MemMap,
+    mem_map: CpuMemMap,
     breakpoint_set: HashSet<u16>,
     watchpoint_set: HashSet<u16>,
     label_map: HashMap<u16, String>,
@@ -49,7 +49,7 @@ pub struct TerminalDebugger {
 }
 
 impl TerminalDebugger {
-    pub fn new(cpu: Cpu, mem_map: MemMap) -> TerminalDebugger {
+    pub fn new(cpu: Cpu, mem_map: CpuMemMap) -> TerminalDebugger {
         TerminalDebugger {
             cpu,
             mem_map,
@@ -126,7 +126,7 @@ impl TerminalDebugger {
         println!();
     }
 
-    fn print_memory(&self, range: &Range<u16>) {
+    fn print_memory(&mut self, range: &Range<u16>) {
         let (mut cursor, rows) = if range.start > 0 {
             (range.start, range.end - range.start)
         } else {
@@ -282,9 +282,9 @@ impl TerminalDebugger {
         println!();
     }
 
-    fn disassemble(&self, range: &Range<u16>) {
+    fn disassemble(&mut self, range: &Range<u16>) {
         let addr = self.cpu.reg_pc;
-        let disassembly = disassembler::disassemble_range(addr, range, &self.cpu, &self.mem_map).unwrap();
+        let disassembly = disassembler::disassemble_range(addr, range, &self.cpu, &mut self.mem_map).unwrap();
 
         println!();
         println!("Disassembly:");
@@ -296,7 +296,7 @@ impl TerminalDebugger {
     }
 
     fn reset(&mut self) {
-        self.cpu.hard_reset(&self.mem_map);
+        self.cpu.hard_reset(&mut self.mem_map);
 
         println!();
         println!("CPU has been reset");
@@ -371,14 +371,13 @@ impl Debugger for TerminalDebugger {
     }
 
 }
-
 impl CpuFacade for TerminalDebugger {
-    fn consume(self: Box<Self>) -> (Cpu, MemMap) {
+
+    fn consume(self: Box<Self>) -> (Cpu, CpuMemMap) {
         let this = *self;
 
         (this.cpu, this.mem_map)
     }
-
     fn debugger(&mut self) -> Option<&mut dyn Debugger> {
         Some(self)
     }
@@ -436,11 +435,11 @@ impl CpuFacade for TerminalDebugger {
         self.cpu.irq(&mut self.mem_map).unwrap();
     }
 
-    fn mem_map(&self) -> &MemMap { &self.mem_map }
+    fn mem_map(&self) -> &CpuMemMap { &self.mem_map }
 }
 
 impl<'a> MemMapped for MemMapShim<'a> {
-    fn read(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match self.watchpoint_set.contains(&index) {
             true => Err(EmulationError::DebuggerWatchpoint(index)),
             false => self.mem_map.read(index)

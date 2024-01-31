@@ -38,7 +38,7 @@ impl Tracer {
     pub fn set_enabled(&mut self, is_enabled: bool) {
         self.is_enabled = is_enabled;
     }
-    pub fn add_cpu_trace(&mut self, cpu_state: &Cpu, mem_map: &dyn MemMapped) {
+    pub fn add_cpu_trace(&mut self, cpu_state: &Cpu, mem_map: &mut dyn MemMapped) {
         if let Some(ref mut current_trace) = self.current_trace {
             let instruction = Instruction::decode(mem_map, cpu_state.reg_pc);
 
