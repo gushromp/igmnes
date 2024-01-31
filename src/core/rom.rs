@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::path::Path;
 use std::error::Error;
 use std::fs::File;
@@ -97,11 +99,11 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
         flags_7: le_u8                  >>
         byte_8: le_u8                   >>
         flags_9: le_u8                  >>
-        flags_10: le_u8                 >>
-        flags_11: le_u8                 >>
+        _flags_10: le_u8                 >>
+        _flags_11: le_u8                 >>
         flags_12: le_u8                 >>
-        flags_13: le_u8                 >>
-        rest: take!(2)                  >>
+        _flags_13: le_u8                 >>
+        _rest: take!(2)                  >>
         (
             {
                 let header_type = detect_header_type(flags_7);
@@ -121,7 +123,7 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
                     HeaderType::Standard => {
                         (
                             byte_8,
-                            ((flags_7 & 0b11110000) as u16 | (flags_6 >> 4) as u16) as u16,
+                            (flags_7 & 0b11110000) as u16 | (flags_6 >> 4) as u16,
                             0
                         )
                     },
@@ -129,7 +131,7 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
                         let flags_8 = byte_8;
                         (
                             0,
-                            (((flags_8 as u16 & 0b00001111) << 8) | (flags_7 as u16 & 0b11110000) | (flags_6 as u16 >> 4)) as u16,
+                            ((flags_8 as u16 & 0b00001111) << 8) | (flags_7 as u16 & 0b11110000) | (flags_6 as u16 >> 4),
                             flags_8 >> 4
                         )
                     }
@@ -157,18 +159,18 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], Header> {
                 };
 
                 Header {
-                    header_type: header_type,
-                    prg_rom_size: prg_rom_size,
-                    chr_rom_size: chr_rom_size,
-                    prg_ram_size: prg_ram_size,
-                    mapper_number: mapper_number,
-                    four_screen_mode: four_screen_mode,
-                    trainer_present: trainer_present,
-                    sram_present: sram_present,
-                    mirroring_mode: mirroring_mode,
-                    is_playchoice_10: is_playchoice_10,
-                    is_vs_unisystem: is_vs_unisystem,
-                    tv_system: tv_system,
+                    header_type,
+                    prg_rom_size,
+                    chr_rom_size,
+                    prg_ram_size,
+                    mapper_number,
+                    four_screen_mode,
+                    trainer_present,
+                    sram_present,
+                    mirroring_mode,
+                    is_playchoice_10,
+                    is_vs_unisystem,
+                    tv_system,
                     extension: None,
                 }
                 // TODO support NES 2.0 file format (Extended)
@@ -196,8 +198,8 @@ fn parse_rom(input: &[u8]) -> IResult<&[u8], Rom> {
         chr_rom_bytes: take!(header.chr_rom_size)               >>
         (
             Rom {
-                header: header,
-                trainer_bytes: trainer_bytes,
+                header,
+                trainer_bytes,
                 prg_rom_bytes: prg_rom_bytes.to_vec(),
                 chr_rom_bytes: chr_rom_bytes.to_vec(),
             }

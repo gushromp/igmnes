@@ -29,7 +29,7 @@ pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &Mem
     Ok(result)
 }
 
-pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map: &MemMap)
+pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map: &dyn MemMapped)
                    -> Result<String, EmulationError> {
     use core::instructions::AddressingMode::*;
 

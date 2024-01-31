@@ -3,7 +3,6 @@ use core::rom::Rom;
 use core::apu::Apu;
 use core::mappers::{self, Mapper};
 use core::errors::EmulationError;
-use core::dyn_clone::clone_box;
 
 const RAM_SIZE: usize = 0x800;
 
@@ -57,17 +56,9 @@ pub struct MemMap {
     rom: Rom,
     ram: Ram,
     pub apu: Apu,
-    pub ppu: Vec<u8>, // dummy
+    pub ppu: Vec<u8>,
+    // dummy
     mapper: Box<dyn Mapper>,
-}
-
-impl Clone for MemMap {
-    fn clone(&self) -> Self {
-        MemMap {
-            mapper: clone_box(&*self.mapper),
-            ..Default::default()
-        }
-    }
 }
 
 impl Default for MemMap {
@@ -125,7 +116,7 @@ impl MemMapped for MemMap {
             },
             // PPU
             0x2000..=0x3FFF => {
-                //println!("Attempted read from dummy PPU register: 0x{:04X}", index);
+                println!("Attempted read from dummy PPU register: 0x{:04X}", index);
                 let index = index % 0x0008;
                 Ok(self.ppu[index as usize])
             },
@@ -156,7 +147,6 @@ impl MemMapped for MemMap {
             0x4020..=0xFFFF => {
                 self.mapper.read(index)
             }
-            _ => unreachable!()
         }
     }
 
@@ -204,7 +194,6 @@ impl MemMapped for MemMap {
             0x4020..=0xFFFF => {
                 self.mapper.write(index, byte)
             }
-            _ => unreachable!()
         }
     }
 }

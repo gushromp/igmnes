@@ -1,7 +1,6 @@
 extern crate sdl2;
 extern crate time;
 extern crate dasp;
-extern crate dyn_clone;
 
 mod debugger;
 mod mappers;
@@ -12,11 +11,11 @@ mod memory;
 mod instructions;
 mod errors;
 mod debug;
+mod ppu;
 
 use std::error::Error;
 use std::path::Path;
 use std::mem;
-use std::ops::DerefMut;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
@@ -43,7 +42,7 @@ pub trait CpuFacade {
 
     fn cpu(&mut self) -> &mut Cpu;
 
-    fn step_cpu(&mut self, tracer: &mut Option<&mut Tracer>) -> Result<u8, EmulationError>;
+    fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError>;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
 
     fn apu(&mut self) -> &mut Apu;
@@ -94,7 +93,7 @@ impl CpuFacade for DefaultCpuFacade {
 
     fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
 
-    fn step_cpu(&mut self, tracer: &mut Option<&mut Tracer>) -> Result<u8, EmulationError> {
+    fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map, tracer)
     }
 
@@ -146,9 +145,9 @@ impl Core {
         let sdl_context = sdl2::init().unwrap();
         let video_subsystem = sdl_context.video().unwrap();
         let audio_subsystem = sdl_context.audio().unwrap();
-
+        //
         let audio_spec_desired = AudioSpecDesired {
-            freq: Some(44100),
+            freq: Some(48000),
             channels: Some(1),
             samples: None,
         };
@@ -178,12 +177,8 @@ impl Core {
         }
 
 
-        let mut tr = Tracer::default();
-        let mut tracer = if enable_tracing {
-            Some(&mut tr)
-        } else {
-            None
-        };
+        let mut tracer = Tracer::default();
+        tracer.set_enabled(enable_tracing);
 
         if let Some(entry_point) = entry_point {
             self.cpu_facade.cpu().reg_pc = entry_point;
@@ -199,7 +194,7 @@ impl Core {
                     }
                 }
 
-                if let Some(ref mut tracer) = tracer {
+                if tracer.is_enabled() {
                     tracer.start_new_trace();
                 }
                 let result = self.cpu_facade.step_cpu(&mut tracer);
@@ -208,7 +203,7 @@ impl Core {
                     Ok(cycles) => {
                         cycle_count += cycles as u64;
 
-                        if let Some(ref mut tracer) = tracer {
+                        if tracer.is_enabled() {
                             tracer.set_cycle_count(cycle_count)
                         }
 
@@ -249,7 +244,7 @@ impl Core {
             }
         }
 
-        if let Some(ref mut tracer) = tracer {
+        if tracer.has_traces() {
             tracer.write_to_file(Path::new("./trace.log"));
         }
 
@@ -257,7 +252,9 @@ impl Core {
         let seconds = start_time.to(cur_time).num_seconds() as u64;
         println!("Cycles: {}", cycle_count);
         println!("Seconds: {}", seconds);
-        println!("Cycles per second: {}", cycle_count / seconds);
+        if seconds > 0 {
+            println!("Cycles per second: {}", cycle_count / seconds);
+        }
     }
 
     pub fn unpause(&mut self) {

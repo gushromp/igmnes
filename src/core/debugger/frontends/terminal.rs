@@ -1,8 +1,6 @@
 
 use std::io;
 use std::io::prelude::*;
-use std::io::BufWriter;
-use std::fs::File;
 use std::collections::{HashSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::ops::Range;
@@ -12,7 +10,6 @@ use core::CpuFacade;
 use core::cpu::Cpu;
 use core::apu::Apu;
 use core::debug::Tracer;
-use core::instructions::Instruction;
 use core::memory::{MemMap, MemMapped};
 use core::debugger::Debugger;
 use core::debugger::command::Command;
@@ -20,39 +17,22 @@ use core::debugger::disassembler;
 use core::errors::EmulationError;
 
 struct MemMapShim<'a> {
-    mem_map: &'a mut dyn MemMapped,
+    mem_map: &'a mut MemMap,
     watchpoint_set: &'a HashSet<u16>,
 }
 
+impl<'a> Clone for MemMapShim<'a> {
+    fn clone(&self) -> Self {
+        todo!()
+    }
+}
+
 impl<'a> MemMapShim<'a> {
-    pub fn new(mem_map: &'a mut dyn MemMapped, watchpoint_set: &'a HashSet<u16>) -> MemMapShim<'a> {
+    pub fn new(mem_map: &'a mut MemMap, watchpoint_set: &'a HashSet<u16>) -> MemMapShim<'a> {
         MemMapShim {
-            mem_map: mem_map,
-            watchpoint_set: watchpoint_set,
+            mem_map,
+            watchpoint_set,
         }
-    }
-}
-
-struct Logger {
-    buf_writer: BufWriter<File>,
-}
-
-impl Logger {
-    pub fn new() -> Logger {
-        let file = File::create("log.txt").unwrap();
-        let buf_writer = BufWriter::new(file);
-
-        Logger {
-            buf_writer: buf_writer,
-        }
-    }
-
-    pub fn log_line(&mut self, line: &[u8]) {
-        self.buf_writer.write(line).unwrap();
-    }
-
-    pub fn close(&mut self) {
-        self.buf_writer.flush().unwrap();
     }
 }
 
@@ -66,14 +46,13 @@ pub struct TerminalDebugger {
     cur_breakpoint_addr: Option<u16>,
     cur_watchpoint_addr: Option<u16>,
     trace_active: bool,
-    logger: Option<Logger>,
 }
 
 impl TerminalDebugger {
     pub fn new(cpu: Cpu, mem_map: MemMap) -> TerminalDebugger {
         TerminalDebugger {
-            cpu: cpu,
-            mem_map: mem_map,
+            cpu,
+            mem_map,
             breakpoint_set: HashSet::new(),
             watchpoint_set: HashSet::new(),
             label_map: HashMap::new(),
@@ -81,7 +60,6 @@ impl TerminalDebugger {
             cur_breakpoint_addr: None,
             cur_watchpoint_addr: None,
             trace_active: false,
-            logger: None,
         }
     }
 
@@ -326,10 +304,6 @@ impl TerminalDebugger {
     }
 
     fn trace(&mut self) {
-        if let None = self.logger {
-            self.logger = Some(Logger::new());
-        }
-
         self.trace_active = !self.trace_active;
 
         println!();
@@ -337,9 +311,6 @@ impl TerminalDebugger {
             println!("Began tracing");
         } else {
             println!("Stopped tracing");
-            if let Some(ref mut logger) = self.logger {
-                logger.close();
-            }
         }
 
         println!();
@@ -414,7 +385,7 @@ impl CpuFacade for TerminalDebugger {
 
     fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
 
-    fn step_cpu(&mut self, tracer: &mut Option<&mut Tracer>) -> Result<u8, EmulationError> {
+    fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         let reg_pc = self.cpu.reg_pc;
 
         if self.breakpoint_set.contains(&reg_pc) {
@@ -427,25 +398,11 @@ impl CpuFacade for TerminalDebugger {
             }
         }
 
-        if self.trace_active {
-            let logger = self.logger.as_mut().unwrap();
-
-            let instruction = Instruction::decode(&self.mem_map, reg_pc);
-
-            let line = match instruction {
-                Ok(mut instr) => {
-                     disassembler::disassemble(reg_pc, &mut instr, &self.cpu, &self.mem_map)?
-                }
-                Err(e) => e.to_string()
-            };
-
-            let line = format!("{}    {}\n", line, self.cpu);
-            logger.log_line(line.as_bytes());
-        }
+        tracer.set_enabled(self.trace_active);
 
         let cpu_result = {
-            // let mut mem_map_shim = MemMapShim::new(&mut self.mem_map, &self.watchpoint_set);
-            self.cpu.step(&mut self.mem_map, &mut None)
+            let mut mem_map_shim = MemMapShim::new(&mut self.mem_map, &self.watchpoint_set);
+            self.cpu.step(&mut mem_map_shim, tracer)
         };
 
         match cpu_result {
@@ -455,7 +412,7 @@ impl CpuFacade for TerminalDebugger {
                     // Execute this instruction
                     self.cur_watchpoint_addr = None;
 
-                    self.cpu.step(&mut self.mem_map, &mut None)
+                    self.cpu.step(&mut self.mem_map, tracer)
                 } else {
                     println!("Watchpoint hit");
                     self.cur_watchpoint_addr = Some(addr);

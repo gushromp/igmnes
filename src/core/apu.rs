@@ -1,13 +1,13 @@
 // const SAMPLE_RATE: u32 = 8000;
 use std::cell::Cell;
-use core::dasp::{Sample, signal, ring_buffer, Signal, interpolate::sinc::Sinc};
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
 // Actually it's (super::MASTER_CLOCK_NTSC / super::CLOCK_DIVISOR_NTSC) but
 // we need something divisible by 240
 const APU_SAMPLE_RATE: u32 = 1_789_920;
-const OUTPUT_SAMPLE_RATE: u32 = 44_100;
+const OUTPUT_SAMPLE_RATE: u32 = 48_000;
+const SAMPLE_RATE_RATIO: usize = APU_SAMPLE_RATE as usize / OUTPUT_SAMPLE_RATE as usize;
 //const STEP_FREQUENCY: u32 = 240; // 240hz steps
 //const SAMPLES_PER_STEP: u32 = APU_SAMPLE_RATE / STEP_FREQUENCY;
 
@@ -54,7 +54,7 @@ trait ApuChannel {
 // Pulse channels
 //
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Pulse {
     enabled: bool,
     // Duty for current APU frame
@@ -177,7 +177,7 @@ impl ApuChannel for Pulse {
 // Triangle channel
 //
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Triangle {
     enabled: bool,
 
@@ -276,7 +276,7 @@ impl ApuChannel for Triangle {
 // Noise channel
 //
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Noise {
     enabled: bool,
 
@@ -357,7 +357,7 @@ impl ApuChannel for Noise {
 // Delta-Modulation Channel (DMC)
 //
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct DMC {
     enabled: bool,
 
@@ -437,7 +437,7 @@ impl Default for FrameCounterMode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct FrameCounter {
     mode: FrameCounterMode,
     cycle_table: Vec<u64>,
@@ -558,6 +558,12 @@ impl Default for Apu {
     }
 }
 
+impl Clone for Apu {
+    fn clone(&self) -> Self {
+        unreachable!()
+    }
+}
+
 impl Apu {
     pub fn new() -> Apu {
         let mut pulse_table: [f32; 31] = [0.0; 31];
@@ -671,17 +677,20 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        
-        let samples = self.nes_samples.iter().cloned().map(f32::to_sample::<f64>);
-        let signal = signal::from_interleaved_samples_iter(samples);
-        let ring_buffer = ring_buffer::Fixed::from([[0.0]; 100]);
-        let sinc = Sinc::new(ring_buffer);
-        let conv = signal.from_hz_to_hz(sinc, APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
 
-        for frame in conv.until_exhausted() {
-            let new_sample = frame[0].to_sample::<f32>();
-            self.out_samples.push(new_sample);
+        for sample in self.nes_samples.iter().step_by(SAMPLE_RATE_RATIO) {
+            self.out_samples.push(*sample);
         }
+        // let samples = self.nes_samples.iter().cloned().map(f32::to_sample::<f64>);
+        // let signal = signal::from_interleaved_samples_iter(samples);
+        // let ring_buffer = ring_buffer::Fixed::from([[0.0]; 100]);
+        // let sinc = Sinc::new(ring_buffer);
+        // let conv = signal.from_hz_to_hz(sinc, APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
+        //
+        // for frame in conv.until_exhausted() {
+        //     let new_sample = frame[0].to_sample::<f32>();
+        //     self.out_samples.push(new_sample);
+        // }
 
         self.nes_samples.clear()
     }

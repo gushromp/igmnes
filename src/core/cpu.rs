@@ -1,17 +1,19 @@
 // 6502
 
 use core::instructions::*;
-use core::memory::{MemMap, MemMapped};
+use core::memory::MemMapped;
 use std::default::Default;
 use std::fmt::{self, Display};
 
 use core::errors::EmulationError;
 
-use core::debug::{CpuTrace, Trace, Tracer};
+use core::debug::{Tracer};
 
 const RESET_PC_VEC: u16 = 0xFFFC;
+const NMI_PC_VEC: u16 = 0xFFFA;
+const BRK_PC_VEC: u16 = 0xFFFE;
 const RESET_SP: u8 = 0xFD;
-const BRK_VEC: u16 = 0xFFFE;
+
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct StatusReg {
@@ -144,7 +146,7 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new(mem_map: &MemMap) -> Cpu {
+    pub fn new(mem_map: &dyn MemMapped) -> Cpu {
         let mut cpu = Cpu {
             reg_a: 0,
             reg_x: 0,
@@ -173,7 +175,7 @@ impl Cpu {
     }
 
     #[inline]
-    pub fn hard_reset(&mut self, mem_map: &MemMap) {
+    pub fn hard_reset(&mut self, mem_map: &dyn MemMapped) {
         self.reg_a = 0;
         self.reg_x = 0;
         self.reg_y = 0;
@@ -192,42 +194,45 @@ impl Cpu {
         self.reg_sp = RESET_SP;
         self.reg_pc = mem_map.read_word(RESET_PC_VEC).unwrap();
 
-        self.cycle_count = 0;
+        self.cycle_count = 7;
     }
 
     #[inline]
     pub fn soft_reset(&mut self) {}
 
     #[inline]
-    pub fn irq(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
+    pub fn irq(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         if !self.reg_status.interrupt_disable {
-            self.perform_irq(mem_map, true).unwrap();
+            self.perform_irq(mem_map, true, false).unwrap();
         }
 
         Ok(())
     }
 
     #[inline]
-    pub fn nmi(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
-        self.perform_irq(mem_map, true).unwrap();
+    pub fn nmi(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
+        self.perform_irq(mem_map, true, true).unwrap();
 
         Ok(())
     }
 
     #[inline]
-    pub fn step(&mut self, mem_map: &mut MemMap, tracer: &mut Option<&mut Tracer>) -> Result<u8, EmulationError> {
-        let instruction = Instruction::decode(mem_map, self.reg_pc);
+    pub fn step(&mut self, mem_map: &mut dyn MemMapped, tracer: &mut Tracer) -> Result<u8, EmulationError> {
+        if tracer.is_enabled() {
+            tracer.add_cpu_trace(&self, mem_map);
+        }
 
+        let instruction = Instruction::decode(mem_map, self.reg_pc);
         match instruction {
-            Ok(mut instr) => match self.execute_instruction(&mut instr, mem_map) {
-                Ok(cycles) => {
-                    self.cycle_count += cycles as u64;
-                    if let Some(tracer) = tracer {
-                        tracer.set_cpu_trace(CpuTrace { cpu_state: self.clone(), instruction: instr.clone(), mem_map: mem_map.clone() });
+            Ok(mut instr) => {
+
+                match self.execute_instruction(&mut instr, mem_map) {
+                    Ok(cycles) => {
+                        self.cycle_count += cycles as u64;
+                        Ok(cycles)
                     }
-                    Ok(cycles)
+                    Err(e) => Err(e),
                 }
-                Err(e) => Err(e),
             },
             Err(e) => {
                 self.reg_pc = self.reg_pc.wrapping_add(1);
@@ -239,7 +244,7 @@ impl Cpu {
     fn execute_instruction(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<u8, EmulationError> {
         use core::instructions::InstructionToken::*;
 
@@ -344,7 +349,7 @@ impl Cpu {
     fn instr_jmp(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         use core::instructions::AddressingMode::*;
 
@@ -388,7 +393,7 @@ impl Cpu {
     fn instr_jsr(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         use core::instructions::AddressingMode::*;
 
@@ -399,7 +404,7 @@ impl Cpu {
                 let reg_pc = self.reg_pc;
 
                 // note the -1
-                let return_destination = (reg_pc + addressing_mode.byte_count() - 1) as u16;
+                let return_destination = reg_pc + addressing_mode.byte_count() - 1;
 
                 self.stack_push_addr(mem_map, return_destination)?;
                 self.reg_pc = arg;
@@ -413,14 +418,14 @@ impl Cpu {
     // Break/Return instructions
     //
     #[inline]
-    fn instr_brk(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
-        self.perform_irq(mem_map, false)?;
+    fn instr_brk(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
+        self.perform_irq(mem_map, false, false)?;
 
         Ok(())
     }
 
     #[inline]
-    fn instr_rti(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
+    fn instr_rti(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         let status_byte = self.stack_pull(mem_map)?;
         let new_pc = self.stack_pull_addr(mem_map)?;
 
@@ -431,7 +436,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn instr_rts(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
+    fn instr_rts(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         let mut addr = self.stack_pull_addr(mem_map)?;
 
         addr += 1;
@@ -532,7 +537,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn instr_pha(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
+    fn instr_pha(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         let reg_a = self.reg_a;
         self.stack_push(mem_map, reg_a)?;
 
@@ -540,7 +545,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn instr_pla(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
+    fn instr_pla(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         self.reg_a = self.stack_pull(mem_map)?;
         self.reg_status.toggle_zero_sign(self.reg_a);
 
@@ -548,7 +553,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn instr_php(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
+    fn instr_php(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         let status_byte = self.reg_status.php();
         self.stack_push(mem_map, status_byte)?;
 
@@ -556,7 +561,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn instr_plp(&mut self, mem_map: &mut MemMap) -> Result<(), EmulationError> {
+    fn instr_plp(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         let status_byte = self.stack_pull(mem_map)?;
         self.reg_status.plp(status_byte);
 
@@ -619,7 +624,7 @@ impl Cpu {
     fn instr_lda(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &MemMap,
+        mem_map: &dyn MemMapped,
     ) -> Result<(), EmulationError> {
         self.reg_a = self.read_resolved(instruction, mem_map)?;
         self.reg_status.toggle_zero_sign(self.reg_a);
@@ -631,7 +636,7 @@ impl Cpu {
     fn instr_ldx(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &MemMap,
+        mem_map: &dyn MemMapped,
     ) -> Result<(), EmulationError> {
         self.reg_x = self.read_resolved(instruction, mem_map)?;
         self.reg_status.toggle_zero_sign(self.reg_x);
@@ -643,7 +648,7 @@ impl Cpu {
     fn instr_ldy(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &MemMap,
+        mem_map: &dyn MemMapped,
     ) -> Result<(), EmulationError> {
         self.reg_y = self.read_resolved(instruction, mem_map)?;
         self.reg_status.toggle_zero_sign(self.reg_y);
@@ -655,7 +660,7 @@ impl Cpu {
     fn instr_sta(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let reg_a = self.reg_a;
         self.write_resolved(instruction, mem_map, reg_a)?;
@@ -667,7 +672,7 @@ impl Cpu {
     fn instr_stx(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let reg_x = self.reg_x;
         self.write_resolved(instruction, mem_map, reg_x)?;
@@ -679,7 +684,7 @@ impl Cpu {
     fn instr_sty(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let reg_y = self.reg_y;
         self.write_resolved(instruction, mem_map, reg_y)?;
@@ -759,7 +764,7 @@ impl Cpu {
     fn instr_ora(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
@@ -773,7 +778,7 @@ impl Cpu {
     fn instr_and(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
@@ -787,7 +792,7 @@ impl Cpu {
     fn instr_eor(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
@@ -801,7 +806,7 @@ impl Cpu {
     fn instr_adc(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
         self.perform_adc(byte);
@@ -812,7 +817,7 @@ impl Cpu {
     fn instr_sbc(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
         self.perform_adc(!byte);
@@ -823,7 +828,7 @@ impl Cpu {
     fn instr_cmp(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
@@ -850,7 +855,7 @@ impl Cpu {
     fn instr_cpx(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
@@ -877,7 +882,7 @@ impl Cpu {
     fn instr_cpy(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
@@ -904,7 +909,7 @@ impl Cpu {
     fn instr_bit(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
 
@@ -926,7 +931,7 @@ impl Cpu {
     fn instr_asl(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
@@ -945,7 +950,7 @@ impl Cpu {
     fn instr_rol(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
@@ -967,7 +972,7 @@ impl Cpu {
     fn instr_lsr(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
@@ -986,7 +991,7 @@ impl Cpu {
     fn instr_ror(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
@@ -1008,7 +1013,7 @@ impl Cpu {
     fn instr_dec(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
@@ -1024,7 +1029,7 @@ impl Cpu {
     fn instr_inc(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
     ) -> Result<(), EmulationError> {
         let mut byte = self.read_resolved(instruction, mem_map)?;
 
@@ -1045,17 +1050,18 @@ impl Cpu {
     #[inline]
     fn perform_irq(
         &mut self,
-        mem_map: &mut MemMap,
-        hardware: bool,
+        mem_map: &mut dyn MemMapped,
+        is_hardware: bool,
+        is_nmi: bool
     ) -> Result<(), EmulationError> {
         let mut new_reg_pc = self.reg_pc;
 
-        if !hardware {
+        if !is_hardware {
             new_reg_pc = new_reg_pc.wrapping_add(2);
             self.reg_status.toggle_break_executed(true);
         }
 
-        let status_byte = if hardware {
+        let status_byte = if is_hardware {
             self.reg_status.irq()
         } else {
             self.reg_status.php()
@@ -1064,11 +1070,15 @@ impl Cpu {
         self.stack_push_addr(mem_map, new_reg_pc)?;
         self.stack_push(mem_map, status_byte)?;
 
-        if !hardware {
+        if !is_hardware {
             self.reg_status.interrupt_disable = true;
         }
 
-        self.reg_pc = mem_map.read_word(BRK_VEC)?;
+        self.reg_pc = if is_nmi {
+            mem_map.read_word(NMI_PC_VEC)?
+        } else {
+            mem_map.read_word(BRK_PC_VEC)?
+        };
 
         Ok(())
     }
@@ -1079,7 +1089,7 @@ impl Cpu {
     fn perform_adc(&mut self, byte: u8) {
         let old_carry = self.reg_status.carry_flag as u16;
 
-        let sum: u16 = self.reg_a as u16 + byte as u16 + old_carry as u16;
+        let sum: u16 = self.reg_a as u16 + byte as u16 + old_carry;
 
         let carry = sum > 0xFF;
         self.reg_status.toggle_carry(carry);
@@ -1096,7 +1106,7 @@ impl Cpu {
     pub fn read_resolved(
         &self,
         instruction: &mut Instruction,
-        mem_map: &MemMap,
+        mem_map: &dyn MemMapped,
     ) -> Result<u8, EmulationError> {
         use core::instructions::AddressingMode::*;
 
@@ -1173,7 +1183,7 @@ impl Cpu {
     fn write_resolved(
         &mut self,
         instruction: &mut Instruction,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
         byte: u8,
     ) -> Result<(), EmulationError> {
         use core::instructions::AddressingMode::*;
@@ -1218,7 +1228,7 @@ impl Cpu {
         }
     }
 
-    fn stack_push(&mut self, mem_map: &mut MemMap, byte: u8) -> Result<(), EmulationError> {
+    fn stack_push(&mut self, mem_map: &mut dyn MemMapped, byte: u8) -> Result<(), EmulationError> {
         //        if self.reg_sp == 0 {
         //            println!("Stack overflow detected! Wrapping...");
         //        }
@@ -1231,7 +1241,7 @@ impl Cpu {
         Ok(())
     }
 
-    fn stack_pull(&mut self, mem_map: &MemMap) -> Result<u8, EmulationError> {
+    fn stack_pull(&mut self, mem_map: &dyn MemMapped) -> Result<u8, EmulationError> {
         //        if self.reg_sp == 0xFF {
         //            println!("Stack underflow detected! Wrapping...");
         //        }
@@ -1245,7 +1255,7 @@ impl Cpu {
 
     fn stack_push_addr(
         &mut self,
-        mem_map: &mut MemMap,
+        mem_map: &mut dyn MemMapped,
         addr: u16,
     ) -> Result<(), EmulationError> {
         let addr_high = ((addr & 0xFF00) >> 8) as u8;
@@ -1257,7 +1267,7 @@ impl Cpu {
         Ok(())
     }
 
-    fn stack_pull_addr(&mut self, mem_map: &mut MemMap) -> Result<u16, EmulationError> {
+    fn stack_pull_addr(&mut self, mem_map: &mut dyn MemMapped) -> Result<u16, EmulationError> {
         let addr_low = self.stack_pull(mem_map)?;
         let addr_high = self.stack_pull(mem_map)?;
 

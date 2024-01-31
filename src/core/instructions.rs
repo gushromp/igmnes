@@ -1,8 +1,7 @@
 
 use std::fmt;
-use core::memory::{MemMap, MemMapped};
+use core::memory::MemMapped;
 use core::errors::EmulationError;
-use core::instructions::InstructionToken::NOP;
 
 #[derive(Debug, Clone)]
 pub enum AddressingMode {
@@ -183,7 +182,7 @@ impl Instruction {
 }
 
 impl Instruction {
-    pub fn decode(mem_map: &MemMap, addr: u16) -> Result<Instruction, EmulationError> {
+    pub fn decode(mem_map: &dyn MemMapped, addr: u16) -> Result<Instruction, EmulationError> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 
