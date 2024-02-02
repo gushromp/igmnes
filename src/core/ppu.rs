@@ -127,16 +127,11 @@ pub struct Ppu {
 
     // Internal/operational flags
     is_address_latch_on: bool,
-
-    memory_map: PpuMemMap
 }
 
 impl Ppu {
-    pub fn new(memory_map: PpuMemMap) -> Self {
-        Ppu {
-            memory_map,
-            .. Self::default()
-        }
+    pub fn new() -> Self {
+        Ppu::default()
     }
     fn toggle_address_latch(&mut self) {
         self.is_address_latch_on = !self.is_address_latch_on;
@@ -145,40 +140,39 @@ impl Ppu {
     fn reset_address_latch(&mut self) {
         self.is_address_latch_on = false;
     }
+
+    pub fn step(&mut self, ppu_mem_map: &mut PpuMemMap) -> Result<(), EmulationError> {
+        Ok(())
+    }
 }
 
 impl MemMapped for Ppu {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match index {
-            0x2000..=0x3FFF => {
-                let index = index % 8;
-                match index {
-                    0 | 1 | 3 | 5 => Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
-                    2 => {
-                        // PPUSTATUS
-                        let value = self.reg_status.read();
+            0 | 1 | 3 | 5 => Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
+            2 => {
+                // PPUSTATUS
+                let value = self.reg_status.read();
 
-                        // Reading from this register also resets the write latch
-                        self.reset_address_latch();
+                // Reading from this register also resets the write latch
+                self.reset_address_latch();
 
-                        Ok(value)
-                    },
-                    4 => {
-                        // OAMDATA
-                        Ok(self.reg_oam_addr)
-                    },
-                    8 => {
-                        // PPUDATA
-                        Ok(self.reg_data)
-                    },
-                    _ => unreachable!()
-                }
-            },
+                Ok(value)
+            }
+            4 => {
+                // OAMDATA
+                Ok(self.reg_oam_addr)
+            }
+            7 => {
+                // PPUDATA
+                Ok(self.reg_data)
+            }
             _ => unreachable!()
         }
     }
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
-        todo!()
+        // TODO
+        Ok(())
     }
 }

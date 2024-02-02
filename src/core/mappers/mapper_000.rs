@@ -1,4 +1,4 @@
-use core::mappers::Mapper;
+use core::mappers::{CpuMapper, Mapper, PpuMapper};
 use core::memory::MemMapped;
 use core::rom::Rom;
 use core::errors::EmulationError::{self, MemoryAccess};
@@ -46,7 +46,7 @@ impl NRom {
 
 }
 
-impl Mapper for NRom {
+impl CpuMapper for NRom {
     fn read_prg_rom(&self, index: u16) -> Result<u8, EmulationError> {
         let index: usize = self.get_prg_rom_index(index);
         Ok(self.prg_rom_bytes[index])
@@ -62,7 +62,9 @@ impl Mapper for NRom {
         self.prg_ram_bytes[index] = byte;
         Ok(())
     }
+}
 
+impl PpuMapper for NRom {
     fn read_chr_rom(&self, index: u16) -> Result<u8, EmulationError> {
         Ok(self.chr_rom_bytes[index as usize])
     }
@@ -76,6 +78,8 @@ impl Mapper for NRom {
         Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index)))
     }
 }
+
+impl Mapper for NRom { }
 
 impl MemMapped for NRom {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {

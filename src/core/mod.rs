@@ -32,7 +32,9 @@ use self::debugger::frontends::terminal::TerminalDebugger;
 use self::errors::EmulationError;
 
 pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32; // 21.477272 MHz
-pub const CLOCK_DIVISOR_NTSC: f32 = 12.0;
+pub const CPU_CLOCK_DIVISOR_NTSC: f32 = 12.0;
+pub const PPU_CLOCK_DIVISOR_NTSC: f32 = 4.0;
+pub const PPU_STEPS_PER_CPU_STEP_NTSC: usize = (CPU_CLOCK_DIVISOR_NTSC / PPU_CLOCK_DIVISOR_NTSC) as usize;
 
 const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
 const CLOCK_DIVISOR_PAL: i32 = 15;
