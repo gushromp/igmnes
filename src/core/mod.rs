@@ -235,17 +235,15 @@ impl Core {
                     self.cpu_facade.nmi();
                 }
 
+                let irq = self.cpu_facade.step_apu(current_cycle_count);
+                if irq && !nmi {
+                    self.cpu_facade.irq();
+                }
+
                 let result = self.cpu_facade.step_cpu(&mut tracer);
 
                 match result {
-                    Ok(cycles) => {
-                        let cpu_cycle_count = self.cpu_facade.cpu().cycle_count;
-
-                        let irq = self.cpu_facade.step_apu(cpu_cycle_count);
-                        if irq && !nmi {
-                            self.cpu_facade.irq();
-                        }
-
+                    Ok(_) => {
                         let apu = self.cpu_facade.apu();
                         audio_queue.queue_audio(apu.get_out_samples().as_ref()).unwrap();
                     },

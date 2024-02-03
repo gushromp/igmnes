@@ -524,7 +524,7 @@ pub struct Apu {
     apu_cycles: f64,
 
     nes_samples: Vec<f32>,
-    pub out_samples: Vec<f32>,
+    out_samples: Vec<f32>
 }
 
 impl Default for Apu {

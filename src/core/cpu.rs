@@ -125,7 +125,7 @@ impl StatusReg {
 #[derive(Default, Copy, Clone)]
 struct CpuInterrupt {
     is_hardware: bool,
-    is_nmi: bool
+    is_nmi: bool,
 }
 
 #[derive(Default, Copy, Clone)]
@@ -148,7 +148,9 @@ pub struct Cpu {
     // Cycle count
     pub cycle_count: u64,
 
-    pending_interrupt: Option<CpuInterrupt>
+    unhandled_interrupt: Option<CpuInterrupt>,
+    pending_interrupt: Option<CpuInterrupt>,
+    instructions_since_last_interrupt: u64
 }
 
 impl Cpu {
@@ -173,8 +175,9 @@ impl Cpu {
             reg_pc: 0,
 
             cycle_count: 0,
-            pending_interrupt: None
-
+            unhandled_interrupt: None,
+            pending_interrupt: None,
+            instructions_since_last_interrupt: 0,
         };
         cpu.hard_reset(mem_map);
 
@@ -221,24 +224,45 @@ impl Cpu {
 
     #[inline]
     fn interrupt(&mut self, mem_map: &mut dyn MemMapped, interrupt: CpuInterrupt) -> Result<(), EmulationError> {
+        if !self.unhandled_interrupt.is_none() || !self.pending_interrupt.is_none() {
+            return Ok(());
+        }
+
         if !self.reg_status.interrupt_disable {
             self.perform_irq(mem_map, &interrupt)
         } else {
-            // self.pending_interrupt = Some(interrupt);
+            self.instructions_since_last_interrupt = 0;
+            self.unhandled_interrupt = Some(interrupt);
             Ok(())
         }
     }
 
     #[inline]
     pub fn step(&mut self, mem_map: &mut dyn MemMapped, tracer: &mut Tracer) -> Result<u8, EmulationError> {
+        let result = self.execute_next_instruction(mem_map, tracer);
+        self.instructions_since_last_interrupt += 1;
+
+        if let Some(interrupt) = self.pending_interrupt {
+            if self.instructions_since_last_interrupt > 1 {
+                self.perform_irq(mem_map, &interrupt)?;
+                self.pending_interrupt = None;
+            }
+        }
+
+
+        self.unhandled_interrupt = None;
+
+        result
+    }
+
+    fn execute_next_instruction(&mut self, mem_map: &mut dyn MemMapped, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         if tracer.is_enabled() {
             tracer.add_cpu_trace(&self, mem_map);
         }
 
         let instruction = Instruction::decode(mem_map, self.reg_pc);
-        match instruction {
+        let result = match instruction {
             Ok(mut instr) => {
-
                 match self.execute_instruction(&mut instr, mem_map) {
                     Ok(cycles) => {
                         self.cycle_count += cycles as u64;
@@ -246,12 +270,14 @@ impl Cpu {
                     }
                     Err(e) => Err(e),
                 }
-            },
+            }
             Err(e) => {
                 self.reg_pc = self.reg_pc.wrapping_add(2);
                 Err(e)
             }
-        }
+        };
+
+        result
     }
 
     fn execute_instruction(
@@ -289,7 +315,7 @@ impl Cpu {
             // Flag instructions
             CLC => self.instr_clc(),
             SEC => self.instr_sec(),
-            CLI => self.instr_cli(mem_map),
+            CLI => self.instr_cli(),
             SEI => self.instr_sei(),
             CLV => self.instr_clv(),
             CLD => self.instr_cld(),
@@ -356,8 +382,8 @@ impl Cpu {
     }
 
     //
-    // NOP
-    //
+// NOP
+//
     #[inline]
     fn instr_nop(
         &mut self,
@@ -369,8 +395,8 @@ impl Cpu {
     }
 
     //
-    // Jump instructions
-    //
+// Jump instructions
+//
     #[inline]
     fn instr_jmp(
         &mut self,
@@ -440,9 +466,10 @@ impl Cpu {
 
         Ok(())
     }
+
     //
-    // Break/Return instructions
-    //
+// Break/Return instructions
+//
     #[inline]
     fn instr_brk(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
         let interrupt = CpuInterrupt { is_hardware: false, is_nmi: false };
@@ -453,6 +480,13 @@ impl Cpu {
 
     #[inline]
     fn instr_rti(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
+        if self.unhandled_interrupt.is_some() {
+            self.unhandled_interrupt = None;
+        }
+        if self.pending_interrupt.is_some() {
+            self.pending_interrupt = None;
+        }
+
         let status_byte = self.stack_pull(mem_map)?;
         let new_pc = self.stack_pull_addr(mem_map)?;
 
@@ -471,9 +505,10 @@ impl Cpu {
 
         Ok(())
     }
+
     //
-    // Branch instructions
-    //
+// Branch instructions
+//
     #[inline]
     fn instr_bpl(&mut self, instruction: &mut Instruction) -> Result<(), EmulationError> {
         if !self.reg_status.sign_flag {
@@ -545,9 +580,10 @@ impl Cpu {
 
         Ok(())
     }
+
     //
-    // Stack instructions
-    //
+// Stack instructions
+//
     #[inline]
     fn instr_txs(&mut self) -> Result<(), EmulationError> {
         self.reg_sp = self.reg_x;
@@ -589,14 +625,20 @@ impl Cpu {
 
     #[inline]
     fn instr_plp(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
+        if let Some(interrupt) = self.unhandled_interrupt {
+            self.instructions_since_last_interrupt = 0;
+            self.pending_interrupt = Some(interrupt);
+        }
+
         let status_byte = self.stack_pull(mem_map)?;
         self.reg_status.plp(status_byte);
 
         Ok(())
     }
+
     //
-    // Flag instructions
-    //
+// Flag instructions
+//
     fn instr_clc(&mut self) -> Result<(), EmulationError> {
         self.reg_status.toggle_carry(false);
 
@@ -611,10 +653,10 @@ impl Cpu {
     }
 
     #[inline]
-    fn instr_cli(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        if let Some(interrupt) = self.pending_interrupt {
-            self.interrupt(mem_map, interrupt)?;
-            self.pending_interrupt = None;
+    fn instr_cli(&mut self) -> Result<(), EmulationError> {
+        if let Some(interrupt) = self.unhandled_interrupt {
+            self.instructions_since_last_interrupt = 0;
+            self.pending_interrupt = Some(interrupt);
         }
 
         self.reg_status.toggle_interrupt_disable(false);
@@ -623,8 +665,14 @@ impl Cpu {
 
     #[inline]
     fn instr_sei(&mut self) -> Result<(), EmulationError> {
-        self.reg_status.toggle_interrupt_disable(true);
+        if let Some(interrupt) = self.unhandled_interrupt {
+            if !self.reg_status.interrupt_disable {
+                self.instructions_since_last_interrupt = 0;
+                self.pending_interrupt = Some(interrupt);
+            }
+        }
 
+        self.reg_status.toggle_interrupt_disable(true);
         Ok(())
     }
 
@@ -648,9 +696,10 @@ impl Cpu {
 
         Ok(())
     }
+
     //
-    // Store/Load instructions
-    //
+// Store/Load instructions
+//
     #[inline]
     fn instr_lda(
         &mut self,
@@ -722,9 +771,10 @@ impl Cpu {
 
         Ok(())
     }
+
     //
-    // Register instructions
-    //
+// Register instructions
+//
     #[inline]
     fn instr_tax(&mut self) -> Result<(), EmulationError> {
         self.reg_x = self.reg_a;
@@ -788,9 +838,10 @@ impl Cpu {
 
         Ok(())
     }
+
     //
-    // ALU instructions
-    //
+// ALU instructions
+//
     #[inline]
     fn instr_ora(
         &mut self,
@@ -955,9 +1006,10 @@ impl Cpu {
 
         Ok(())
     }
+
     //
-    // Read/Modify/Write instructions
-    //
+// Read/Modify/Write instructions
+//
     #[inline]
     fn instr_asl(
         &mut self,
@@ -1072,24 +1124,23 @@ impl Cpu {
         Ok(())
     }
 
-    //////////////
-    //
-    // Helpers
-    //
-    //////////////
+//////////////
+//
+// Helpers
+//
+//////////////
 
     #[inline]
     fn perform_irq(
         &mut self,
         mem_map: &mut dyn MemMapped,
-        interrupt: &CpuInterrupt
+        interrupt: &CpuInterrupt,
     ) -> Result<(), EmulationError> {
         let mut new_reg_pc = self.reg_pc;
 
         if !interrupt.is_hardware {
             new_reg_pc = new_reg_pc.wrapping_add(2);
             self.reg_status.toggle_break_executed(true);
-            self.reg_status.interrupt_disable = true;
         }
 
         let status_byte = if interrupt.is_hardware {
@@ -1107,12 +1158,14 @@ impl Cpu {
             mem_map.read_word(BRK_PC_VEC)?
         };
 
+        self.instructions_since_last_interrupt = 0;
+        self.reg_status.interrupt_disable = true;
         self.cycle_count += 7;
         Ok(())
     }
 
     // Due to the complexity of the ADC/SBC instructions, they are
-    // performed here for both instr_adc and instr_sbc
+// performed here for both instr_adc and instr_sbc
     #[inline]
     fn perform_adc(&mut self, byte: u8) {
         let old_carry = self.reg_status.carry_flag as u16;
@@ -1340,8 +1393,17 @@ impl Display for Cpu {
         let status_reg_byte: u8 = self.reg_status.byte();
         write!(
             f,
-            "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X} N:{} CYC:{}",
-            self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp, self.reg_status.sign_flag as u8, self.cycle_count
+            "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X} N:{} I:{} UI:{} PI:{} CYC:{}",
+            self.reg_a,
+            self.reg_x,
+            self.reg_y,
+            status_reg_byte,
+            self.reg_sp,
+            self.reg_status.sign_flag as u8,
+            self.reg_status.interrupt_disable as u8,
+            self.unhandled_interrupt.is_some() as u8,
+            self.pending_interrupt.is_some() as u8,
+            self.cycle_count
         )
     }
 }
