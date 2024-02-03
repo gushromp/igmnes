@@ -33,6 +33,8 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
                    -> Result<String, EmulationError> {
     use core::instructions::AddressingMode::*;
 
+    mem_map.set_is_mutating_read(false);
+
     let op_code = instruction.op_code;
     let token = instruction.token.to_string();
 
@@ -101,16 +103,19 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
              format!("[${:04X}]", target_addr))
         },
 
-        Invalid => (format!(""), format!(""))
+        Invalid => ("".to_string(), "".to_string())
     };
 
     let detail = {
         if !detail.is_empty() {
             format!("| {}", detail)
         } else {
-            format!("")
+            "".to_string()
         }
     };
+
+
+    mem_map.set_is_mutating_read(true);
 
     let disassembly = format!("${:04X}(${:02X}): {:<2} {:<10} {:<20}", addr, op_code, token, args, detail);
     if addr == cpu.reg_pc {

@@ -517,7 +517,7 @@ pub struct Apu {
     delayed_frame_counter_write: Option<u8>,
 
     irq_inhibit: bool,
-    frame_irq: Cell<bool>,
+    frame_irq: bool,
     dmc_irq: bool,
 
     cpu_cycles: u64,
@@ -547,7 +547,7 @@ impl Default for Apu {
             delayed_frame_counter_write: None,
 
             irq_inhibit: false,
-            frame_irq: Cell::new(false),
+            frame_irq: false,
             dmc_irq: false,
 
             cpu_cycles: 0,
@@ -601,7 +601,7 @@ impl Apu {
         let noise_enabled = self.channels[NOISE].is_enabled();
         let dmc_enabled = self.channels[DMC].is_enabled();
 
-        let frame_irq = self.frame_irq.get();
+        let frame_irq = self.frame_irq;
         let dmc_irq = self.dmc_irq;
 
         let mut byte: u8 = 0;
@@ -650,7 +650,7 @@ impl Apu {
         self.irq_inhibit = irq_inhibit;
 
         if irq_inhibit {
-            self.frame_irq.set(false);
+            self.frame_irq = false;
         }
 
         self.frame_counter.set_mode(frame_counter_mode);
@@ -711,7 +711,7 @@ impl Apu {
         }
 
         if self.frame_counter.irq() && !self.irq_inhibit {
-            self.frame_irq.set(true);
+            self.frame_irq = true;
         }
     }
 
@@ -775,7 +775,7 @@ impl Apu {
 
         self.apu_cycles = self.cpu_cycles as f64 / 2.0;
 
-        let irq = self.frame_irq.get() && !self.irq_inhibit;
+        let irq = self.frame_irq && !self.irq_inhibit;
 
         irq
     }
@@ -790,7 +790,7 @@ impl MemMapped for Apu {
                 // Clear frame_irq on read but only if the interrupt hasn't occurred
                 // at the same time the status register is being read
                 // if self.frame_counter.cycles_since_interrupt > 0 {
-                self.frame_irq.set(false);
+                self.frame_irq = false;
                 // }
                 Ok(status)
             },

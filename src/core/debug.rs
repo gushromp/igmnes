@@ -5,17 +5,26 @@ use core::instructions::Instruction;
 use core::debugger::disassembler::disassemble;
 use std::path::Path;
 use core::memory::MemMapped;
+use core::ppu::Ppu;
 
 #[derive(Default)]
 pub struct Trace {
     pub cpu_trace: Option<String>,
+    pub ppu_trace: Option<String>,
     pub cycle_count: u64,
 }
 
 impl Debug for Trace {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut trace_line = String::new();
         if let Some(ref cpu_trace) = self.cpu_trace {
-            write!(fmt, "{}", cpu_trace).unwrap();
+            trace_line.push_str(&format!("{}", cpu_trace));
+        }
+        if let Some(ref ppu_trace) = self.ppu_trace {
+            trace_line.push_str(&format!(" {}", ppu_trace));
+        }
+        if !trace_line.is_empty() {
+            write!(fmt, "{}", trace_line).unwrap();
         }
         Ok(())
     }
@@ -49,6 +58,13 @@ impl Tracer {
                 Err(e) => e.to_string()
             };
             current_trace.cpu_trace = Some(trace_line);
+        }
+    }
+
+    pub fn add_ppu_trace(&mut self, ppu: &Ppu) {
+        if let Some(ref mut current_trace) = self.current_trace {
+            let trace_line = format!("{}", ppu);
+            current_trace.ppu_trace = Some(trace_line);
         }
     }
 

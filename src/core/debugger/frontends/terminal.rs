@@ -41,6 +41,7 @@ pub struct TerminalDebugger {
     cpu: Cpu,
     mem_map: CpuMemMap,
     breakpoint_set: HashSet<u16>,
+    breakpoint_cycles_set: HashSet<u64>,
     watchpoint_set: HashSet<u16>,
     label_map: HashMap<u16, String>,
     is_listening: bool,
@@ -55,6 +56,7 @@ impl TerminalDebugger {
             cpu,
             mem_map,
             breakpoint_set: HashSet::new(),
+            breakpoint_cycles_set: HashSet::new(),
             watchpoint_set: HashSet::new(),
             label_map: HashMap::new(),
             is_listening: false,
@@ -76,6 +78,7 @@ impl TerminalDebugger {
             PrintLabels => self.print_labels(),
             SetBreakpoint(addr) => self.set_breakpoint(addr),
             RemoveBreakpoint(addr) => self.remove_breakpoint(addr),
+            SetBreakpointCycles(cycles) => self.set_breakpoint_cycles(cycles),
             SetWatchpoint(addr) => self.set_watchpoint(addr),
             RemoveWatchpoint(addr) => self.remove_watchpoint(addr),
             SetLabel(ref label, addr) => self.set_label(addr, label),
@@ -204,6 +207,14 @@ impl TerminalDebugger {
         } else {
             println!("No breakpoint present for program counter address: 0x{:X}", addr);
         }
+        println!();
+    }
+
+    fn set_breakpoint_cycles(&mut self, cycles: u64) {
+        self.breakpoint_cycles_set.insert(cycles);
+
+        println!();
+        println!("Successfully set breakpoint for CPU cycles count: {}", cycles);
         println!();
     }
 
@@ -396,7 +407,17 @@ impl CpuFacade for TerminalDebugger {
             if let Some(_addr) = self.cur_breakpoint_addr {
                 self.cur_breakpoint_addr = None;
             } else {
-                println!("Breakpoint hit");
+                println!("Address breakpoint hit");
+                self.cur_breakpoint_addr = Some(reg_pc);
+                return Err(EmulationError::DebuggerBreakpoint(self.cpu.reg_pc));
+            }
+        }
+
+        if self.breakpoint_cycles_set.contains(&self.cpu.cycle_count) {
+            if let Some(_addr) = self.cur_breakpoint_addr {
+                self.cur_breakpoint_addr = None;
+            } else {
+                println!("CPU cycles breakpoint hit");
                 self.cur_breakpoint_addr = Some(reg_pc);
                 return Err(EmulationError::DebuggerBreakpoint(self.cpu.reg_pc));
             }
@@ -428,10 +449,9 @@ impl CpuFacade for TerminalDebugger {
         }
     }
 
-    fn step_ppu(&mut self, cpu_cycle_count: u64) -> bool {
+    fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
         let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
-        let cpu_cycles = self.cpu.cycle_count;
-        self.mem_map.ppu.step(ppu_mem_map, cpu_cycles)
+        self.mem_map.ppu.step(ppu_mem_map, cpu_cycle_count, tracer)
     }
 
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {

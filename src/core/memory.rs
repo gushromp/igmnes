@@ -23,6 +23,12 @@ pub trait MemMapped {
 
         Ok(word)
     }
+
+    fn is_mutating_read(&self) -> bool {
+        true
+    }
+
+    fn set_is_mutating_read(&mut self, is_mutating_read: bool) { }
 }
 
 pub trait CpuMemMapped: MemMapped {}
@@ -90,7 +96,7 @@ pub struct CpuMemMap {
     pub apu: Apu,
     pub ppu: Ppu,
     pub ppu_mem_map: PpuMemMap,
-    mapper: Rc<RefCell<dyn Mapper>>,
+    mapper: Rc<RefCell<dyn Mapper>>
 }
 
 
@@ -104,7 +110,7 @@ impl Default for CpuMemMap {
             apu: Apu::default(),
             ppu: Ppu::default(),
             ppu_mem_map: PpuMemMap::default(),
-            mapper: def_mapper,
+            mapper: def_mapper
         }
     }
 }
@@ -120,7 +126,7 @@ impl CpuMemMap {
             apu: Apu::new(),
             ppu: Ppu::new(),
             ppu_mem_map,
-            mapper: mapper.clone(),
+            mapper: mapper.clone()
         };
 
         mem_map
@@ -150,7 +156,7 @@ impl MemMapped for CpuMemMap {
             }
             // PPU
             0x2000..=0x3FFF => {
-                let index = index % 0x0008;
+                let index = index % 0x8;
                 self.ppu.read(index)
             }
             // APU
@@ -194,7 +200,7 @@ impl MemMapped for CpuMemMap {
             }
             // PPU
             0x2000..=0x3FFF => {
-                let index = index % 0x0008;
+                let index = index % 0x8;
                 self.ppu.write(index, byte)
             }
             // APU
@@ -226,6 +232,10 @@ impl MemMapped for CpuMemMap {
             }
             _ => unreachable!()
         }
+    }
+
+    fn set_is_mutating_read(&mut self, is_mutating_read: bool) {
+        self.ppu.set_is_mutating_read(is_mutating_read);
     }
 }
 

@@ -12,6 +12,7 @@ pub enum Command {
     PrintWatchpoints,
     PrintLabels,
     SetBreakpoint(u16),
+    SetBreakpointCycles(u64),
     SetWatchpoint(u16),
     SetLabel(String, u16),
     RemoveBreakpoint(u16),
@@ -69,26 +70,27 @@ named!(
 
 named!(parse_command_non_terminated<Command>,
     alt_complete! (
-        parse_print_state       |
-        parse_print_memory      |
-        parse_print_breakpoints |
-        parse_print_watchpoints |
-        parse_print_labels      |
-        parse_set_breakpoint    |
-        parse_remove_breakpoint |
-        parse_set_watchpoint    |
-        parse_remove_watchpoint |
-        parse_set_label         |
-        parse_remove_label      |
-        parse_clear_breakpoints |
-        parse_clear_watchpoints |
-        parse_clear_labels      |
-        parse_disassemble       |
-        parse_goto              |
-        parse_step              |
-        parse_continue          |
-        parse_reset             |
-        parse_trace             |
+        parse_print_state           |
+        parse_print_memory          |
+        parse_print_breakpoints     |
+        parse_print_watchpoints     |
+        parse_print_labels          |
+        parse_set_breakpoint        |
+        parse_remove_breakpoint     |
+        parse_set_breakpoint_cycles |
+        parse_set_watchpoint        |
+        parse_remove_watchpoint     |
+        parse_set_label             |
+        parse_remove_label          |
+        parse_clear_breakpoints     |
+        parse_clear_watchpoints     |
+        parse_clear_labels          |
+        parse_disassemble           |
+        parse_goto                  |
+        parse_step                  |
+        parse_continue              |
+        parse_reset                 |
+        parse_trace                 |
         parse_repeat_command
     )
 );
@@ -185,6 +187,17 @@ named!(
             tag_no_case!("rb"))                     >>
         addr: preceded!(space, parse_literal_u16)   >>
         ( Command::RemoveBreakpoint(addr) )
+    )
+);
+
+named!(
+    parse_set_breakpoint_cycles<Command>,
+    do_parse! (
+        alt_complete! (
+            tag_no_case!("setbreakpointcycles") |
+            tag_no_case!("sbc"))                    >>
+        cycles: preceded!(space, parse_decimal_literal_u64)   >>
+        ( Command::SetBreakpointCycles(cycles) )
     )
 );
 
@@ -381,6 +394,17 @@ named!(
     alt_complete!(
             parse_hex_literal_u16 |
             parse_decimal_literal_u16
+    )
+);
+
+named!(
+    parse_decimal_literal_u64<u64>,
+    map_res!(
+        map_res!(
+            digit,
+            str::from_utf8
+        )
+        , FromStr::from_str
     )
 );
 

@@ -48,7 +48,7 @@ pub trait CpuFacade {
     fn ppu(&mut self) -> &mut Ppu;
 
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError>;
-    fn step_ppu(&mut self, cpu_cycles: u64) -> bool;
+    fn step_ppu(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
 
     fn apu(&mut self) -> &mut Apu;
@@ -106,9 +106,9 @@ impl CpuFacade for DefaultCpuFacade {
         self.cpu.step(&mut self.mem_map, tracer)
     }
 
-    fn step_ppu(&mut self, cpu_cycle_count: u64) -> bool {
+    fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
         let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
-        self.mem_map.ppu.step(ppu_mem_map, cpu_cycle_count)
+        self.mem_map.ppu.step(ppu_mem_map, cpu_cycle_count, tracer)
     }
 
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {
@@ -228,6 +228,12 @@ impl Core {
                 }
 
 
+                let current_cycle_count = self.cpu_facade.cpu().cycle_count;
+                let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
+                if nmi {
+                    self.cpu_facade.ppu().clear_nmi();
+                    self.cpu_facade.nmi();
+                }
 
                 let result = self.cpu_facade.step_cpu(&mut tracer);
 
@@ -235,14 +241,7 @@ impl Core {
                     Ok(cycles) => {
                         let cpu_cycle_count = self.cpu_facade.cpu().cycle_count;
 
-                        let nmi = self.cpu_facade.step_ppu(cpu_cycle_count);
-                        if nmi {
-                            self.cpu_facade.nmi();
-                        }
-
                         let irq = self.cpu_facade.step_apu(cpu_cycle_count);
-
-
                         if irq && !nmi {
                             self.cpu_facade.irq();
                         }

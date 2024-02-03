@@ -14,7 +14,6 @@ const NMI_PC_VEC: u16 = 0xFFFA;
 const BRK_PC_VEC: u16 = 0xFFFE;
 const RESET_SP: u8 = 0xFD;
 
-
 #[derive(Debug, Default, Copy, Clone)]
 pub struct StatusReg {
     pub carry_flag: bool,
@@ -123,6 +122,11 @@ impl StatusReg {
     }
 }
 
+#[derive(Default, Copy, Clone)]
+struct CpuInterrupt {
+    is_hardware: bool,
+    is_nmi: bool
+}
 
 #[derive(Default, Copy, Clone)]
 pub struct Cpu {
@@ -143,6 +147,8 @@ pub struct Cpu {
 
     // Cycle count
     pub cycle_count: u64,
+
+    pending_interrupt: Option<CpuInterrupt>
 }
 
 impl Cpu {
@@ -167,6 +173,7 @@ impl Cpu {
             reg_pc: 0,
 
             cycle_count: 0,
+            pending_interrupt: None
 
         };
         cpu.hard_reset(mem_map);
@@ -202,18 +209,24 @@ impl Cpu {
 
     #[inline]
     pub fn irq(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        if !self.reg_status.interrupt_disable {
-            self.perform_irq(mem_map, true, false).unwrap();
-        }
-
-        Ok(())
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: false };
+        self.interrupt(mem_map, interrupt)
     }
 
     #[inline]
     pub fn nmi(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        self.perform_irq(mem_map, true, true).unwrap();
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: true };
+        self.interrupt(mem_map, interrupt)
+    }
 
-        Ok(())
+    #[inline]
+    fn interrupt(&mut self, mem_map: &mut dyn MemMapped, interrupt: CpuInterrupt) -> Result<(), EmulationError> {
+        if !self.reg_status.interrupt_disable {
+            self.perform_irq(mem_map, &interrupt)
+        } else {
+            // self.pending_interrupt = Some(interrupt);
+            Ok(())
+        }
     }
 
     #[inline]
@@ -276,7 +289,7 @@ impl Cpu {
             // Flag instructions
             CLC => self.instr_clc(),
             SEC => self.instr_sec(),
-            CLI => self.instr_cli(),
+            CLI => self.instr_cli(mem_map),
             SEI => self.instr_sei(),
             CLV => self.instr_clv(),
             CLD => self.instr_cld(),
@@ -432,7 +445,8 @@ impl Cpu {
     //
     #[inline]
     fn instr_brk(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        self.perform_irq(mem_map, false, false)?;
+        let interrupt = CpuInterrupt { is_hardware: false, is_nmi: false };
+        self.perform_irq(mem_map, &interrupt)?;
 
         Ok(())
     }
@@ -597,9 +611,13 @@ impl Cpu {
     }
 
     #[inline]
-    fn instr_cli(&mut self) -> Result<(), EmulationError> {
-        self.reg_status.toggle_interrupt_disable(false);
+    fn instr_cli(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
+        if let Some(interrupt) = self.pending_interrupt {
+            self.interrupt(mem_map, interrupt)?;
+            self.pending_interrupt = None;
+        }
 
+        self.reg_status.toggle_interrupt_disable(false);
         Ok(())
     }
 
@@ -1064,17 +1082,17 @@ impl Cpu {
     fn perform_irq(
         &mut self,
         mem_map: &mut dyn MemMapped,
-        is_hardware: bool,
-        is_nmi: bool
+        interrupt: &CpuInterrupt
     ) -> Result<(), EmulationError> {
         let mut new_reg_pc = self.reg_pc;
 
-        if !is_hardware {
+        if !interrupt.is_hardware {
             new_reg_pc = new_reg_pc.wrapping_add(2);
             self.reg_status.toggle_break_executed(true);
+            self.reg_status.interrupt_disable = true;
         }
 
-        let status_byte = if is_hardware {
+        let status_byte = if interrupt.is_hardware {
             self.reg_status.irq()
         } else {
             self.reg_status.php()
@@ -1083,20 +1101,13 @@ impl Cpu {
         self.stack_push_addr(mem_map, new_reg_pc)?;
         self.stack_push(mem_map, status_byte)?;
 
-        if !is_hardware {
-            self.reg_status.interrupt_disable = true;
-        }
-
-        self.reg_pc = if is_nmi {
+        self.reg_pc = if interrupt.is_nmi {
             mem_map.read_word(NMI_PC_VEC)?
         } else {
             mem_map.read_word(BRK_PC_VEC)?
         };
 
-        if is_hardware {
-            self.cycle_count += 7;
-        }
-
+        self.cycle_count += 7;
         Ok(())
     }
 
@@ -1329,8 +1340,8 @@ impl Display for Cpu {
         let status_reg_byte: u8 = self.reg_status.byte();
         write!(
             f,
-            "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X} CYC:{}",
-            self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp, self.cycle_count
+            "A:0x{:02X} X:0x{:02X} Y:0x{:02X} P:0x{:02X} SP:0x{:02X} N:{} CYC:{}",
+            self.reg_a, self.reg_x, self.reg_y, status_reg_byte, self.reg_sp, self.reg_status.sign_flag as u8, self.cycle_count
         )
     }
 }

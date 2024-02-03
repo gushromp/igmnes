@@ -1,3 +1,7 @@
+use std::fmt;
+use std::fmt::Display;
+use core::cpu::Cpu;
+use core::debug::Tracer;
 use core::errors::EmulationError;
 use core::errors::EmulationError::MemoryAccess;
 use core::memory::{MemMapped, PpuMemMap};
@@ -94,13 +98,13 @@ struct PpuStatusReg {
 impl PpuStatusReg {
     fn read(&mut self) -> u8 {
         let value = (self.is_in_vblank as u8) << 7 | (self.is_sprite_0_hit as u8) << 6 | (self.is_sprite_overflow as u8) << 5;
-        return value;
+        value
     }
 
     fn hard_reset(&mut self) {
-        self.is_in_vblank = true;
+        self.is_in_vblank = false;
         self.is_sprite_0_hit = false;
-        self.is_sprite_overflow = true;
+        self.is_sprite_overflow = false;
     }
 
     fn soft_reset(&mut self) {
@@ -249,13 +253,18 @@ pub struct Ppu {
     curr_scanline: u16,
     curr_scanline_cycle: u16,
 
-    cpu_cycles: u64
+    cpu_cycles: u64,
+    nmi_pending: bool,
+
+    is_mutating_read: bool,
 }
 
 
 impl Ppu {
     pub fn new() -> Self {
-        Ppu::default()
+        let mut ppu = Ppu::default();
+        ppu.hard_reset();
+        ppu
     }
     fn toggle_address_latch(&mut self) {
         self.is_address_latch_on = !self.is_address_latch_on;
@@ -273,6 +282,10 @@ impl Ppu {
         self.reg_mask.is_show_background_enabled || self.reg_mask.is_show_sprites_enabled
     }
 
+    pub fn clear_nmi(&mut self) {
+        self.nmi_pending = false;
+    }
+
     pub fn hard_reset(&mut self) {
         self.reg_ctrl.hard_reset();
         self.reg_mask.hard_reset();
@@ -283,16 +296,34 @@ impl Ppu {
 
         self.is_address_latch_on = false;
         self.is_odd_frame = false;
+
+        self.curr_scanline = 0;
+        self.curr_scanline_cycle = 0;
     }
 
     #[inline]
-    pub fn step(&mut self, ppu_mem_map: &mut PpuMemMap, cpu_cycles: u64) -> bool {
+    pub fn step(&mut self, ppu_mem_map: &mut PpuMemMap, cpu_cycles: u64, tracer: &mut Tracer) -> bool {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
 
         for _ in 0..cycles_to_run {
-            if (self.curr_scanline_cycle == 340 && self.is_odd_frame && self.is_rendering_enabled()) || self.curr_scanline_cycle == 341 {
-                self.curr_scanline_cycle = 0;
+            if self.curr_scanline_cycle == 341 {
+                // if self.curr_scanline == 261 && self.curr_scanline_cycle == 340 && self.is_odd_frame && self.is_rendering_enabled() {
+                //     self.curr_scanline_cycle = 1;
+                // } else {
+                //     self.curr_scanline_cycle = 0;
+                // }
+                self.curr_scanline_cycle = 1;
                 self.curr_scanline += 1;
+
+                if self.curr_scanline == 241 {
+                    self.reg_status.is_in_vblank = true;
+                    if self.reg_ctrl.is_nmi_enabled {
+                        self.nmi_pending = true;
+                    }
+                } else if self.curr_scanline == 261 {
+                    self.reg_status.is_in_vblank = false;
+                }
+
                 self.is_odd_frame = !self.is_odd_frame;
 
 
@@ -300,37 +331,34 @@ impl Ppu {
                     self.curr_scanline = 0;
                 }
             } else {
-                if self.curr_scanline_cycle == 1 {
-                    if self.curr_scanline == 241 {
-                        self.reg_status.is_in_vblank = true;
-                    } else if self.curr_scanline == 261 {
-                        self.reg_status.is_in_vblank = false;
 
-                    }
-                }
 
                 self.curr_scanline_cycle += 1;
             }
+        }
 
-
+        if tracer.is_enabled() {
+            tracer.add_ppu_trace(&self);
         }
 
         self.cpu_cycles = cpu_cycles;
-        self.reg_status.is_in_vblank && self.reg_ctrl.is_nmi_enabled
+        self.reg_status.is_in_vblank && self.nmi_pending
     }
 }
 
 impl MemMapped for Ppu {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match index {
-            0 | 1 | 3 | 5 | 6 =>  Ok(0), // Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
+            0 | 1 | 3 | 5 | 6 => Ok(0), // Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
             2 => {
                 // PPUSTATUS
                 let value = self.reg_status.read();
 
-                // Reading from this register also resets the write latch and vblank active flag
-                self.reset_address_latch();
-                self.reset_vblank_status();
+                if self.is_mutating_read() {
+                    // Reading from this register also resets the write latch and vblank active flag
+                    self.reset_address_latch();
+                    self.reset_vblank_status();
+                }
 
                 Ok(value)
             }
@@ -353,5 +381,19 @@ impl MemMapped for Ppu {
             2 | 3 | 4 | 5 | 6 | 7 => Ok(()),
             _ => unreachable!()
         }
+    }
+
+    fn is_mutating_read(&self) -> bool {
+        self.is_mutating_read
+    }
+
+    fn set_is_mutating_read(&mut self, is_mutating_read: bool) {
+        self.is_mutating_read = is_mutating_read;
+    }
+}
+
+impl Display for Ppu {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PPU: {}, {}, vbl: {}", self.curr_scanline, self.curr_scanline_cycle, self.reg_status.is_in_vblank)
     }
 }
