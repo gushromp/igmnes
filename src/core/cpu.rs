@@ -480,9 +480,6 @@ impl Cpu {
 
     #[inline]
     fn instr_rti(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        if self.unhandled_interrupt.is_some() {
-            self.unhandled_interrupt = None;
-        }
         if self.pending_interrupt.is_some() {
             self.pending_interrupt = None;
         }
@@ -625,13 +622,15 @@ impl Cpu {
 
     #[inline]
     fn instr_plp(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        if let Some(interrupt) = self.unhandled_interrupt {
-            self.instructions_since_last_interrupt = 0;
-            self.pending_interrupt = Some(interrupt);
-        }
-
         let status_byte = self.stack_pull(mem_map)?;
         self.reg_status.plp(status_byte);
+
+        if let Some(interrupt) = self.unhandled_interrupt {
+            if !self.reg_status.interrupt_disable {
+                self.instructions_since_last_interrupt = 0;
+                self.pending_interrupt = Some(interrupt);
+            }
+        }
 
         Ok(())
     }
