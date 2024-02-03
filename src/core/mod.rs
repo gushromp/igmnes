@@ -45,11 +45,15 @@ pub trait CpuFacade {
 
     fn cpu(&mut self) -> &mut Cpu;
 
+    fn ppu(&mut self) -> &mut Ppu;
+
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError>;
+    fn step_ppu(&mut self, cpu_cycles: u64) -> bool;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
 
     fn apu(&mut self) -> &mut Apu;
 
+    fn nmi(&mut self);
     fn irq(&mut self);
 
     fn mem_map(&self) -> &CpuMemMap;
@@ -96,8 +100,15 @@ impl CpuFacade for DefaultCpuFacade {
 
     fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
 
+    fn ppu(&mut self) -> &mut Ppu { &mut self.mem_map.ppu }
+
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map, tracer)
+    }
+
+    fn step_ppu(&mut self, cpu_cycle_count: u64) -> bool {
+        let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
+        self.mem_map.ppu.step(ppu_mem_map, cpu_cycle_count)
     }
 
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {
@@ -106,6 +117,10 @@ impl CpuFacade for DefaultCpuFacade {
 
     fn apu(&mut self) -> &mut Apu {
         &mut self.mem_map.apu
+    }
+
+    fn nmi(&mut self) {
+        self.cpu.nmi(&mut self.mem_map).unwrap()
     }
 
     fn irq(&mut self) {
@@ -171,8 +186,6 @@ impl Core {
         renderer.clear();
         renderer.present();
 
-        let mut cycle_count: u64 = 0;
-
         if attach_debugger {
             let debugger = self.attach_debugger();
             debugger.start_listening();
@@ -190,6 +203,20 @@ impl Core {
 
         'running: loop {
             if self.is_running {
+                for event in events.poll_iter() {
+                    match event {
+                        Event::Quit { .. } => break 'running,
+                        Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                            let debugger = self.attach_debugger();
+
+                            if !debugger.is_listening() {
+                                debugger.start_listening();
+                            }
+                        }
+                        _ => {},
+                    }
+                }
+
                 if let Some(debugger) = self.cpu_facade.debugger() {
                     if debugger.is_listening() {
                         debugger.break_into();
@@ -199,39 +226,29 @@ impl Core {
                 if tracer.is_enabled() {
                     tracer.start_new_trace();
                 }
+
+
+
                 let result = self.cpu_facade.step_cpu(&mut tracer);
 
                 match result {
                     Ok(cycles) => {
-                        cycle_count += cycles as u64;
+                        let cpu_cycle_count = self.cpu_facade.cpu().cycle_count;
 
-                        if tracer.is_enabled() {
-                            tracer.set_cycle_count(cycle_count)
+                        let nmi = self.cpu_facade.step_ppu(cpu_cycle_count);
+                        if nmi {
+                            self.cpu_facade.nmi();
                         }
 
-                        let irq = self.cpu_facade.step_apu(cycle_count);
+                        let irq = self.cpu_facade.step_apu(cpu_cycle_count);
 
-                        if irq {
+
+                        if irq && !nmi {
                             self.cpu_facade.irq();
                         }
 
-                        for event in events.poll_iter() {
-                            match event {
-                                Event::Quit { .. } => break 'running,
-                                Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
-                                    let debugger = self.attach_debugger();
-
-                                    if !debugger.is_listening() {
-                                        debugger.start_listening();
-                                    }
-                                }
-                                _ => {},
-                            }
-                        }
-
                         let apu = self.cpu_facade.apu();
-                        audio_queue.queue_audio(&apu.out_samples).unwrap();
-                        apu.out_samples.clear();
+                        audio_queue.queue_audio(apu.get_out_samples().as_ref()).unwrap();
                     },
                     Err(error) => match error {
                         EmulationError::DebuggerBreakpoint(_addr) |
@@ -251,11 +268,11 @@ impl Core {
         }
 
         let cur_time = PreciseTime::now();
-        let seconds = start_time.to(cur_time).num_seconds() as u64;
-        println!("Cycles: {}", cycle_count);
+        let seconds = start_time.to(cur_time).num_milliseconds() as f64 / 1000.0;
+        println!("Cycles: {}", self.cpu_facade.cpu().cycle_count);
         println!("Seconds: {}", seconds);
-        if seconds > 0 {
-            println!("Cycles per second: {}", cycle_count / seconds);
+        if seconds > 0.0 {
+            println!("Cycles per second: {}", (self.cpu_facade.cpu().cycle_count as f64 / seconds).floor());
         }
     }
 

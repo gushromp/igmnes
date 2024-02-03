@@ -235,7 +235,7 @@ impl Cpu {
                 }
             },
             Err(e) => {
-                self.reg_pc = self.reg_pc.wrapping_add(1);
+                self.reg_pc = self.reg_pc.wrapping_add(2);
                 Err(e)
             }
         }
@@ -249,7 +249,7 @@ impl Cpu {
         use core::instructions::InstructionToken::*;
 
         let result = match instruction.token {
-            NOP => Ok(()),
+            NOP => self.instr_nop(instruction, mem_map),
             // Jump instructions
             JMP => self.instr_jmp(instruction, mem_map),
             JSR => self.instr_jsr(instruction, mem_map),
@@ -340,6 +340,19 @@ impl Cpu {
                 Err(e)
             }
         }
+    }
+
+    //
+    // NOP
+    //
+    #[inline]
+    fn instr_nop(
+        &mut self,
+        instruction: &mut Instruction,
+        mem_map: &mut dyn MemMapped,
+    ) -> Result<(), EmulationError> {
+        let _ = self.read_resolved(instruction, mem_map)?;
+        Ok(())
     }
 
     //
@@ -1079,6 +1092,10 @@ impl Cpu {
         } else {
             mem_map.read_word(BRK_PC_VEC)?
         };
+
+        if is_hardware {
+            self.cycle_count += 7;
+        }
 
         Ok(())
     }

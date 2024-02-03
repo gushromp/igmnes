@@ -2,6 +2,7 @@ target
 roms
 Cargo.lock
 .idea
+.vscode
 
 *.log
 *.svg

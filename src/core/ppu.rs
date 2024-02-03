@@ -5,6 +5,8 @@ use core::memory::{MemMapped, PpuMemMap};
 const BIT_MASK: u8 = 0b0000_0001;
 const BIT_MASK_2: u8 = 0b0000_0011;
 
+type Bit = u8; // We use a whole byte for now, to avoid bit-packing, this type is merely for clarification
+
 trait BitMask {
     fn get_bit(self: &Self, index: usize) -> bool;
     fn get_bit_u8(self: &Self, index: usize) -> u8;
@@ -20,7 +22,7 @@ impl BitMask for u8 {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct PpuCtrlReg {
     is_nmi_enabled: bool,
     is_master_enabled: bool,
@@ -41,9 +43,15 @@ impl PpuCtrlReg {
         self.is_increment_mode = byte.get_bit(2);
         self.name_table = byte & BIT_MASK_2;
     }
+
+    fn hard_reset(&mut self) {
+        *self = PpuCtrlReg::default();
+    }
+
+    fn soft_reset(&mut self) {}
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct PpuMaskReg {
     // Green and red are swapped on PAL
     is_color_emphasis_blue: bool,
@@ -70,9 +78,13 @@ impl PpuMaskReg {
         self.is_show_background_enabled_leftmost = byte.get_bit(1);
         self.is_greyscale_enabled = byte.get_bit(0);
     }
+
+    fn hard_reset(&mut self) {
+        *self = PpuMaskReg::default();
+    }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct PpuStatusReg {
     is_in_vblank: bool,
     is_sprite_0_hit: bool,
@@ -82,12 +94,22 @@ struct PpuStatusReg {
 impl PpuStatusReg {
     fn read(&mut self) -> u8 {
         let value = (self.is_in_vblank as u8) << 7 | (self.is_sprite_0_hit as u8) << 6 | (self.is_sprite_overflow as u8) << 5;
-        self.is_in_vblank = false;
         return value;
+    }
+
+    fn hard_reset(&mut self) {
+        self.is_in_vblank = true;
+        self.is_sprite_0_hit = false;
+        self.is_sprite_overflow = true;
+    }
+
+    fn soft_reset(&mut self) {
+        self.is_sprite_0_hit = false;
+        self.is_sprite_overflow = false;
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct PpuScrollReg {
     x: u8,
     y: u8,
@@ -101,10 +123,96 @@ impl PpuScrollReg {
             self.x = byte;
         }
     }
+
+    fn hard_reset(&mut self) {
+        self.x = 0;
+        self.y = 0;
+    }
+
+    fn soft_reset(&mut self) {}
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
+struct OamTileIndex {
+    //For 8x8 sprites, this is the tile number of this sprite within the pattern table selected in bit 3 of PPUCTRL ($2000).
+    //
+    // For 8x16 sprites (bit 5 of PPUCTRL set), the PPU ignores the pattern table selection and selects a pattern table from bit 0 of this number.
+    tile_index: u8,
+    bank_index: Bit, // Bank ($0000 or $1000) of tiles
+}
+
+#[derive(Copy, Clone)]
+enum OamAttributePriority {
+    FRONT = 0,
+    BACK = 1,
+}
+
+impl Default for OamAttributePriority {
+    fn default() -> Self {
+        OamAttributePriority::FRONT
+    }
+}
+
+impl From<u8> for OamAttributePriority {
+    fn from(value: u8) -> Self {
+        use core::ppu::OamAttributePriority::{BACK, FRONT};
+        match value {
+            0 => FRONT,
+            1 => BACK,
+            _ => unreachable!()
+        }
+    }
+}
+
+#[derive(Default, Copy, Clone)]
+struct OamSpriteAttributes {
+    // 76543210
+    // ||||||||
+    // ||||||++- Palette (4 to 7) of sprite
+    // |||+++--- Unimplemented (read 0)
+    // ||+------ Priority (0: in front of background; 1: behind background)
+    // |+------- Flip sprite horizontally
+    // +-------- Flip sprite vertically
+
+    palette_index: u8,
+    priority: OamAttributePriority,
+    is_flipped_horizontally: bool,
+    is_flipped_vertically: bool,
+}
+
+impl OamSpriteAttributes {
+    fn write(&mut self, byte: u8) {
+        self.palette_index = byte & 0b00001111;
+        self.priority = OamAttributePriority::from(byte.get_bit_u8(5));
+        self.is_flipped_horizontally = byte.get_bit(6);
+        self.is_flipped_vertically = byte.get_bit(7);
+    }
+}
+
+#[derive(Default, Copy, Clone)]
+struct OamEntry {
+    sprite_y: u8,
+    tile_bank_index: u8,
+    attributes: OamSpriteAttributes,
+    sprite_x: u8,
+}
+
+#[derive(Copy, Clone)]
+struct OamTable {
+    oam_entries: [OamEntry; 64],
+}
+
+impl Default for OamTable {
+    fn default() -> Self {
+        OamTable { oam_entries: [OamEntry::default(); 64] }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
 pub struct Ppu {
+    //
+    // PPU Registers
+    //
     // Write only
     reg_ctrl: PpuCtrlReg,
     // Write only
@@ -125,9 +233,25 @@ pub struct Ppu {
     // Read/write
     reg_data: u8,
 
-    // Internal/operational flags
+    //
+    // Internal/operational registers
+    //
     is_address_latch_on: bool,
+    curr_vram_addr: u16,
+    temp_vram_addr: u16,
+    fine_x_scroll: u8,
+    is_odd_frame: bool,
+
+    //
+    // Internal Data
+    //
+    oam_table: OamTable,
+    curr_scanline: u16,
+    curr_scanline_cycle: u16,
+
+    cpu_cycles: u64
 }
+
 
 impl Ppu {
     pub fn new() -> Self {
@@ -141,21 +265,72 @@ impl Ppu {
         self.is_address_latch_on = false;
     }
 
-    pub fn step(&mut self, ppu_mem_map: &mut PpuMemMap) -> Result<(), EmulationError> {
-        Ok(())
+    fn reset_vblank_status(&mut self) {
+        self.reg_status.is_in_vblank = false;
+    }
+
+    fn is_rendering_enabled(&self) -> bool {
+        self.reg_mask.is_show_background_enabled || self.reg_mask.is_show_sprites_enabled
+    }
+
+    pub fn hard_reset(&mut self) {
+        self.reg_ctrl.hard_reset();
+        self.reg_mask.hard_reset();
+        self.reg_status.hard_reset();
+        self.reg_oam_addr = 0u8;
+        self.reg_scroll.hard_reset();
+        self.reg_data = 0u8;
+
+        self.is_address_latch_on = false;
+        self.is_odd_frame = false;
+    }
+
+    #[inline]
+    pub fn step(&mut self, ppu_mem_map: &mut PpuMemMap, cpu_cycles: u64) -> bool {
+        let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
+
+        for _ in 0..cycles_to_run {
+            if (self.curr_scanline_cycle == 340 && self.is_odd_frame && self.is_rendering_enabled()) || self.curr_scanline_cycle == 341 {
+                self.curr_scanline_cycle = 0;
+                self.curr_scanline += 1;
+                self.is_odd_frame = !self.is_odd_frame;
+
+
+                if self.curr_scanline == 262 {
+                    self.curr_scanline = 0;
+                }
+            } else {
+                if self.curr_scanline_cycle == 1 {
+                    if self.curr_scanline == 241 {
+                        self.reg_status.is_in_vblank = true;
+                    } else if self.curr_scanline == 261 {
+                        self.reg_status.is_in_vblank = false;
+
+                    }
+                }
+
+                self.curr_scanline_cycle += 1;
+            }
+
+
+        }
+
+        self.cpu_cycles = cpu_cycles;
+        self.reg_status.is_in_vblank && self.reg_ctrl.is_nmi_enabled
     }
 }
 
 impl MemMapped for Ppu {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match index {
-            0 | 1 | 3 | 5 => Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
+            0 | 1 | 3 | 5 | 6 =>  Ok(0), // Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
             2 => {
                 // PPUSTATUS
                 let value = self.reg_status.read();
 
-                // Reading from this register also resets the write latch
+                // Reading from this register also resets the write latch and vblank active flag
                 self.reset_address_latch();
+                self.reset_vblank_status();
 
                 Ok(value)
             }
@@ -172,7 +347,11 @@ impl MemMapped for Ppu {
     }
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
-        // TODO
-        Ok(())
+        match index {
+            0 => Ok(self.reg_ctrl.write(byte)),
+            1 => Ok(self.reg_mask.write(byte)),
+            2 | 3 | 4 | 5 | 6 | 7 => Ok(()),
+            _ => unreachable!()
+        }
     }
 }

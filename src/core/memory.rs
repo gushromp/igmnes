@@ -61,7 +61,6 @@ impl MemMapped for Ram {
 
 pub struct PpuMemMap {
     ram: Ram,
-    pub ppu: Ppu,
     mapper: Rc<RefCell<dyn Mapper>>,
 }
 
@@ -71,17 +70,15 @@ impl Default for PpuMemMap {
 
         PpuMemMap {
             ram: Ram::default(),
-            ppu: Ppu::default(),
             mapper: def_mapper,
         }
     }
 }
 
 impl PpuMemMap {
-    pub fn new(ppu: Ppu, mapper: Rc<RefCell<dyn Mapper>>) -> PpuMemMap {
+    pub fn new(mapper: Rc<RefCell<dyn Mapper>>) -> PpuMemMap {
         PpuMemMap {
             ram: Ram::default(),
-            ppu,
             mapper,
         }
     }
@@ -91,6 +88,7 @@ pub struct CpuMemMap {
     rom: Rom,
     ram: Ram,
     pub apu: Apu,
+    pub ppu: Ppu,
     pub ppu_mem_map: PpuMemMap,
     mapper: Rc<RefCell<dyn Mapper>>,
 }
@@ -104,6 +102,7 @@ impl Default for CpuMemMap {
             rom: Rom::default(),
             ram: Ram::default(),
             apu: Apu::default(),
+            ppu: Ppu::default(),
             ppu_mem_map: PpuMemMap::default(),
             mapper: def_mapper,
         }
@@ -114,11 +113,12 @@ impl CpuMemMap {
     pub fn new(rom: Rom) -> CpuMemMap {
         let mapper = mappers::load_mapper_for_rom(&rom).unwrap();
 
-        let ppu_mem_map = PpuMemMap::new(Ppu::new(), mapper.clone());
+        let ppu_mem_map = PpuMemMap::new(mapper.clone());
         let mem_map = CpuMemMap {
             rom,
             ram: Ram::new(),
             apu: Apu::new(),
+            ppu: Ppu::new(),
             ppu_mem_map,
             mapper: mapper.clone(),
         };
@@ -151,7 +151,7 @@ impl MemMapped for CpuMemMap {
             // PPU
             0x2000..=0x3FFF => {
                 let index = index % 0x0008;
-                self.ppu_mem_map.ppu.read(index)
+                self.ppu.read(index)
             }
             // APU
             0x4000..=0x4013 | 0x4015 => {
@@ -195,7 +195,7 @@ impl MemMapped for CpuMemMap {
             // PPU
             0x2000..=0x3FFF => {
                 let index = index % 0x0008;
-                self.ppu_mem_map.write(index, byte)
+                self.ppu.write(index, byte)
             }
             // APU
             0x4000..=0x4013 | 0x4015 => {
@@ -203,7 +203,7 @@ impl MemMapped for CpuMemMap {
             }
             // OAM DMA register
             0x4014 => {
-                println!("Attempted write to dummy APU register: 0x{:04X}", index);
+                println!("Attempted write to unimplemented OAM DMA register: 0x{:04X}", index);
                 Ok(())
             }
             // I/O
@@ -228,8 +228,6 @@ impl MemMapped for CpuMemMap {
         }
     }
 }
-
-impl CpuMemMapped for CpuMemMap {}
 
 impl MemMapped for PpuMemMap {
     //      Address range	Size	Device

@@ -390,10 +390,14 @@ impl Instruction {
             //
             // 1-byte NOPs
             0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => Ok(Instruction::new(NOP, Implicit, 2, true)),
-            // 2-byte NOPs
-            0x04 | 0x14 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 | 0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 | 0xEB | 0xD4 | 0xF4 => Ok(Instruction::new(NOP, Immediate(mem_map.read(arg_index)?), 2, true)),
+            // 2-byte NOPs, 2-cycle
+            0x80 | 0x89 => Ok(Instruction::new(NOP, Immediate(mem_map.read(arg_index)?), 2, true)),
+            // 2-byte NOPs, 3-cycle
+            0x04 | 0x44 | 0x64 | 0x82 | 0xC2 | 0xE2 | 0xEB => Ok(Instruction::new(NOP, IndexedIndirectX(mem_map.read(arg_index)?), 3, true)),
+            // 2-byte NOPs, 4-cycle
+            0x14 | 0x34 | 0x54 | 0x74 | 0xD4 | 0xF4  => Ok(Instruction::new(NOP, Immediate(mem_map.read(arg_index)?), 4, true)),
             // 3-byte NOPs
-            0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => Ok(Instruction::new(NOP, Absolute(mem_map.read_word(arg_index)?), 2, true)),
+            0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => Ok(Instruction::new(NOP, AbsoluteIndexedX(mem_map.read_word(arg_index)?), 4, true)),
             // IGNore
             0x0C => Ok(Instruction::new(IGN, Absolute(mem_map.read_word(arg_index)?), 4, true)),
             // ALU/RMW combination instructions

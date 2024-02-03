@@ -42,17 +42,12 @@ impl Tracer {
         if let Some(ref mut current_trace) = self.current_trace {
             let instruction = Instruction::decode(mem_map, cpu_state.reg_pc);
 
-            let line = match instruction {
+            let trace_line = match instruction {
                 Ok(mut instr) => {
                     disassemble(instr.address, &mut instr, cpu_state, mem_map).unwrap_or("INVALID".to_string())
                 }
                 Err(e) => e.to_string()
             };
-            let trace_line =
-                format!("{}\t{}",
-                        line,
-                        cpu_state
-                );
             current_trace.cpu_trace = Some(trace_line);
         }
     }

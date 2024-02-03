@@ -15,6 +15,7 @@ use core::debugger::Debugger;
 use core::debugger::command::Command;
 use core::debugger::disassembler;
 use core::errors::EmulationError;
+use core::ppu::Ppu;
 
 struct MemMapShim<'a> {
     mem_map: &'a mut CpuMemMap,
@@ -384,6 +385,10 @@ impl CpuFacade for TerminalDebugger {
 
     fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
 
+    fn ppu(&mut self) -> &mut Ppu {
+        &mut self.mem_map.ppu
+    }
+
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         let reg_pc = self.cpu.reg_pc;
 
@@ -423,12 +428,22 @@ impl CpuFacade for TerminalDebugger {
         }
     }
 
+    fn step_ppu(&mut self, cpu_cycle_count: u64) -> bool {
+        let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
+        let cpu_cycles = self.cpu.cycle_count;
+        self.mem_map.ppu.step(ppu_mem_map, cpu_cycles)
+    }
+
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {
         self.mem_map.apu.step(cpu_cycles)
     }
 
     fn apu(&mut self) -> &mut Apu {
         &mut self.mem_map.apu
+    }
+
+    fn nmi(&mut self) {
+        self.cpu.nmi(&mut self.mem_map).unwrap()
     }
 
     fn irq(&mut self) {

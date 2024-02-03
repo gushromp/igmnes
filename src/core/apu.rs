@@ -1,5 +1,6 @@
 // const SAMPLE_RATE: u32 = 8000;
 use std::cell::Cell;
+use std::vec::Drain;
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
@@ -587,6 +588,10 @@ impl Apu {
         apu.tnd_table = tnd_table;
 
         apu
+    }
+
+    pub fn get_out_samples(&mut self) -> Drain<f32> {
+        self.out_samples.drain(..)
     }
 
     fn read_status(&self) -> u8 {

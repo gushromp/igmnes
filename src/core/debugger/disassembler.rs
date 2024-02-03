@@ -112,5 +112,10 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
         }
     };
 
-    Ok(format!("${:04X}(${:02X}): {:<2} {:<10} {:<20}", addr, op_code, token, args, detail))
+    let disassembly = format!("${:04X}(${:02X}): {:<2} {:<10} {:<20}", addr, op_code, token, args, detail);
+    if addr == cpu.reg_pc {
+        Ok(format!("{}\t{}", &disassembly, &cpu))
+    } else {
+        Ok(disassembly)
+    }
 }
