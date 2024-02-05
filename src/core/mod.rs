@@ -1,6 +1,5 @@
 extern crate sdl2;
 extern crate time;
-extern crate dasp;
 
 mod debugger;
 mod mappers;
@@ -12,6 +11,7 @@ mod instructions;
 mod errors;
 mod debug;
 mod ppu;
+mod dma;
 
 use std::error::Error;
 use std::path::Path;
@@ -21,6 +21,7 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::audio::AudioSpecDesired;
 use core::debug::Tracer;
+use core::dma::Dma;
 use self::time::PreciseTime;
 use self::memory::*;
 use self::cpu::Cpu;
@@ -44,14 +45,16 @@ pub trait CpuFacade {
     fn debugger(&mut self) -> Option<&mut dyn Debugger>;
 
     fn cpu(&mut self) -> &mut Cpu;
-
     fn ppu(&mut self) -> &mut Ppu;
+    fn apu(&mut self) -> &mut Apu;
+    fn dma(&mut self) -> &mut Dma;
 
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError>;
     fn step_ppu(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
+    fn step_dma(&mut self) -> bool;
 
-    fn apu(&mut self) -> &mut Apu;
+
 
     fn nmi(&mut self);
     fn irq(&mut self);
@@ -68,8 +71,8 @@ struct DefaultCpuFacade {
 impl DefaultCpuFacade {
     pub fn new(cpu: Cpu, mem_map: CpuMemMap) -> DefaultCpuFacade {
         DefaultCpuFacade {
-            cpu: cpu,
-            mem_map: mem_map,
+            cpu,
+            mem_map,
         }
     }
 }
@@ -102,6 +105,10 @@ impl CpuFacade for DefaultCpuFacade {
 
     fn ppu(&mut self) -> &mut Ppu { &mut self.mem_map.ppu }
 
+    fn apu(&mut self) -> &mut Apu { &mut self.mem_map.apu }
+
+    fn dma(&mut self) -> &mut Dma { &mut self.mem_map.dma }
+
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map, tracer)
     }
@@ -115,8 +122,15 @@ impl CpuFacade for DefaultCpuFacade {
         self.mem_map.apu.step(cpu_cycles)
     }
 
-    fn apu(&mut self) -> &mut Apu {
-        &mut self.mem_map.apu
+    fn step_dma(&mut self) -> bool {
+        let mut dma = std::mem::take(&mut self.mem_map.dma);
+        let mem_map = &mut self.mem_map;
+        if let Err(e) = dma.step(mem_map) {
+            println!("DMA error: {}", e.to_string());
+        }
+        let result = dma.is_dma_active();
+        self.mem_map.dma = dma;
+        result
     }
 
     fn nmi(&mut self) {
@@ -191,7 +205,6 @@ impl Core {
             debugger.start_listening();
         }
 
-
         let mut tracer = Tracer::default();
         tracer.set_enabled(enable_tracing);
 
@@ -229,6 +242,12 @@ impl Core {
                 let irq = self.cpu_facade.step_apu(current_cycle_count);
                 if irq && !nmi {
                     self.cpu_facade.irq();
+                }
+
+                let dma = self.cpu_facade.dma().is_dma_active();
+                if dma {
+                    self.cpu_facade.step_dma();
+                    self.cpu_facade.cpu().dma();
                 }
 
                 if let Some(debugger) = self.cpu_facade.debugger() {

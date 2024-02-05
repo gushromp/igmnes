@@ -1,5 +1,4 @@
 // const SAMPLE_RATE: u32 = 8000;
-use std::cell::Cell;
 use std::vec::Drain;
 use core::memory::MemMapped;
 use core::errors::EmulationError;

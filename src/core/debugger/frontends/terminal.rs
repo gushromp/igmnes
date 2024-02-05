@@ -14,6 +14,7 @@ use core::memory::{CpuMemMap, MemMapped};
 use core::debugger::Debugger;
 use core::debugger::command::Command;
 use core::debugger::disassembler;
+use core::dma::Dma;
 use core::errors::EmulationError;
 use core::ppu::Ppu;
 
@@ -403,9 +404,11 @@ impl CpuFacade for TerminalDebugger {
 
     fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
 
-    fn ppu(&mut self) -> &mut Ppu {
-        &mut self.mem_map.ppu
-    }
+    fn ppu(&mut self) -> &mut Ppu { &mut self.mem_map.ppu }
+
+    fn apu(&mut self) -> &mut Apu { &mut self.mem_map.apu }
+
+    fn dma(&mut self) -> &mut Dma { &mut self.mem_map.dma }
 
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         let reg_pc = self.cpu.reg_pc;
@@ -470,8 +473,13 @@ impl CpuFacade for TerminalDebugger {
         self.mem_map.apu.step(cpu_cycles)
     }
 
-    fn apu(&mut self) -> &mut Apu {
-        &mut self.mem_map.apu
+    fn step_dma(&mut self) -> bool {
+        // let dma = &mut self.dma();
+        // let cpu_ram = &mut self.mem_map.ram;
+        // let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
+        //
+        // dma.step(cpu_ram, ppu_mem_map)
+        true
     }
 
     fn nmi(&mut self) {

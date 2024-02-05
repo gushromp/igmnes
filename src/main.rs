@@ -6,7 +6,7 @@ extern crate rfd;
 mod core;
 
 use core::Core;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use rfd::FileDialog;
 
 fn main() {

@@ -411,7 +411,12 @@ impl Instruction {
             0xEF => Ok(Instruction::new(ISC, Absolute(mem_map.read_word(arg_index)?), 6, true)),
             0x2F => Ok(Instruction::new(RLA, Absolute(mem_map.read_word(arg_index)?), 6, true)),
             0x6F => Ok(Instruction::new(RRA, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            // SLO
+            0x03 => Ok(Instruction::new(SLO, IndexedIndirectX(mem_map.read(arg_index)?), 8, true)),
+            0x07 => Ok(Instruction::new(SLO, ZeroPage(mem_map.read(arg_index)?), 5, true)),
             0x0F => Ok(Instruction::new(SLO, Absolute(mem_map.read_word(arg_index)?), 6, true)),
+            0x13 => Ok(Instruction::new(SLO, IndirectIndexedY(mem_map.read(arg_index)?), 8, true)),
+
             0x4F => Ok(Instruction::new(SRE, Absolute(mem_map.read_word(arg_index)?), 6, true)),
             _ => Ok(Instruction::new(Unknown, Invalid, 0, true))
         };
