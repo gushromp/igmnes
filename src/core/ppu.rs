@@ -212,6 +212,21 @@ impl Default for OamTable {
     }
 }
 
+#[derive(Copy, Clone)]
+struct PpuMemMapConfig {
+    is_mutating_read: bool,
+    last_read_cycle: u16
+}
+
+impl Default for PpuMemMapConfig {
+    fn default() -> Self {
+        PpuMemMapConfig {
+            is_mutating_read: true,
+            last_read_cycle: 0
+        }
+    }
+}
+
 #[derive(Default, Clone, Copy)]
 pub struct Ppu {
     //
@@ -252,11 +267,22 @@ pub struct Ppu {
     oam_table: OamTable,
     curr_scanline: u16,
     curr_scanline_cycle: u16,
+    last_scanline_cycle: u16,
 
     cpu_cycles: u64,
     nmi_pending: bool,
 
-    is_mutating_read: bool,
+    mem_map_config: PpuMemMapConfig,
+
+    // Quirks
+
+    // Reading $2002 within a few PPU clocks of when VBL is set results in special-case behavior.
+    // Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame.
+    // Reading on the same PPU clock or one later reads it as set, clears it, and suppresses the NMI for that frame.
+    // Reading two or more PPU clocks before/after it's set behaves normally (reads flag's value, clears it, and doesn't affect NMI operation).
+    // This suppression behavior is due to the $2002 read pulling the NMI line back up too quickly after it drops (NMI is active low) for the CPU to see it.
+    // (CPU inputs like NMI are sampled each clock.)
+    should_skip_vbl: bool
 }
 
 
@@ -286,6 +312,10 @@ impl Ppu {
         self.nmi_pending = false;
     }
 
+    pub fn is_vblank_starting_cycle(&self) -> bool {
+        self.curr_scanline == 241 && self.curr_scanline_cycle == 1
+    }
+
     pub fn hard_reset(&mut self) {
         self.reg_ctrl.hard_reset();
         self.reg_mask.hard_reset();
@@ -305,35 +335,33 @@ impl Ppu {
     pub fn step(&mut self, ppu_mem_map: &mut PpuMemMap, cpu_cycles: u64, tracer: &mut Tracer) -> bool {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
 
+        self.last_scanline_cycle = self.curr_scanline_cycle;
+
         for _ in 0..cycles_to_run {
-            if self.curr_scanline_cycle == 341 {
-                // if self.curr_scanline == 261 && self.curr_scanline_cycle == 340 && self.is_odd_frame && self.is_rendering_enabled() {
-                //     self.curr_scanline_cycle = 1;
-                // } else {
-                //     self.curr_scanline_cycle = 0;
-                // }
-                self.curr_scanline_cycle = 1;
+            self.curr_scanline_cycle += 1;
+
+            if self.curr_scanline_cycle == 341 || self.curr_scanline == 261 && self.curr_scanline_cycle == 340 && self.is_odd_frame && self.is_rendering_enabled() {
+                self.last_scanline_cycle = self.curr_scanline_cycle;
+                self.curr_scanline_cycle = 0;
                 self.curr_scanline += 1;
+            }
 
-                if self.curr_scanline == 241 {
-                    self.reg_status.is_in_vblank = true;
-                    if self.reg_ctrl.is_nmi_enabled {
-                        self.nmi_pending = true;
-                    }
-                } else if self.curr_scanline == 261 {
-                    self.reg_status.is_in_vblank = false;
+            if self.is_vblank_starting_cycle() && !self.should_skip_vbl {
+                self.reg_status.is_in_vblank = true;
+                if self.reg_ctrl.is_nmi_enabled {
+                    self.nmi_pending = true;
                 }
+            } else if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
+                self.reg_status.is_in_vblank = false;
+            }
 
+            if self.curr_scanline == 262 {
+                self.curr_scanline = 0;
                 self.is_odd_frame = !self.is_odd_frame;
 
-
-                if self.curr_scanline == 262 {
-                    self.curr_scanline = 0;
+                if self.should_skip_vbl {
+                    self.should_skip_vbl = false;
                 }
-            } else {
-
-
-                self.curr_scanline_cycle += 1;
             }
         }
 
@@ -353,6 +381,17 @@ impl MemMapped for Ppu {
             2 => {
                 // PPUSTATUS
                 let value = self.reg_status.read();
+
+                // Reading $2002 within a few PPU clocks of when VBL is set results in special-case behavior.
+                // Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame.
+                // Reading on the same PPU clock or one later reads it as set, clears it, and suppresses the NMI for that frame.
+                // Reading two or more PPU clocks before/after it's set behaves normally (reads flag's value, clears it, and doesn't affect NMI operation).
+                // This suppression behavior is due to the $2002 read pulling the NMI line back up too quickly after it drops (NMI is active low) for the CPU to see it.
+                // (CPU inputs like NMI are sampled each clock.)
+                if self.curr_scanline == 241 && (self.curr_scanline_cycle == 0 || self.last_scanline_cycle == 0) {
+                    self.should_skip_vbl = true;
+                    self.reg_status.is_in_vblank = false;
+                }
 
                 if self.is_mutating_read() {
                     // Reading from this register also resets the write latch and vblank active flag
@@ -376,7 +415,14 @@ impl MemMapped for Ppu {
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match index {
-            0 => Ok(self.reg_ctrl.write(byte)),
+            0 => {
+                let old_is_nmi_enabled = self.reg_ctrl.is_nmi_enabled;
+                self.reg_ctrl.write(byte);
+                if !old_is_nmi_enabled && self.reg_ctrl.is_nmi_enabled && self.reg_status.is_in_vblank {
+                    self.nmi_pending = true;
+                }
+                Ok(())
+            },
             1 => Ok(self.reg_mask.write(byte)),
             2 | 3 | 4 | 5 | 6 | 7 => Ok(()),
             _ => unreachable!()
@@ -384,16 +430,16 @@ impl MemMapped for Ppu {
     }
 
     fn is_mutating_read(&self) -> bool {
-        self.is_mutating_read
+        self.mem_map_config.is_mutating_read
     }
 
     fn set_is_mutating_read(&mut self, is_mutating_read: bool) {
-        self.is_mutating_read = is_mutating_read;
+        self.mem_map_config.is_mutating_read = is_mutating_read;
     }
 }
 
 impl Display for Ppu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PPU: {}, {}, vbl: {}", self.curr_scanline, self.curr_scanline_cycle, self.reg_status.is_in_vblank)
+        write!(f, "PPU: {}, {}, vbl: {}, skp_vbl: {}", self.curr_scanline, self.curr_scanline_cycle, self.reg_status.is_in_vblank, self.should_skip_vbl)
     }
 }

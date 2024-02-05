@@ -125,7 +125,7 @@ impl StatusReg {
 #[derive(Default, Copy, Clone)]
 struct CpuInterrupt {
     is_hardware: bool,
-    is_nmi: bool,
+    is_nmi: bool
 }
 
 #[derive(Default, Copy, Clone)]
@@ -212,43 +212,58 @@ impl Cpu {
 
     #[inline]
     pub fn irq(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: false };
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: false};
         self.interrupt(mem_map, interrupt)
     }
 
     #[inline]
     pub fn nmi(&mut self, mem_map: &mut dyn MemMapped) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: true };
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: true};
         self.interrupt(mem_map, interrupt)
     }
 
     #[inline]
     fn interrupt(&mut self, mem_map: &mut dyn MemMapped, interrupt: CpuInterrupt) -> Result<(), EmulationError> {
-        if !self.unhandled_interrupt.is_none() || !self.pending_interrupt.is_none() {
+        if !self.pending_interrupt.is_none() {
             return Ok(());
         }
 
-        if !self.reg_status.interrupt_disable {
-            self.perform_irq(mem_map, &interrupt)
-        } else {
-            self.instructions_since_last_interrupt = 0;
-            self.unhandled_interrupt = Some(interrupt);
+        self.instructions_since_last_interrupt = 0;
+        if interrupt.is_nmi {
+            self.pending_interrupt = Some(interrupt);
             Ok(())
+        }
+        else {
+            if !self.reg_status.interrupt_disable {
+                self.perform_irq(mem_map, &interrupt)
+            } else {
+                self.unhandled_interrupt = Some(interrupt);
+                Ok(())
+            }
         }
     }
 
     #[inline]
     pub fn step(&mut self, mem_map: &mut dyn MemMapped, tracer: &mut Tracer) -> Result<u8, EmulationError> {
-        let result = self.execute_next_instruction(mem_map, tracer);
-        self.instructions_since_last_interrupt += 1;
+        let result;
 
         if let Some(interrupt) = self.pending_interrupt {
-            if self.instructions_since_last_interrupt > 1 {
+            if (interrupt.is_nmi && self.instructions_since_last_interrupt > 0) || (self.instructions_since_last_interrupt > 1) {
+                if tracer.is_enabled() {
+                    tracer.add_cpu_trace(&self, mem_map);
+                }
                 self.perform_irq(mem_map, &interrupt)?;
                 self.pending_interrupt = None;
-            }
-        }
 
+                result = Ok(7);
+            } else {
+                result = self.execute_next_instruction(mem_map, tracer);
+                self.instructions_since_last_interrupt += 1;
+            }
+        } else {
+            result = self.execute_next_instruction(mem_map, tracer);
+            self.instructions_since_last_interrupt += 1;
+        }
 
         self.unhandled_interrupt = None;
 
@@ -1157,7 +1172,6 @@ impl Cpu {
             mem_map.read_word(BRK_PC_VEC)?
         };
 
-        self.instructions_since_last_interrupt = 0;
         self.reg_status.interrupt_disable = true;
         self.cycle_count += 7;
         Ok(())

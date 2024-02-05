@@ -301,8 +301,12 @@ impl TerminalDebugger {
         println!();
         println!("Disassembly:");
         println!("------------");
-        for line in disassembly.into_iter() {
-            println!("{}", line);
+        for (index, line) in disassembly.into_iter().enumerate() {
+            if index == 0 {
+                println!("{}\t{}\t{}", line, &self.cpu, &self.mem_map.ppu);
+            } else {
+                println!("{}", line);
+            }
         }
         println!();
     }
@@ -340,6 +344,9 @@ impl Debugger for TerminalDebugger {
         use core::debugger::command::Command::*;
 
         let mut stdout = io::stdout();
+
+        let range: Range<u16> = 0..5;
+        self.disassemble(&range);
 
         'debug: loop {
             let pc = self.cpu.reg_pc;
@@ -413,13 +420,17 @@ impl CpuFacade for TerminalDebugger {
             }
         }
 
-        if self.breakpoint_cycles_set.contains(&self.cpu.cycle_count) {
-            if let Some(_addr) = self.cur_breakpoint_addr {
-                self.cur_breakpoint_addr = None;
-            } else {
-                println!("CPU cycles breakpoint hit");
-                self.cur_breakpoint_addr = Some(reg_pc);
-                return Err(EmulationError::DebuggerBreakpoint(self.cpu.reg_pc));
+        for break_cycles in &self.breakpoint_cycles_set {
+            if self.cpu.cycle_count >= *break_cycles {
+                if let Some(_addr) = self.cur_breakpoint_addr {
+                    self.cur_breakpoint_addr = None;
+                } else {
+                    println!("CPU cycles breakpoint hit");
+                    self.cur_breakpoint_addr = Some(reg_pc);
+                    let to_remove = *break_cycles;
+                    self.breakpoint_cycles_set.remove(&to_remove);
+                    return Err(EmulationError::DebuggerBreakpoint(self.cpu.reg_pc));
+                }
             }
         }
 
@@ -450,6 +461,7 @@ impl CpuFacade for TerminalDebugger {
     }
 
     fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
+        tracer.set_enabled(self.trace_active);
         let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
         self.mem_map.ppu.step(ppu_mem_map, cpu_cycle_count, tracer)
     }

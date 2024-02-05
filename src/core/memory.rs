@@ -276,6 +276,4 @@ impl MemMapped for PpuMemMap {
     }
 }
 
-impl PpuMemMapped for PpuMemMap {}
-
 

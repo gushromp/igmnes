@@ -11,7 +11,7 @@ pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut
 
     let range = range.clone();
     for _i in range {
-        let index = current_addr as u16;
+        let index = current_addr;
         let mut instruction = Instruction::decode(mem_map, index);
 
         match instruction {
@@ -118,9 +118,9 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
     mem_map.set_is_mutating_read(true);
 
     let disassembly = format!("${:04X}(${:02X}): {:<2} {:<10} {:<20}", addr, op_code, token, args, detail);
-    if addr == cpu.reg_pc {
-        Ok(format!("{}\t{}", &disassembly, &cpu))
-    } else {
+    // if addr == cpu.reg_pc {
+    //     Ok(format!("{}\t{}", &disassembly, &cpu))
+    // } else {
         Ok(disassembly)
-    }
+    // }
 }

@@ -202,6 +202,8 @@ impl Core {
         let start_time = PreciseTime::now();
 
         'running: loop {
+            tracer.start_new_trace();
+
             if self.is_running {
                 for event in events.poll_iter() {
                     match event {
@@ -217,17 +219,6 @@ impl Core {
                     }
                 }
 
-                if let Some(debugger) = self.cpu_facade.debugger() {
-                    if debugger.is_listening() {
-                        debugger.break_into();
-                    }
-                }
-
-                if tracer.is_enabled() {
-                    tracer.start_new_trace();
-                }
-
-
                 let current_cycle_count = self.cpu_facade.cpu().cycle_count;
                 let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
                 if nmi {
@@ -238,6 +229,12 @@ impl Core {
                 let irq = self.cpu_facade.step_apu(current_cycle_count);
                 if irq && !nmi {
                     self.cpu_facade.irq();
+                }
+
+                if let Some(debugger) = self.cpu_facade.debugger() {
+                    if debugger.is_listening() {
+                        debugger.break_into();
+                    }
                 }
 
                 let result = self.cpu_facade.step_cpu(&mut tracer);
