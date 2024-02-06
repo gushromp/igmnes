@@ -393,7 +393,7 @@ impl Ppu {
 impl MemMapped for Ppu {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match index {
-            0 | 1 | 3 | 5 | 6 => Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))), // Ok(0),
+            0 | 1 | 3 | 5 | 6 => Ok(0), // Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
             2 => {
                 // PPUSTATUS
                 let value = self.reg_status.read();
@@ -404,12 +404,12 @@ impl MemMapped for Ppu {
                 // Reading two or more PPU clocks before/after it's set behaves normally (reads flag's value, clears it, and doesn't affect NMI operation).
                 // This suppression behavior is due to the $2002 read pulling the NMI line back up too quickly after it drops (NMI is active low) for the CPU to see it.
                 // (CPU inputs like NMI are sampled each clock.)
-                if self.curr_scanline == 241 && (self.curr_scanline_cycle == 0 || self.last_scanline_cycle == 0) {
-                    self.should_skip_vbl = true;
-                    self.reg_status.is_in_vblank = false;
-                }
-
                 if self.is_mutating_read() {
+                    if self.curr_scanline == 241 && (self.curr_scanline_cycle == 0 || self.curr_scanline_cycle == 1 || self.curr_scanline_cycle == 2) {
+                        self.should_skip_vbl = true;
+                        self.nmi_pending = false;
+                    }
+
                     // Reading from this register also resets the write latch and vblank active flag
                     self.reset_address_latch();
                     self.reset_vblank_status();

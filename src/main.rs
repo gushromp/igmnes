@@ -2,6 +2,7 @@
 extern crate nom;
 extern crate sdl2;
 extern crate rfd;
+extern crate time;
 
 mod core;
 

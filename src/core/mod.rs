@@ -20,6 +20,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::audio::AudioSpecDesired;
+use time::Duration;
 use core::debug::Tracer;
 use core::dma::Dma;
 use self::time::PreciseTime;
@@ -34,11 +35,14 @@ use self::errors::EmulationError;
 
 pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32; // 21.477272 MHz
 pub const CPU_CLOCK_DIVISOR_NTSC: f32 = 12.0;
+
+pub const CPU_CLOCK_RATIO_NTSC: f32 = MASTER_CLOCK_NTSC / CPU_CLOCK_DIVISOR_NTSC;
 pub const PPU_CLOCK_DIVISOR_NTSC: f32 = 4.0;
 pub const PPU_STEPS_PER_CPU_STEP_NTSC: usize = (CPU_CLOCK_DIVISOR_NTSC / PPU_CLOCK_DIVISOR_NTSC) as usize;
 
 const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
 const CLOCK_DIVISOR_PAL: i32 = 15;
+
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -178,7 +182,7 @@ impl Core {
         let audio_subsystem = sdl_context.audio().unwrap();
         //
         let audio_spec_desired = AudioSpecDesired {
-            freq: Some(48000),
+            freq: Some(41_000),
             channels: Some(1),
             samples: None,
         };
@@ -213,6 +217,8 @@ impl Core {
         }
 
         let start_time = PreciseTime::now();
+        let mut previous_cycle_count = self.cpu_facade.cpu().cycle_count;
+
 
         'running: loop {
             tracer.start_new_trace();
@@ -233,6 +239,7 @@ impl Core {
                 }
 
                 let current_cycle_count = self.cpu_facade.cpu().cycle_count;
+
                 let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
                 if nmi {
                     self.cpu_facade.ppu().clear_nmi();
@@ -259,10 +266,7 @@ impl Core {
                 let result = self.cpu_facade.step_cpu(&mut tracer);
 
                 match result {
-                    Ok(_) => {
-                        let apu = self.cpu_facade.apu();
-                        audio_queue.queue_audio(apu.get_out_samples().as_ref()).unwrap();
-                    },
+                    Ok(_) => {},
                     Err(error) => match error {
                         EmulationError::DebuggerBreakpoint(_addr) |
                         EmulationError::DebuggerWatchpoint(_addr) => {
@@ -274,6 +278,17 @@ impl Core {
                     }
                 }
             }
+
+            let apu = self.cpu_facade.apu();
+            if let Some(out_samples) = apu.get_out_samples(44100) {
+                audio_queue.queue_audio(out_samples.as_ref()).unwrap();
+            }
+            // let remaining_samples = audio_queue.spec().freq - audio_queue.size() as i32;
+            // if remaining_samples > 0 {
+            //     if let Some(out_samples) = apu.get_out_samples(remaining_samples as usize + 1) {
+            //         audio_queue.queue_audio(out_samples.as_ref()).unwrap();
+            //     }
+            // }
         }
 
         if tracer.has_traces() {

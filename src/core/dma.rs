@@ -5,7 +5,7 @@ use core::ppu::PpuMemMap;
 #[derive(Default)]
 pub struct Dma {
     page_index: u8,
-    dma_cycle_count: u8,
+    dma_cycle_count: usize,
 
     pub dma_type: Option<DmaType>
 }
@@ -37,6 +37,10 @@ impl Dma {
             mem_map.ppu_mem_map.oam_table.write(cpu_mem)?;
         }
         self.dma_cycle_count += 2;
+
+        if self.dma_cycle_count == 514 {
+            self.dma_type = None;
+        }
         Ok(())
     }
 

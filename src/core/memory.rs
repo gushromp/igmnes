@@ -144,15 +144,14 @@ impl MemMapped for CpuMemMap {
             0x4000..=0x4013 | 0x4015 => {
                 self.apu.read(index)
             }
-            // OAM DMA register
+            // OAM DMA register (write-only)
             0x4014 => {
-                println!("Attempted read from unimplemented OAM DMA register");
                 Ok(0)
             }
             // I/O
             0x4016 => {
                 // self.apu.read(index)
-                println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
+                // println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
                 Ok(0)
             }
             // I/O, Apu: This address is shared by both the APU and I/O so we can from read either one
@@ -195,7 +194,7 @@ impl MemMapped for CpuMemMap {
             }
             // I/O
             0x4016 => {
-                println!("Attempted unimplemented write to I/O register: 0x{:X}", index);
+                // println!("Attempted unimplemented write to I/O register: 0x{:X}", index);
                 Ok(())
             }
             // This address is shared by both APU and I/O so we need to write the value to both

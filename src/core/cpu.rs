@@ -154,6 +154,7 @@ pub struct Cpu {
 
     is_halt_scheduled: bool,
     is_halted: bool,
+    was_halted: bool
 }
 
 impl Cpu {
@@ -182,7 +183,8 @@ impl Cpu {
             pending_interrupt: None,
             instructions_since_last_interrupt: 0,
             is_halt_scheduled: false,
-            is_halted: false
+            is_halted: false,
+            was_halted: false,
         };
         cpu.hard_reset(mem_map);
 
@@ -249,16 +251,20 @@ impl Cpu {
     }
 
     pub fn dma(&mut self) {
-        if !self.is_halted {
+        if self.was_halted {
+            self.is_halted = true
+        } else {
             self.is_halt_scheduled = true;
         }
     }
 
     #[inline]
     pub fn step(&mut self, mem_map: &mut impl MemMapped, tracer: &mut Tracer) -> Result<u8, EmulationError> {
+        self.was_halted = false;
         if self.is_halted {
             self.cycle_count += 2;
             self.is_halted = false;
+            self.was_halted = true;
             return Ok(2);
         }
 

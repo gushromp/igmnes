@@ -1,15 +1,15 @@
-// const SAMPLE_RATE: u32 = 8000;
+use std::cmp::min;
 use std::vec::Drain;
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
 // Actually it's (super::MASTER_CLOCK_NTSC / super::CLOCK_DIVISOR_NTSC) but
 // we need something divisible by 240
-const APU_SAMPLE_RATE: u32 = 1_789_920;
-const OUTPUT_SAMPLE_RATE: u32 = 48_000;
-const SAMPLE_RATE_RATIO: usize = APU_SAMPLE_RATE as usize / OUTPUT_SAMPLE_RATE as usize;
-//const STEP_FREQUENCY: u32 = 240; // 240hz steps
-//const SAMPLES_PER_STEP: u32 = APU_SAMPLE_RATE / STEP_FREQUENCY;
+const APU_SAMPLE_RATE: usize = 1_789_920;
+const OUTPUT_SAMPLE_RATE: usize = 41_000;
+
+const SAMPLE_AVERAGE_COUNT: usize = 4;
+const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
 
 const FC_4STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 29829];
 const FC_5STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 37281];
@@ -36,6 +36,16 @@ const PULSE_DUTY: [[u8; 8]; 4] = [
     [1, 0, 0, 1, 1, 1, 1, 1]];
 
 
+// Triangle waveform table
+const TRIANGLE_WAVEFORM: [u8; 32] = [
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+
+// Noise period table
+const NOISE_PERIOD_CYCLES: [u16; 16] = [
+    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
+
+
 trait ApuChannel {
     fn write_reg(&mut self, reg_index: usize, byte: u8);
 
@@ -46,6 +56,8 @@ trait ApuChannel {
 
     fn clock_timer(&mut self);
     fn clock_length_counter(&mut self);
+
+    fn clock_envelope(&mut self);
 
     fn output(&self) -> u8;
 }
@@ -63,6 +75,10 @@ struct Pulse {
     // Volume for current APU frame
     constant_volume: bool,
     volume: u8,
+    // Envelope
+    envelope_start: bool,
+    envelope_period: u8,
+    envelope_decay: u8,
     // Sweep:
     sweep_enabled: bool,
     sweep_period: u8,
@@ -82,6 +98,10 @@ impl Pulse {
         self.lc_halt_env_loop = byte & 0b0010_0000 != 0;
         self.constant_volume = byte & 0b0001_0000 != 0;
         self.volume = byte & 0b1111;
+
+        if !self.constant_volume {
+            self.envelope_start = true;
+        }
     }
 
     fn write_epppnsss(&mut self, byte: u8) {
@@ -111,8 +131,6 @@ impl Pulse {
         } else {
             0
         };
-
-        //println!("Loaded length counter: {}, timer period: {}", self.length_counter, self.timer);
     }
 }
 
@@ -144,6 +162,7 @@ impl ApuChannel for Pulse {
     }
 
     fn clock_timer(&mut self) {
+        if !self.is_enabled() { return; }
         if self.timer_counter == 0 {
             self.timer_counter = self.timer + 1;
 
@@ -163,10 +182,34 @@ impl ApuChannel for Pulse {
         }
     }
 
+    fn clock_envelope(&mut self) {
+        if self.envelope_start {
+            self.envelope_start = false;
+            self.envelope_period = self.volume + 1;
+            self.envelope_decay = 15;
+        } else {
+            if self.envelope_period == 0 {
+                self.envelope_period = self.volume;
+                if self.envelope_decay > 0 {
+                    self.envelope_decay -= 1;
+                } else if self.lc_halt_env_loop {
+                    self.envelope_decay = 15;
+                }
+            } else {
+                self.envelope_period -= 1;
+            }
+        }
+    }
+
     fn output(&self) -> u8 {
         if self.is_audible() {
             let waveform = PULSE_DUTY[self.duty as usize][self.waveform_counter];
-            waveform * self.volume
+            let volume = if self.constant_volume {
+                self.volume
+            } else {
+                self.envelope_decay
+            };
+            waveform * volume
         } else {
             0
         }
@@ -185,6 +228,8 @@ struct Triangle {
 
     lengthc_halt_linearc_control: bool,
     linear_counter_load: u8,
+    should_load_linear_counter: bool,
+    linear_counter: u8,
 
     timer: u16,
     timer_counter: u16,
@@ -217,6 +262,7 @@ impl Triangle {
         } else {
             0
         };
+        self.should_load_linear_counter = true;
     }
 }
 
@@ -244,7 +290,7 @@ impl ApuChannel for Triangle {
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0 && self.timer >= 8
+        self.is_enabled() && self.linear_counter > 0
     }
 
     fn clock_timer(&mut self) {
@@ -252,7 +298,7 @@ impl ApuChannel for Triangle {
             self.timer_counter = self.timer + 1;
 
             if self.waveform_counter == 0 {
-                self.waveform_counter = 7;
+                self.waveform_counter = TRIANGLE_WAVEFORM.len() - 1;
             } else {
                 self.waveform_counter -= 1;
             }
@@ -263,12 +309,32 @@ impl ApuChannel for Triangle {
 
     fn clock_length_counter(&mut self) {
         if self.is_enabled() && !self.lengthc_halt_linearc_control {
-            self.length_counter -= 1;
+            if self.should_load_linear_counter {
+                self.linear_counter = self.linear_counter_load;
+                if !self.lengthc_halt_linearc_control {
+                    self.should_load_linear_counter = false;
+                }
+            } else {
+                if self.linear_counter >= 2 {
+                    self.linear_counter -= 2;
+                } else {
+                    self.linear_counter = 0;
+                }
+            }
         }
     }
 
+    fn clock_envelope(&mut self) {
+        // No envelope on this channel
+    }
+
     fn output(&self) -> u8 {
-        0
+        if self.is_audible() {
+            let waveform = TRIANGLE_WAVEFORM[self.waveform_counter];
+            waveform
+        } else {
+            0
+        }
     }
 }
 
@@ -276,6 +342,18 @@ impl ApuChannel for Triangle {
 // Noise channel
 //
 
+#[derive(Debug, Clone)]
+struct NoiseShiftRegister {
+    shift_register: u16,
+}
+
+impl Default for NoiseShiftRegister {
+    fn default() -> Self {
+        NoiseShiftRegister {
+            shift_register: 0b1
+        }
+    }
+}
 #[derive(Debug, Default, Clone)]
 struct Noise {
     enabled: bool,
@@ -283,9 +361,15 @@ struct Noise {
     volume: u8,
     lc_halt_env_loop: bool,
     constant_volume: bool,
+    // Envelope
+    envelope_start: bool,
+    envelope_period: u8,
+    envelope_decay: u8,
     looping: bool,
-    period: u8,
+    period: u16,
+    period_counter: u16,
 
+    shift_register: NoiseShiftRegister,
     length_counter: u8,
 }
 
@@ -294,13 +378,17 @@ impl Noise {
         self.lc_halt_env_loop = byte & 0b0010_0000 != 0;
         self.constant_volume = byte & 0b0001_0000 != 0;
         self.volume = byte & 0b1111;
+        if !self.constant_volume {
+            self.envelope_start = true;
+        }
     }
 
     fn write_uuuuuuuu(&mut self, _byte: u8) {}
 
     fn write_luuupppp(&mut self, byte: u8) {
         self.looping = byte & 0b1000_0000 != 0;
-        self.period = byte & 0b1111;
+        let period_index: usize = (byte & 0b1111) as usize;
+        self.period = NOISE_PERIOD_CYCLES[period_index];
     }
 
     fn write_llllluuu(&mut self, byte: u8) {
@@ -310,6 +398,19 @@ impl Noise {
         } else {
             0
         };
+    }
+
+    fn clock_shift_register(&mut self) {
+        let mut shift_register = self.shift_register.shift_register;
+        let bit0 = shift_register & 0b1;
+        let feedback = if self.looping {
+            bit0 ^ ((shift_register >> 6) & 0b1)
+        } else {
+            bit0 ^ ((shift_register >> 1) & 0b1)
+        };
+        shift_register = shift_register >> 1;
+        shift_register = shift_register | (feedback << 14);
+        self.shift_register.shift_register = shift_register;
     }
 }
 
@@ -325,7 +426,7 @@ impl ApuChannel for Noise {
     }
 
     fn is_enabled(&self) -> bool {
-        return self.enabled && self.length_counter > 0;
+        return self.enabled && self.length_counter > 0 && self.period > 0;
     }
 
     fn toggle_enabled(&mut self, enabled: bool) {
@@ -337,10 +438,17 @@ impl ApuChannel for Noise {
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0
+        self.enabled && self.length_counter > 0 && (self.shift_register.shift_register & 0b1) as u8 == 0
     }
 
-    fn clock_timer(&mut self) {}
+    fn clock_timer(&mut self) {
+        if self.period_counter == 0 {
+            self.clock_shift_register();
+            self.period_counter = self.period;
+        } else {
+            self.period_counter -= 2;
+        }
+    }
 
     fn clock_length_counter(&mut self) {
         if self.is_enabled() & !self.lc_halt_env_loop {
@@ -348,8 +456,35 @@ impl ApuChannel for Noise {
         }
     }
 
+    fn clock_envelope(&mut self) {
+        if self.envelope_start {
+            self.envelope_start = false;
+            self.envelope_period = self.volume + 1;
+            self.envelope_decay = 15;
+        } else {
+            if self.envelope_period == 0 {
+                self.envelope_period = self.volume;
+                if self.envelope_decay > 0 {
+                    self.envelope_decay -= 1;
+                } else if self.lc_halt_env_loop {
+                    self.envelope_decay = 15;
+                }
+            } else {
+                self.envelope_period -= 1;
+            }
+        }
+    }
+
     fn output(&self) -> u8 {
-        0
+        if self.is_audible()  {
+            if self.constant_volume {
+                self.volume
+            } else {
+                self.envelope_decay
+            }
+        } else {
+            0
+        }
     }
 }
 
@@ -416,6 +551,9 @@ impl ApuChannel for DMC {
 
     fn clock_length_counter(&mut self) {}
 
+    fn clock_envelope(&mut self) {
+        // No envelope on this channel
+    }
     fn output(&self) -> u8 {
         0
     }
@@ -523,7 +661,7 @@ pub struct Apu {
     apu_cycles: f64,
 
     nes_samples: Vec<f32>,
-    out_samples: Vec<f32>
+    out_samples: Vec<f32>,
 }
 
 impl Default for Apu {
@@ -589,8 +727,9 @@ impl Apu {
         apu
     }
 
-    pub fn get_out_samples(&mut self) -> Drain<f32> {
-        self.out_samples.drain(..)
+    pub fn get_out_samples(&mut self, num_samples: usize) -> Option<Drain<f32>> {
+        let upper_range = min(num_samples, self.out_samples.len());
+        Some(self.out_samples.drain(..upper_range))
     }
 
     fn read_status(&self) -> u8 {
@@ -632,8 +771,6 @@ impl Apu {
         self.channels[TRIANGLE].toggle_enabled(triangle_enabled);
         self.channels[NOISE].toggle_enabled(noise_enabled);
         self.channels[DMC].toggle_enabled(dmc_enabled);
-
-        //println!("Status write: {:08b}", byte);
     }
 
     fn write_frame_counter(&mut self, byte: u8) {
@@ -664,13 +801,13 @@ impl Apu {
         // We add outputs of pulse1 and pulse 2 channels
         // and use that value as an index into the pulse output lookup table
         let pulse_output_index: usize
-        = self.channels[PULSE_1].output() as usize + self.channels[PULSE_2].output() as usize;
+            = self.channels[PULSE_1].output() as usize + self.channels[PULSE_2].output() as usize;
 
         // We use outputs of triangle, noise and DMC channels
         // as an index into the tnd output lookup table
         let tnd_output_index: usize
-        = 3 * self.channels[TRIANGLE].output() as usize + 2 * self.channels[NOISE].output() as usize
-        + self.channels[DMC].output() as usize;
+            = 3 * self.channels[TRIANGLE].output() as usize + 2 * self.channels[NOISE].output() as usize
+            + self.channels[DMC].output() as usize;
 
         let pulse_output = self.pulse_table[pulse_output_index];
         let tnd_output = self.tnd_table[tnd_output_index];
@@ -681,20 +818,18 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-
-        for sample in self.nes_samples.iter().step_by(SAMPLE_RATE_RATIO) {
-            self.out_samples.push(*sample);
-        }
-        // let samples = self.nes_samples.iter().cloned().map(f32::to_sample::<f64>);
-        // let signal = signal::from_interleaved_samples_iter(samples);
-        // let ring_buffer = ring_buffer::Fixed::from([[0.0]; 100]);
-        // let sinc = Sinc::new(ring_buffer);
-        // let conv = signal.from_hz_to_hz(sinc, APU_SAMPLE_RATE as f64, OUTPUT_SAMPLE_RATE as f64);
+        if self.nes_samples.is_empty() { return; }
+        // let sample_ratio = self.nes_samples.len() as f64 / APU_SAMPLE_RATE as f64;
         //
-        // for frame in conv.until_exhausted() {
-        //     let new_sample = frame[0].to_sample::<f32>();
-        //     self.out_samples.push(new_sample);
-        // }
+        // let num_samples_to_generate = (OUTPUT_SAMPLE_RATE as f64 * sample_ratio).round() as usize;
+        // let chunk_size = self.nes_samples.len() / num_samples_to_generate;
+        let samples_to_average: Vec<f32> = self.nes_samples.iter().copied().step_by(SAMPLE_RATE_RATIO).collect();
+        for samples in samples_to_average.chunks(SAMPLE_AVERAGE_COUNT) {
+            let avg_sample = samples.iter().copied().reduce(|a, b| a + b).map(|sample| sample / SAMPLE_AVERAGE_COUNT as f32);
+            if let Some(avg_sample) = avg_sample {
+                self.out_samples.push(avg_sample);
+            }
+        }
 
         self.nes_samples.clear()
     }
@@ -715,13 +850,15 @@ impl Apu {
     }
 
     fn clock_length_counters(&mut self, forced: bool) {
-        for channel in &mut self.channels {
+        for channel in self.channels.iter_mut() {
             if self.frame_counter.quarter_frame() || forced {
-                // Envelope / Linear counter
+                // Envelope / Triangle Linear counter
+                channel.clock_envelope();
             }
 
             if self.frame_counter.half_frame() || forced {
                 channel.clock_length_counter();
+
                 // Sweep
             }
         }
@@ -730,6 +867,7 @@ impl Apu {
     fn clock_timers(&mut self) {
         // Triangle's timer is clocked on every CPU clock, the rest of the channels' timers
         // are clocked on every other CPU clock
+
         self.channels[TRIANGLE].clock_timer();
 
         if self.cpu_cycles % 2 == 0 {
@@ -767,8 +905,9 @@ impl Apu {
                 }
             }
 
-            self.clock_timers();
+
             self.clock_length_counters(false);
+            self.clock_timers();
             self.clock_channel_output();
         }
 
@@ -792,7 +931,7 @@ impl MemMapped for Apu {
                 self.frame_irq = false;
                 // }
                 Ok(status)
-            },
+            }
             // The rest of the registers cannot be read from
             _ => {
                 //println!("Attempted invalid read from APU register: 0x{:04X}", addr);
@@ -808,110 +947,110 @@ impl MemMapped for Apu {
             0x4000 => {
                 self.channels[PULSE_1].write_reg(0, byte);
                 Ok(())
-            },
+            }
             // Sweep unit: enabled (E), period (P), negate (N), shift (S)
             0x4001 => {
                 self.channels[PULSE_1].write_reg(1, byte);
                 Ok(())
-            },
+            }
             // Timer low  (T)
             0x4002 => {
                 self.channels[PULSE_1].write_reg(2, byte);
                 Ok(())
-            },
+            }
             // Length counter load (L), timer high (T)
             0x4003 => {
                 self.channels[PULSE_1].write_reg(3, byte);
                 Ok(())
-            },
+            }
 
             // Pulse2
             // Duty (DD), Envelope loop/Length counter Halt (LC), constant volume (C), volume/envelope (VVVV)
             0x4004 => {
                 self.channels[PULSE_2].write_reg(0, byte);
                 Ok(())
-            },
+            }
             // Sweep unit: enabled (E), period (P), negate (N), shift (S)
             0x4005 => {
                 self.channels[PULSE_2].write_reg(1, byte);
                 Ok(())
-            },
+            }
             // Timer low  (T)
             0x4006 => {
                 self.channels[PULSE_2].write_reg(2, byte);
                 Ok(())
-            },
+            }
             // Length counter load (L), timer high (T)
             0x4007 => {
                 self.channels[PULSE_2].write_reg(3, byte);
                 Ok(())
-            },
+            }
 
             // Triangle
             // Length counter halt / linear counter control (C), linear counter load (R)
             0x4008 => {
                 self.channels[TRIANGLE].write_reg(0, byte);
                 Ok(())
-            },
+            }
             // Unused (U), but can still be written to and read from
             0x4009 => {
                 self.channels[TRIANGLE].write_reg(1, byte);
                 Ok(())
-            },
+            }
             // Timer low (T)
             0x400A => {
                 self.channels[TRIANGLE].write_reg(2, byte);
                 Ok(())
-            },
-            // Length counter load (L), timer high (T)
+            }
+            // Length counter load (L), timer high (T), linear counter reload flag
             0x400B => {
                 self.channels[TRIANGLE].write_reg(3, byte);
                 Ok(())
-            },
+            }
 
             // Noise
             // Unused (U), Envelope loop / length counter halt (L), constant volume (C), volume/envelope (V)
             0x400C => {
                 self.channels[NOISE].write_reg(0, byte);
                 Ok(())
-            },
+            }
             // Unused (U), but can still be written to
             0x400D => {
                 self.channels[NOISE].write_reg(1, byte);
                 Ok(())
-            },
+            }
             // Loop noise (L), unused (U), noise period (P)
             0x400E => {
                 self.channels[NOISE].write_reg(2, byte);
                 Ok(())
-            },
+            }
             // Length counter load (L), unused (U)
             0x400F => {
                 self.channels[NOISE].write_reg(3, byte);
                 Ok(())
-            },
+            }
 
             // DMC
             // IRQ enable (I), loop (L), unused (U), frequency (R)
             0x4010 => {
                 self.channels[DMC].write_reg(0, byte);
                 Ok(())
-            },
+            }
             // Unused (U), load counter (D)
             0x4011 => {
                 self.channels[DMC].write_reg(1, byte);
                 Ok(())
-            },
+            }
             // Sample address (A)
             0x4012 => {
                 self.channels[DMC].write_reg(2, byte);
                 Ok(())
-            },
+            }
             // Sample length (L)
             0x4013 => {
                 self.channels[DMC].write_reg(3, byte);
                 Ok(())
-            },
+            }
             //
             // 0x4014 is skipped, it's not part of the APU,
             // but rather the OMA DMA register
@@ -921,7 +1060,7 @@ impl MemMapped for Apu {
             0x4015 => {
                 self.write_status(byte);
                 Ok(())
-            },
+            }
 
             // Frame counter
             // This register is used for both APU and I/O manipulation
@@ -929,7 +1068,7 @@ impl MemMapped for Apu {
             0x4017 => {
                 self.write_frame_counter(byte);
                 Ok(())
-            },
+            }
 
             _ => unreachable!()
         }
