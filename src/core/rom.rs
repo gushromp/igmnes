@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::Path;
 use std::error::Error;
 use std::fs::File;
@@ -10,7 +8,7 @@ const PRG_ROM_BYTES_PER_CHUNK: usize = 16384;
 const CHR_ROM_BYTES_PER_CHUNK: usize = 8192;
 const PRG_RAM_BYTES_PER_CHUNK: usize = 8192;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TVSystem {
     NTSC,
     PAL,
@@ -86,7 +84,12 @@ impl Rom {
         file.read_to_end(&mut bytes)?;
 
         let rom = parse_rom(&bytes).unwrap().1;
-        Ok(rom)
+
+        if rom.header.tv_system == TVSystem::NTSC {
+            Ok(rom)
+        } else {
+            Err(Box::from(format!("Unsupported system type: {:?}", rom.header.tv_system)))
+        }
     }
 }
 

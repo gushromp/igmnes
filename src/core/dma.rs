@@ -1,6 +1,5 @@
 use core::errors::EmulationError;
 use core::memory::{CpuMemMap, MemMapped};
-use core::ppu::PpuMemMap;
 
 #[derive(Default)]
 pub struct Dma {
@@ -34,7 +33,7 @@ impl Dma {
             let range_start = self.page_index as u16 * 0x100;
             let range_end = range_start + 0x100;
             let cpu_mem = mem_map.ram.read_range(range_start..range_end)?;
-            mem_map.ppu_mem_map.oam_table.write(cpu_mem)?;
+            mem_map.ppu.ppu_mem_map.oam_table.write(cpu_mem)?;
         }
         self.dma_cycle_count += 2;
 

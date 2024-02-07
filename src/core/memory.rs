@@ -7,7 +7,7 @@ use core::apu::Apu;
 use core::dma::{Dma, DmaType};
 use core::mappers::{self, Mapper};
 use core::errors::EmulationError;
-use core::ppu::{Ppu, PpuMemMap};
+use core::ppu::{Ppu, memory::PpuMemMap};
 
 const RAM_SIZE: usize = 0x800;
 
@@ -73,7 +73,6 @@ pub struct CpuMemMap {
     pub ram: Ram,
     pub apu: Apu,
     pub ppu: Ppu,
-    pub ppu_mem_map: PpuMemMap,
     pub dma: Dma,
     mapper: Rc<RefCell<dyn Mapper>>
 }
@@ -88,7 +87,6 @@ impl Default for CpuMemMap {
             ram: Ram::default(),
             apu: Apu::default(),
             ppu: Ppu::default(),
-            ppu_mem_map: PpuMemMap::default(),
             dma: Dma::default(),
             mapper: def_mapper
         }
@@ -104,8 +102,7 @@ impl CpuMemMap {
             rom,
             ram: Ram::new(),
             apu: Apu::new(),
-            ppu: Ppu::new(),
-            ppu_mem_map,
+            ppu: Ppu::new(ppu_mem_map),
             dma: Dma::new(),
             mapper: mapper.clone()
         };

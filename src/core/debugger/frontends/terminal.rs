@@ -465,8 +465,7 @@ impl CpuFacade for TerminalDebugger {
 
     fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
         tracer.set_enabled(self.trace_active);
-        let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
-        self.mem_map.ppu.step(ppu_mem_map, cpu_cycle_count, tracer)
+        self.mem_map.ppu.step(cpu_cycle_count, tracer)
     }
 
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {

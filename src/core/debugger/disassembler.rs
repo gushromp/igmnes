@@ -1,10 +1,10 @@
 use std::ops::Range;
 use core::instructions::Instruction;
-use core::memory::{CpuMemMap, MemMapped};
+use core::memory::MemMapped;
 use core::cpu::Cpu;
 use core::errors::EmulationError;
 
-pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut CpuMemMap)
+pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut impl MemMapped)
                          -> Result<Vec<String>, EmulationError> {
     let mut result = Vec::new();
     let mut current_addr = addr;
@@ -118,9 +118,9 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
     mem_map.set_is_mutating_read(true);
 
     let disassembly = format!("${:04X}(${:02X}): {:<2} {:<10} {:<20}", addr, op_code, token, args, detail);
-    // if addr == cpu.reg_pc {
-    //     Ok(format!("{}\t{}", &disassembly, &cpu))
-    // } else {
+    if addr == cpu.reg_pc {
+        Ok(format!("{}\t{}", &disassembly, &cpu))
+    } else {
         Ok(disassembly)
-    // }
+    }
 }

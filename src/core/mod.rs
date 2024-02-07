@@ -118,8 +118,7 @@ impl CpuFacade for DefaultCpuFacade {
     }
 
     fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
-        let ppu_mem_map = &mut self.mem_map.ppu_mem_map;
-        self.mem_map.ppu.step(ppu_mem_map, cpu_cycle_count, tracer)
+        self.mem_map.ppu.step(cpu_cycle_count, tracer)
     }
 
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {
@@ -222,21 +221,20 @@ impl Core {
 
         'running: loop {
             tracer.start_new_trace();
-
             if self.is_running {
-                for event in events.poll_iter() {
-                    match event {
-                        Event::Quit { .. } => break 'running,
-                        Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
-                            let debugger = self.attach_debugger();
-
-                            if !debugger.is_listening() {
-                                debugger.start_listening();
-                            }
-                        }
-                        _ => {},
-                    }
-                }
+                // for event in events.poll_iter() {
+                //     match event {
+                //         Event::Quit { .. } => break 'running,
+                //         Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                //             let debugger = self.attach_debugger();
+                //
+                //             if !debugger.is_listening() {
+                //                 debugger.start_listening();
+                //             }
+                //         }
+                //         _ => {},
+                //     }
+                // }
 
                 let current_cycle_count = self.cpu_facade.cpu().cycle_count;
 
@@ -280,7 +278,7 @@ impl Core {
             }
 
             let apu = self.cpu_facade.apu();
-            if let Some(out_samples) = apu.get_out_samples(44100) {
+            if let Some(out_samples) = apu.get_out_samples(100000) {
                 audio_queue.queue_audio(out_samples.as_ref()).unwrap();
             }
             // let remaining_samples = audio_queue.spec().freq - audio_queue.size() as i32;
@@ -289,6 +287,10 @@ impl Core {
             //         audio_queue.queue_audio(out_samples.as_ref()).unwrap();
             //     }
             // }
+
+            if self.cpu_facade.cpu().cycle_count > 100_000_000 {
+                break 'running
+            }
         }
 
         if tracer.has_traces() {
