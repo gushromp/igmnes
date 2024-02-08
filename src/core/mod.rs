@@ -184,9 +184,9 @@ impl Core {
         let audio_subsystem = sdl_context.audio().unwrap();
         //
         let audio_spec_desired = AudioSpecDesired {
-            freq: Some(41_000),
+            freq: Some(48_000),
             channels: Some(1),
-            samples: None,
+            samples: Some(256),
         };
 
         let audio_queue = audio_subsystem.open_queue::<f32, _>(None, &audio_spec_desired).unwrap();
@@ -219,48 +219,28 @@ impl Core {
         let start_time = PreciseTime::now();
         let mut previous_render_time = start_time;
         let mut previous_tick_time = start_time;
-        let mut target_nanos = 0;
+        let mut cpu_cycle_delta: u64 = 0;
+
 
         'running: loop {
             tracer.start_new_trace();
+
             if self.is_running {
-                for event in events.poll_iter() {
-                    match event {
-                        Event::Quit { .. } => break 'running,
-                        Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
-                            let debugger = self.attach_debugger();
-
-                            if !debugger.is_listening() {
-                                debugger.start_listening();
-                            }
-                        }
-                        _ => {},
-                    }
-                }
-
-                let current_cycle_count = self.cpu_facade.cpu().cycle_count;
-
-                let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
-                if nmi {
-                    self.cpu_facade.ppu().clear_nmi();
-                    self.cpu_facade.nmi();
-                }
-
-
-                // unsafe {
-                //     let handle= &*self.cpu_facade.ppu().output.data.raw
-                //     let color_data = handle as *const [u8; 256 * 240 * 3];
-                // }
-
-
                 let current_time = PreciseTime::now();
                 let nanos = previous_tick_time.to(current_time).num_nanoseconds();
                 let should_tick = match nanos {
-                    Some(nanos) => nanos > target_nanos,
+                    Some(nanos) => nanos > 599,
                     None => true
                 };
                 if should_tick {
-                    previous_tick_time = current_time;
+                    let current_cycle_count = self.cpu_facade.cpu().cycle_count;
+
+                    let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
+                    if nmi {
+                        self.cpu_facade.ppu().clear_nmi();
+                        self.cpu_facade.nmi();
+                    }
+
                     let irq = self.cpu_facade.step_apu(current_cycle_count);
                     if irq && !nmi {
                         self.cpu_facade.irq();
@@ -281,7 +261,7 @@ impl Core {
                     let result = self.cpu_facade.step_cpu(&mut tracer);
 
                     match result {
-                        Ok(ticks) => { target_nanos = (ticks as i64) * 440 },
+                        Ok(_) => { },
                         Err(error) => match error {
                             EmulationError::DebuggerBreakpoint(_addr) |
                             EmulationError::DebuggerWatchpoint(_addr) => {
@@ -293,21 +273,34 @@ impl Core {
                         }
                     }
                 }
-
                 let apu = self.cpu_facade.apu();
+
                 // let remaining_samples = audio_queue.spec().freq - audio_queue.size() as i32;
                 // if remaining_samples > 0 {
                 //     if let Some(out_samples) = apu.get_out_samples(remaining_samples as usize + 1) {
                 //         audio_queue.queue_audio(out_samples.as_ref()).unwrap();
                 //     }
                 // }
-                if let Some(out_samples) = apu.get_out_samples(500000) {
+                if let Some(out_samples) = apu.get_out_samples(2048) {
                     audio_queue.queue_audio(out_samples.as_ref()).unwrap();
                 }
+
+                previous_tick_time = PreciseTime::now();
             }
 
+            for event in events.poll_iter() {
+                match event {
+                    Event::Quit { .. } => break 'running,
+                    Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                        let debugger = self.attach_debugger();
 
-
+                        if !debugger.is_listening() {
+                            debugger.start_listening();
+                        }
+                    }
+                    _ => {},
+                }
+            }
 
             let current_time = PreciseTime::now();
             if previous_render_time.to(current_time).num_milliseconds() > 16 {

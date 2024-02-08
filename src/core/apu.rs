@@ -1,20 +1,18 @@
-use std::cmp::min;
 use std::vec::Drain;
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
 // Actually it's (super::MASTER_CLOCK_NTSC / super::CLOCK_DIVISOR_NTSC) but
 // we need something divisible by 240
-const APU_SAMPLE_RATE: usize = 1_789_920;
-const OUTPUT_SAMPLE_RATE: usize = 41_000;
+// const APU_SAMPLE_RATE: usize = 1_789_920;
+const APU_SAMPLE_RATE: usize = 1_786_800;
+const OUTPUT_SAMPLE_RATE: usize = 48_000;
 
 const SAMPLE_AVERAGE_COUNT: usize = 4;
 const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
 
 const FC_4STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 29829];
 const FC_5STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 37281];
-
-const NUM_CHANNELS: usize = 5;
 const PULSE_1: usize = 0;
 const PULSE_2: usize = 1;
 const TRIANGLE: usize = 2;
@@ -45,6 +43,8 @@ const TRIANGLE_WAVEFORM: [u8; 32] = [
 const NOISE_PERIOD_CYCLES: [u16; 16] = [
     4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
 
+
+const DELAY_CYCLES_PER_IRQ_WRITE: u64 = 29835;
 
 trait ApuChannel {
     fn write_reg(&mut self, reg_index: usize, byte: u8);
@@ -88,6 +88,7 @@ struct Pulse {
     timer: u16,
     timer_counter: u16,
     // Length counter is 5-bit (bits 5-7 are disregarded)
+    should_toggle_halt_lc: bool,
     lc_halt_env_loop: bool,
     length_counter: u8,
 }
@@ -95,13 +96,14 @@ struct Pulse {
 impl Pulse {
     fn write_ddlcvvvv(&mut self, byte: u8) {
         self.duty = byte >> 6;
-        self.lc_halt_env_loop = byte & 0b0010_0000 != 0;
+        let lc_halt_env_loop = byte & 0b0010_0000 != 0;
         self.constant_volume = byte & 0b0001_0000 != 0;
         self.volume = byte & 0b1111;
 
-        if !self.constant_volume {
-            self.envelope_start = true;
-        }
+        self.lc_halt_env_loop = lc_halt_env_loop;
+        // self.should_toggle_halt_lc = lc_halt_env_loop != self.lc_halt_env_loop;
+
+        self.envelope_start = true;
     }
 
     fn write_epppnsss(&mut self, byte: u8) {
@@ -131,6 +133,8 @@ impl Pulse {
         } else {
             0
         };
+
+        self.envelope_start = true;
     }
 }
 
@@ -158,13 +162,12 @@ impl ApuChannel for Pulse {
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0 && self.timer >= 8
+        self.enabled && self.length_counter > 0
     }
 
     fn clock_timer(&mut self) {
-        if !self.is_enabled() { return; }
         if self.timer_counter == 0 {
-            self.timer_counter = self.timer + 1;
+            self.timer_counter = self.timer;
 
             if self.waveform_counter == 0 {
                 self.waveform_counter = 7;
@@ -177,15 +180,20 @@ impl ApuChannel for Pulse {
     }
 
     fn clock_length_counter(&mut self) {
-        if self.is_enabled() && !self.lc_halt_env_loop {
+        if !self.enabled { return; }
+        if self.length_counter > 0 && !self.lc_halt_env_loop {
             self.length_counter -= 1;
+        }
+        if self.should_toggle_halt_lc {
+            self.lc_halt_env_loop = !self.lc_halt_env_loop;
         }
     }
 
     fn clock_envelope(&mut self) {
+        if !self.enabled || self.volume == 0 { return }
         if self.envelope_start {
             self.envelope_start = false;
-            self.envelope_period = self.volume + 1;
+            self.envelope_period = self.volume;
             self.envelope_decay = 15;
         } else {
             if self.envelope_period == 0 {
@@ -308,19 +316,21 @@ impl ApuChannel for Triangle {
     }
 
     fn clock_length_counter(&mut self) {
-        if self.is_enabled() && !self.lengthc_halt_linearc_control {
-            if self.should_load_linear_counter {
-                self.linear_counter = self.linear_counter_load;
-                if !self.lengthc_halt_linearc_control {
-                    self.should_load_linear_counter = false;
-                }
-            } else {
-                if self.linear_counter >= 2 {
-                    self.linear_counter -= 2;
-                } else {
-                    self.linear_counter = 0;
-                }
+        if !self.enabled { return; }
+        if self.should_load_linear_counter {
+            self.linear_counter = self.linear_counter_load;
+            if !self.lengthc_halt_linearc_control {
+                self.should_load_linear_counter = false;
             }
+        } else {
+            if self.linear_counter >= 2 {
+                self.linear_counter -= 2;
+            } else {
+                self.linear_counter = 0;
+            }
+        }
+        if self.length_counter > 0 && !self.lengthc_halt_linearc_control {
+            self.length_counter -= 1;
         }
     }
 
@@ -354,6 +364,7 @@ impl Default for NoiseShiftRegister {
         }
     }
 }
+
 #[derive(Debug, Default, Clone)]
 struct Noise {
     enabled: bool,
@@ -378,6 +389,7 @@ impl Noise {
         self.lc_halt_env_loop = byte & 0b0010_0000 != 0;
         self.constant_volume = byte & 0b0001_0000 != 0;
         self.volume = byte & 0b1111;
+
         if !self.constant_volume {
             self.envelope_start = true;
         }
@@ -426,7 +438,7 @@ impl ApuChannel for Noise {
     }
 
     fn is_enabled(&self) -> bool {
-        return self.enabled && self.length_counter > 0 && self.period > 0;
+        return self.enabled && self.length_counter > 0;
     }
 
     fn toggle_enabled(&mut self, enabled: bool) {
@@ -451,12 +463,14 @@ impl ApuChannel for Noise {
     }
 
     fn clock_length_counter(&mut self) {
-        if self.is_enabled() & !self.lc_halt_env_loop {
+        if !self.enabled { return }
+        if self.length_counter > 0 && !self.lc_halt_env_loop {
             self.length_counter -= 1;
         }
     }
 
     fn clock_envelope(&mut self) {
+        if !self.enabled { return }
         if self.envelope_start {
             self.envelope_start = false;
             self.envelope_period = self.volume + 1;
@@ -476,7 +490,7 @@ impl ApuChannel for Noise {
     }
 
     fn output(&self) -> u8 {
-        if self.is_audible()  {
+        if self.is_audible() {
             if self.constant_volume {
                 self.volume
             } else {
@@ -596,9 +610,7 @@ impl FrameCounter {
         let mut frame_counter = FrameCounter::default();
 
         frame_counter.set_mode(FrameCounterMode::Mode4Step);
-        //        frame_counter.cycles = 6;
-        //        frame_counter.reset_after_cycles = 6;
-        //        frame_counter.delayed_reset = true;
+        frame_counter.cycles = 2;
 
         frame_counter
     }
@@ -659,6 +671,7 @@ pub struct Apu {
 
     cpu_cycles: u64,
     apu_cycles: f64,
+    next_irq_cycles: u64,
 
     nes_samples: Vec<f32>,
     out_samples: Vec<f32>,
@@ -689,6 +702,7 @@ impl Default for Apu {
 
             cpu_cycles: 0,
             apu_cycles: 0.0,
+            next_irq_cycles: 0,
 
             nes_samples: Vec::new(),
             out_samples: Vec::new(),
@@ -728,8 +742,11 @@ impl Apu {
     }
 
     pub fn get_out_samples(&mut self, num_samples: usize) -> Option<Drain<f32>> {
-        let upper_range = min(num_samples, self.out_samples.len());
-        Some(self.out_samples.drain(..upper_range))
+        if num_samples < self.out_samples.len() {
+            Some(self.out_samples.drain(..))
+        } else {
+            None
+        }
     }
 
     fn read_status(&self) -> u8 {
@@ -754,8 +771,6 @@ impl Apu {
         byte = (byte << 1) | pulse2_enabled as u8;
         byte = (byte << 1) | pulse1_enabled as u8;
 
-        //println!("Status read: {:08b}", byte);
-
         byte
     }
 
@@ -774,7 +789,6 @@ impl Apu {
     }
 
     fn write_frame_counter(&mut self, byte: u8) {
-        //println!("Frame counter write: {:08b}, Apu clocks on write: {}", byte, self.apu_cycles);
         let frame_counter_mode = byte >> 7;
         let frame_counter_mode = match frame_counter_mode {
             0 => FrameCounterMode::Mode4Step,
@@ -788,13 +802,11 @@ impl Apu {
         if irq_inhibit {
             self.frame_irq = false;
         }
+        self.next_irq_cycles = self.cpu_cycles + DELAY_CYCLES_PER_IRQ_WRITE;
 
         self.frame_counter.set_mode(frame_counter_mode);
         self.frame_counter.delayed_reset = true;
 
-        if self.frame_counter.mode == FrameCounterMode::Mode5Step {
-            self.clock_length_counters(true);
-        }
     }
 
     fn clock_channel_output(&mut self) {
@@ -818,21 +830,24 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        if self.nes_samples.len() < OUTPUT_SAMPLE_RATE * (SAMPLE_AVERAGE_COUNT / 2) { return; }
-
-        // let sample_ratio = self.nes_samples.len() as f64 / APU_SAMPLE_RATE as f64;
-        //
-        // let num_samples_to_generate = (OUTPUT_SAMPLE_RATE as f64 * sample_ratio).round() as usize;
-        // let chunk_size = self.nes_samples.len() / num_samples_to_generate;
-        let samples_to_average: Vec<f32> = self.nes_samples.iter().copied().step_by(SAMPLE_RATE_RATIO).collect();
-        for samples in samples_to_average.chunks(SAMPLE_AVERAGE_COUNT) {
-            let avg_sample = samples.iter().copied().reduce(|a, b| a + b).map(|sample| sample / SAMPLE_AVERAGE_COUNT as f32);
-            if let Some(avg_sample) = avg_sample {
-                self.out_samples.push(avg_sample);
-            }
+        if self.nes_samples.len() < APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE + 1 { return; }
+        let sum = self.nes_samples.iter().cloned().reduce(|a, b| a + b);
+        if let Some(sum) = sum {
+            let avg = sum / self.nes_samples.len() as f32;
+            self.out_samples.push(avg);
         }
 
-        self.nes_samples.clear()
+        // if self.nes_samples.len() < OUTPUT_SAMPLE_RATE * SAMPLE_RATE_RATIO { return; }
+        //
+        // let samples_to_average: Vec<f32> = self.nes_samples.iter().copied().step_by(SAMPLE_RATE_RATIO).collect();
+        // for samples in samples_to_average.chunks(SAMPLE_AVERAGE_COUNT) {
+        //     let avg_sample = samples.iter().copied().reduce(|a, b| a + b).map(|sample| sample / SAMPLE_AVERAGE_COUNT as f32);
+        //     if let Some(avg_sample) = avg_sample {
+        //         self.out_samples.push(avg_sample);
+        //     }
+        // }
+
+        self.nes_samples.clear();
     }
 
     fn clock_frame_counter(&mut self) {
@@ -889,7 +904,6 @@ impl Apu {
             } else {
                 4
             };
-
             self.frame_counter.delayed_reset = false;
         }
 
@@ -902,9 +916,11 @@ impl Apu {
                 self.frame_counter.reset_after_cycles -= 1;
                 if self.frame_counter.reset_after_cycles == 0 {
                     self.frame_counter.reset();
+                    if self.frame_counter.mode == FrameCounterMode::Mode5Step {
+                        self.clock_length_counters(true);
+                    }
                 }
             }
-
 
             self.clock_length_counters(false);
             self.clock_timers();
@@ -914,8 +930,10 @@ impl Apu {
 
         self.apu_cycles = self.cpu_cycles as f64 / 2.0;
 
-        let irq = self.frame_irq && !self.irq_inhibit;
-
+        let irq = self.frame_irq && !self.irq_inhibit && self.cpu_cycles > self.next_irq_cycles;
+        if irq {
+            self.next_irq_cycles = 0;
+        }
         irq
     }
 }
@@ -929,7 +947,7 @@ impl MemMapped for Apu {
                 // Clear frame_irq on read but only if the interrupt hasn't occurred
                 // at the same time the status register is being read
                 // if self.frame_counter.cycles_since_interrupt > 0 {
-                    self.frame_irq = false;
+                self.frame_irq = false;
                 // }
                 Ok(status)
             }
