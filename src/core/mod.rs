@@ -1,5 +1,6 @@
 extern crate sdl2;
 extern crate time;
+extern crate bmp;
 
 mod debugger;
 mod mappers;
@@ -15,10 +16,11 @@ mod dma;
 
 use std::error::Error;
 use std::path::Path;
-use std::mem;
+use std::{mem, ptr};
+use std::ops::Deref;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
+use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::audio::AudioSpecDesired;
 use time::Duration;
 use core::debug::Tracer;
@@ -43,6 +45,7 @@ pub const PPU_STEPS_PER_CPU_STEP_NTSC: usize = (CPU_CLOCK_DIVISOR_NTSC / PPU_CLO
 const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
 const CLOCK_DIVISOR_PAL: i32 = 15;
 
+const WINDOW_SCALING: u32 = 3;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -191,17 +194,15 @@ impl Core {
 
         let mut events = sdl_context.event_pump().unwrap();
 
-        let window = video_subsystem.window("IGMNes", 256, 240)
+        let window = video_subsystem.window("IGMNes", 256 * WINDOW_SCALING, 240 * WINDOW_SCALING)
             .position_centered()
-            .opengl()
             .build()
             .unwrap();
 
+
         let mut renderer = window.into_canvas().build().unwrap();
 
-        renderer.set_draw_color(Color::RGB(0, 0, 0));
-        renderer.clear();
-        renderer.present();
+        let texture_creator = renderer.texture_creator();
 
         if attach_debugger {
             let debugger = self.attach_debugger();
@@ -216,25 +217,26 @@ impl Core {
         }
 
         let start_time = PreciseTime::now();
-        let mut previous_cycle_count = self.cpu_facade.cpu().cycle_count;
-
+        let mut previous_render_time = start_time;
+        let mut previous_tick_time = start_time;
+        let mut target_nanos = 0;
 
         'running: loop {
             tracer.start_new_trace();
             if self.is_running {
-                // for event in events.poll_iter() {
-                //     match event {
-                //         Event::Quit { .. } => break 'running,
-                //         Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
-                //             let debugger = self.attach_debugger();
-                //
-                //             if !debugger.is_listening() {
-                //                 debugger.start_listening();
-                //             }
-                //         }
-                //         _ => {},
-                //     }
-                // }
+                for event in events.poll_iter() {
+                    match event {
+                        Event::Quit { .. } => break 'running,
+                        Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                            let debugger = self.attach_debugger();
+
+                            if !debugger.is_listening() {
+                                debugger.start_listening();
+                            }
+                        }
+                        _ => {},
+                    }
+                }
 
                 let current_cycle_count = self.cpu_facade.cpu().cycle_count;
 
@@ -244,52 +246,85 @@ impl Core {
                     self.cpu_facade.nmi();
                 }
 
-                let irq = self.cpu_facade.step_apu(current_cycle_count);
-                if irq && !nmi {
-                    self.cpu_facade.irq();
-                }
 
-                let dma = self.cpu_facade.dma().is_dma_active();
-                if dma {
-                    self.cpu_facade.step_dma();
-                    self.cpu_facade.cpu().dma();
-                }
+                // unsafe {
+                //     let handle= &*self.cpu_facade.ppu().output.data.raw
+                //     let color_data = handle as *const [u8; 256 * 240 * 3];
+                // }
 
-                if let Some(debugger) = self.cpu_facade.debugger() {
-                    if debugger.is_listening() {
-                        debugger.break_into();
+
+                let current_time = PreciseTime::now();
+                let nanos = previous_tick_time.to(current_time).num_nanoseconds();
+                let should_tick = match nanos {
+                    Some(nanos) => nanos > target_nanos,
+                    None => true
+                };
+                if should_tick {
+                    previous_tick_time = current_time;
+                    let irq = self.cpu_facade.step_apu(current_cycle_count);
+                    if irq && !nmi {
+                        self.cpu_facade.irq();
                     }
-                }
 
-                let result = self.cpu_facade.step_cpu(&mut tracer);
+                    let dma = self.cpu_facade.dma().is_dma_active();
+                    if dma {
+                        self.cpu_facade.step_dma();
+                        self.cpu_facade.cpu().dma();
+                    }
 
-                match result {
-                    Ok(_) => {},
-                    Err(error) => match error {
-                        EmulationError::DebuggerBreakpoint(_addr) |
-                        EmulationError::DebuggerWatchpoint(_addr) => {
-                            if self.is_debugger_attached {
-                                self.debugger().unwrap().start_listening();
-                            }
+                    if let Some(debugger) = self.cpu_facade.debugger() {
+                        if debugger.is_listening() {
+                            debugger.break_into();
                         }
-                        e @ _ => println!("{}", e),
                     }
+
+                    let result = self.cpu_facade.step_cpu(&mut tracer);
+
+                    match result {
+                        Ok(ticks) => { target_nanos = (ticks as i64) * 440 },
+                        Err(error) => match error {
+                            EmulationError::DebuggerBreakpoint(_addr) |
+                            EmulationError::DebuggerWatchpoint(_addr) => {
+                                if self.is_debugger_attached {
+                                    self.debugger().unwrap().start_listening();
+                                }
+                            }
+                            e @ _ => println!("{}", e),
+                        }
+                    }
+                }
+
+                let apu = self.cpu_facade.apu();
+                // let remaining_samples = audio_queue.spec().freq - audio_queue.size() as i32;
+                // if remaining_samples > 0 {
+                //     if let Some(out_samples) = apu.get_out_samples(remaining_samples as usize + 1) {
+                //         audio_queue.queue_audio(out_samples.as_ref()).unwrap();
+                //     }
+                // }
+                if let Some(out_samples) = apu.get_out_samples(500000) {
+                    audio_queue.queue_audio(out_samples.as_ref()).unwrap();
                 }
             }
 
-            let apu = self.cpu_facade.apu();
-            if let Some(out_samples) = apu.get_out_samples(100000) {
-                audio_queue.queue_audio(out_samples.as_ref()).unwrap();
-            }
-            // let remaining_samples = audio_queue.spec().freq - audio_queue.size() as i32;
-            // if remaining_samples > 0 {
-            //     if let Some(out_samples) = apu.get_out_samples(remaining_samples as usize + 1) {
-            //         audio_queue.queue_audio(out_samples.as_ref()).unwrap();
-            //     }
-            // }
 
-            if self.cpu_facade.cpu().cycle_count > 100_000_000 {
-                break 'running
+
+
+            let current_time = PreciseTime::now();
+            if previous_render_time.to(current_time).num_milliseconds() > 16 {
+                previous_render_time = current_time;
+                if let Some(output) = self.cpu_facade.ppu().get_output() {
+
+                    unsafe {
+                        let pointer = ptr::addr_of!(*output.data);
+                        let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
+                        let mut data = *pointer_arr;
+
+                        let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256*3, PixelFormatEnum::RGB24).unwrap();
+                        let tex = surface.as_texture(&texture_creator).unwrap();
+                        renderer.copy(&tex, None, None).unwrap();
+                        renderer.present();
+                    }
+                }
             }
         }
 

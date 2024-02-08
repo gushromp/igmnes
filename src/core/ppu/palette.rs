@@ -12,10 +12,11 @@ const DEFAULT_PALETTE_SUBPATH: &str = "palette/DigitalPrime.pal";
 const PALETTE_COLOR_BYTE_LEN: usize = 3;
 
 #[derive(Debug, Default, Copy, Clone)]
+#[repr(C)]
 pub struct PpuPaletteColor {
-    red: u8,
-    green: u8,
-    blue: u8
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8
 }
 
 impl Index<usize> for PpuPaletteColor {
@@ -62,7 +63,7 @@ impl TryFrom<&[u8]> for PpuPalette {
             Err(std::io::Error::new(ErrorKind::UnexpectedEof,"PpuPalette needs at least 64 color triplets (192 bytes)"))
         } else {
             let colors: [PpuPaletteColor; 64] = array::from_fn(|index| {
-                PpuPaletteColor::from(&bytes[index..index + PALETTE_COLOR_BYTE_LEN])
+                PpuPaletteColor::from(&bytes[index * 3..(index * 3) + PALETTE_COLOR_BYTE_LEN])
             });
 
             Ok(PpuPalette {
@@ -87,6 +88,24 @@ impl PpuPalette {
         default_palette_path.push(DEFAULT_PALETTE_SUBPATH);
         Self::load(&default_palette_path)
     }
+
+    pub fn get_background_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor
+    {
+        if color_index == 0 {
+            self.colors[self.mapping[0]]
+        } else {
+            let base_mapping_index = match palette_index {
+                0 => 0x1,
+                1 => 0x5,
+                2 => 0x9,
+                3 => 0xD,
+                _ => unreachable!()
+            } as usize;
+            let mapping_index = base_mapping_index + color_index as usize - 1;
+            let color_index = self.mapping[mapping_index];
+            self.colors[color_index]
+        }
+    }
 }
 
 impl MemMapped for PpuPalette {
@@ -97,9 +116,18 @@ impl MemMapped for PpuPalette {
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         let value = byte as usize;
-        if index == 0 || index == 10 {
-            self.mapping[0] = value;
-            self.mapping[10] = value;
+        if index == 0x0 || index == 0x10 {
+            self.mapping[0x0] = value;
+            self.mapping[0x10] = value;
+        } else if index == 0x04 || index == 0x14 {
+            self.mapping[0x04] = value;
+            self.mapping[0x14] = value;
+        } else if index == 0x08 || index == 0x18 {
+            self.mapping[0x08] = value;
+            self.mapping[0x18] = value;
+        } else if index == 0x0C || index == 0x1C {
+            self.mapping[0x0C] = value;
+            self.mapping[0x1C] = value;
         } else {
             self.mapping[index as usize] = value;
         }

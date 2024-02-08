@@ -818,7 +818,8 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        if self.nes_samples.is_empty() { return; }
+        if self.nes_samples.len() < OUTPUT_SAMPLE_RATE * (SAMPLE_AVERAGE_COUNT / 2) { return; }
+
         // let sample_ratio = self.nes_samples.len() as f64 / APU_SAMPLE_RATE as f64;
         //
         // let num_samples_to_generate = (OUTPUT_SAMPLE_RATE as f64 * sample_ratio).round() as usize;
@@ -841,7 +842,6 @@ impl Apu {
 
         if self.frame_counter.cycles == cycles_per_frame + 1 {
             self.frame_counter.reset();
-            self.generate_output_samples();
         }
 
         if self.frame_counter.irq() && !self.irq_inhibit {
@@ -909,6 +909,7 @@ impl Apu {
             self.clock_length_counters(false);
             self.clock_timers();
             self.clock_channel_output();
+            self.generate_output_samples();
         }
 
         self.apu_cycles = self.cpu_cycles as f64 / 2.0;
@@ -928,7 +929,7 @@ impl MemMapped for Apu {
                 // Clear frame_irq on read but only if the interrupt hasn't occurred
                 // at the same time the status register is being read
                 // if self.frame_counter.cycles_since_interrupt > 0 {
-                self.frame_irq = false;
+                    self.frame_irq = false;
                 // }
                 Ok(status)
             }

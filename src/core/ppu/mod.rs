@@ -3,7 +3,6 @@ pub mod memory;
 
 use std::fmt;
 use std::fmt::{Binary, Display, Formatter};
-use sdl2::sys;
 
 use core::debug::Tracer;
 use core::errors::EmulationError;
@@ -11,7 +10,7 @@ use core::errors::EmulationError::MemoryAccess;
 
 use core::memory::MemMapped;
 use core::ppu::memory::PpuMemMap;
-use core::ppu::palette::{PpuPalette, PpuPaletteColor};
+use core::ppu::palette::PpuPaletteColor;
 
 const BIT_MASK: u8 = 0b0000_0001;
 const BIT_MASK_2: u8 = 0b0000_0011;
@@ -334,7 +333,8 @@ pub struct Ppu {
     mem_map_config: PpuMemMapConfig,
 
     // Rendering data
-    output: PpuOutput,
+    curr_output: PpuOutput,
+    last_output: Option<PpuOutput>,
 
     // Quirks
 
@@ -375,11 +375,11 @@ impl Ppu {
         self.reg_mask.is_show_background_enabled || self.reg_mask.is_show_sprites_enabled
     }
 
-    fn increment_addr(&mut self) {
-        self.reg_addr = if self.reg_ctrl.is_increment_mode_32 {
-            self.reg_addr + 32
+    fn increment_addr(&mut self, fixed: bool) {
+        self.reg_addr = if self.reg_ctrl.is_increment_mode_32 && !fixed {
+            self.reg_addr.wrapping_add(32)
         } else {
-            self.reg_addr + 1
+            self.reg_addr.wrapping_add(1)
         };
     }
 
@@ -410,6 +410,10 @@ impl Ppu {
         self.curr_scanline_cycle = 0;
     }
 
+    pub fn get_output(&mut self) -> &Option<PpuOutput> {
+        &self.last_output
+    }
+
     #[inline]
     pub fn step(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
@@ -420,21 +424,30 @@ impl Ppu {
             self.curr_scanline_cycle += 1;
 
             // Rendering scanlines & cycles
-            if self.curr_scanline < 240 && self.curr_scanline_cycle >= 1 && self.curr_scanline_cycle <= 256 {
-                let name_table_entry_index_y = (self.curr_scanline / 8) * 32;
-                let name_table_entry_index_x = (self.curr_scanline_cycle - 1) / 8;
+            let pixel_x = self.curr_scanline_cycle - 1;
+            let pixel_y = self.curr_scanline;
+            if self.is_rendering_enabled() && pixel_y < 240 && pixel_x % 8 == 0 && pixel_x <= 256 - 8 {
+                // Background
+                let name_table_entry_index_y = (pixel_y / 8) * 32;
+                let name_table_entry_index_x = pixel_x / 8;
                 let name_table_entry_index = name_table_entry_index_y + name_table_entry_index_x;
                 let name_table_entry = self.ppu_mem_map.fetch_name_table_entry(self.reg_ctrl.name_table_index, name_table_entry_index).unwrap();
 
-                let attribute_table_entry_index_y = self.curr_scanline / 32;
-                let attribute_table_entry_index_x = (self.curr_scanline_cycle - 1) / 32;
+                let attribute_table_entry_index_y = (pixel_y / 32) * 8;
+                let attribute_table_entry_index_x = pixel_x / 32;
                 let attribute_table_entry_index = attribute_table_entry_index_y + attribute_table_entry_index_x;
                 let attribute_table_entry = self.ppu_mem_map.fetch_attribute_table_entry(self.reg_ctrl.name_table_index, attribute_table_entry_index).unwrap();
 
                 let chr_table_entry_index = (name_table_entry as u16) * 16;
                 let chr_table_entry = self.ppu_mem_map.fetch_pattern_table_entry(self.reg_ctrl.background_pattern_table_index, chr_table_entry_index).unwrap();
 
+                let start_index_x = (self.curr_scanline_cycle - 1) as usize;
+                let start_index_y = self.curr_scanline as usize;
+
+                self.increment_addr(true);
+                self.render_background(start_index_x, start_index_y, name_table_entry, attribute_table_entry, &chr_table_entry);
             }
+            // self.increment_addr();
 
             if self.curr_scanline_cycle >= 257 && self.curr_scanline_cycle <= 320 {
                 self.reg_oam_addr = 0;
@@ -455,6 +468,10 @@ impl Ppu {
                 self.reg_status.is_in_vblank = false;
             }
 
+            if self.is_rendering_enabled() && self.curr_scanline == 240 && self.curr_scanline_cycle == 1 {
+                self.last_output = Some(self.curr_output.clone())
+            }
+
             if self.curr_scanline == 262 {
                 self.curr_scanline = 0;
                 self.is_odd_frame = !self.is_odd_frame;
@@ -471,6 +488,33 @@ impl Ppu {
 
         self.cpu_cycles = cpu_cycles;
         self.reg_status.is_in_vblank && self.nmi_pending
+    }
+
+    #[inline]
+    fn render_background(&mut self, index_x: usize, index_y: usize, name_table_entry: u8, attribute_table_entry: u8, pattern_table_entry: &[u8]) {
+        let pixel_attribute_index_y = index_y % 32;
+        let pattern_index = index_y % 8;
+
+        let pattern_bit_plane_1 = pattern_table_entry[pattern_index];
+        let pattern_bit_plane_2 = pattern_table_entry[pattern_index + 8];
+
+        for pixel_x in index_x..=index_x + 7 {
+            let pixel_attribute_index_x = pixel_x % 32;
+            let attribute_shift = match (pixel_attribute_index_x, pixel_attribute_index_y) {
+                (0..=15, 0..=15)  => 0,
+                (16..=31, 0..=15) => 2,
+                (0..=15, 16..=31) => 4,
+                (16..=31, 16..=31) => 6,
+                _ => unreachable!()
+            };
+            let palette_index = (attribute_table_entry >> attribute_shift) & 0b11;
+
+            let bit_index = 7 - (pixel_attribute_index_x % 8);
+            let color_index = (pattern_bit_plane_2.get_bit_u8(bit_index) << 1) | pattern_bit_plane_1.get_bit_u8(bit_index);
+
+            let color = self.ppu_mem_map.palette.get_background_color(palette_index, color_index);
+            self.curr_output.data[index_y][pixel_x] = color
+        }
     }
 }
 
@@ -509,7 +553,7 @@ impl MemMapped for Ppu {
                 // PPUDATA
                 let data = self.reg_data;
                 if self.is_mutating_read() {
-                    self.increment_addr();
+                    self.increment_addr(false);
                 }
                 Ok(data)
             }
@@ -559,7 +603,7 @@ impl MemMapped for Ppu {
             7 => {
                 self.reg_data = byte;
                 let result = self.ppu_mem_map.write(self.reg_addr, byte);
-                self.increment_addr();
+                self.increment_addr(false);
                 result
             }
             _ => unreachable!()

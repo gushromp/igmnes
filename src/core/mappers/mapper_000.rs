@@ -1,3 +1,4 @@
+use std::ops::Range;
 use core::mappers::{CpuMapper, Mapper, PpuMapper};
 use core::memory::MemMapped;
 use core::rom::Rom;
@@ -66,7 +67,11 @@ impl CpuMapper for NRom {
 
 impl PpuMapper for NRom {
     fn read_chr_rom(&self, index: u16) -> Result<u8, EmulationError> {
-        Ok(self.chr_rom_bytes[index as usize])
+        if self.chr_rom_bytes.is_empty() {
+            Ok(0)
+        } else {
+            Ok(self.chr_rom_bytes[index as usize])
+        }
     }
 
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {

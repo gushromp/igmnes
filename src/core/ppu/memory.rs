@@ -2,6 +2,7 @@
 
 use std::array;
 use std::cell::RefCell;
+use std::ops::Range;
 use std::rc::Rc;
 use sdl2::pixels::Palette;
 use core::errors::EmulationError;
@@ -67,8 +68,8 @@ impl PpuMemMap {
 
     pub fn fetch_pattern_table_entry(&mut self, pattern_table_index: u8, pattern_table_entry_index: u16) -> Result<[u8; 16], EmulationError> {
         let base_addr = match pattern_table_index {
-            0b00 => 0x1000,
-            0b01 => 0x2000,
+            0b00 => 0x0000,
+            0b01 => 0x1000,
             _ => unreachable!()
         };
 
