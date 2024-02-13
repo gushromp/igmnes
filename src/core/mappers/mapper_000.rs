@@ -1,14 +1,15 @@
-use std::ops::Range;
 use core::mappers::{CpuMapper, Mapper, PpuMapper};
-use core::memory::MemMapped;
-use core::rom::Rom;
+use core::memory::{MemMapped, Ram};
+use core::rom::{MirroringMode, Rom};
 use core::errors::EmulationError::{self, MemoryAccess};
 
 #[derive(Clone)]
 pub struct NRom {
+    vram: Ram,
     prg_rom_bytes: Vec<u8>,
     chr_rom_bytes: Vec<u8>,
     prg_ram_bytes: Vec<u8>,
+    mirroring_mode: MirroringMode
 }
 
 impl NRom {
@@ -20,9 +21,11 @@ impl NRom {
         let prg_ram_bytes: Vec<u8> = vec![0; prg_ram_size as usize];
 
         NRom {
-            prg_rom_bytes: prg_rom_bytes,
-            chr_rom_bytes: chr_rom_bytes,
-            prg_ram_bytes: prg_ram_bytes,
+            vram: Ram::default(),
+            prg_rom_bytes,
+            chr_rom_bytes,
+            prg_ram_bytes,
+            mirroring_mode: rom.header.mirroring_mode
         }
     }
 
@@ -82,15 +85,25 @@ impl PpuMapper for NRom {
     fn write_chr_ram(&mut self, index: u16, _byte: u8) -> Result<(), EmulationError> {
         Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index)))
     }
+
+    fn get_mirrored_index(&self, index: u16) -> u16 {
+        match self.mirroring_mode {
+            MirroringMode::Horizontal => (index - 0x2000) % 0x400,
+            MirroringMode::Vertical => (index - 0x2000) % 0x800
+        }
+    }
 }
 
 impl Mapper for NRom { }
 
 impl MemMapped for NRom {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
-
         match index {
             0..=0x1FFF => self.read_chr_rom(index),
+            0x2000..=0x2FFF => {
+                let index = self.get_mirrored_index(index);
+                self.vram.read(index)
+            }
             0x6000..=0x7FFF => self.read_prg_ram(index),
             0x8000..=0xFFFF => self.read_prg_rom(index),
             _ => {
@@ -103,6 +116,10 @@ impl MemMapped for NRom {
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match index {
+            0x2000..=0x2FFF => {
+                let index = self.get_mirrored_index(index);
+                self.vram.write(index, byte)
+            }
             0x6000..=0x7FFF => self.write_prg_ram(index, byte),
             _ => {
                 println!("Attempted write to non-RAM address: 0x{:X}", index);

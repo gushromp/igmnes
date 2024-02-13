@@ -22,6 +22,8 @@ pub trait PpuMapper : MemMapped {
     // Reads/Writes to CHR RAM
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError>;
     fn write_chr_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
+
+    fn get_mirrored_index(&self, index: u16) -> u16;
 }
 
 pub trait Mapper : CpuMapper + PpuMapper {}

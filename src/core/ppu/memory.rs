@@ -13,7 +13,6 @@ use core::ppu::OamTable;
 use core::ppu::palette::PpuPalette;
 
 pub struct PpuMemMap {
-    ram: Ram,
     pub oam_table: OamTable,
     pub palette: PpuPalette,
     mapper: Rc<RefCell<dyn Mapper>>,
@@ -24,7 +23,6 @@ impl Default for PpuMemMap {
         let def_mapper = mappers::default_mapper();
 
         PpuMemMap {
-            ram: Ram::default(),
             oam_table: OamTable::default(),
             palette: PpuPalette::default(),
             mapper: def_mapper,
@@ -35,34 +33,19 @@ impl Default for PpuMemMap {
 impl PpuMemMap {
     pub fn new(mapper: Rc<RefCell<dyn Mapper>>) -> PpuMemMap {
         PpuMemMap {
-            ram: Ram::default(),
             oam_table: OamTable::default(),
             palette: PpuPalette::default(),
             mapper,
         }
     }
 
-    pub fn fetch_name_table_entry(&mut self, name_table_index: u8, name_table_entry_index: u16) -> Result<u8, EmulationError> {
-        let base_addr = match name_table_index {
-            0b00 => 0x2000,
-            0b01 => 0x2400,
-            0b10 => 0x2800,
-            0b11 => 0x2C00,
-            _ => unreachable!()
-        };
-        let name_table_entry_addr = base_addr + name_table_entry_index;
+    pub fn fetch_name_table_entry(&mut self, reg_v: u16) -> Result<u8, EmulationError> {
+        let name_table_entry_addr = 0x2000 | (reg_v & 0x0FFF);
         self.read(name_table_entry_addr)
     }
 
-    pub fn fetch_attribute_table_entry(&mut self, name_table_index: u8, attribute_table_entry_index: u16) -> Result<u8, EmulationError> {
-        let base_addr = match name_table_index {
-            0b00 => 0x23C0,
-            0b01 => 0x27C0,
-            0b10 => 0x2BC0,
-            0b11 => 0x2FC0,
-            _ => unreachable!()
-        };
-        let attribute_table_entry_addr = base_addr + attribute_table_entry_index;
+    pub fn fetch_attribute_table_entry(&mut self, reg_v: u16) -> Result<u8, EmulationError> {
+        let attribute_table_entry_addr = 0x23C0 | (reg_v & 0x0C00) | ((reg_v >> 4) & 0x38) | ((reg_v >> 2) & 0x07);
         self.read(attribute_table_entry_addr)
     }
 
@@ -97,13 +80,12 @@ impl MemMapped for PpuMemMap {
                 self.mapper.borrow_mut().read(index)
             }
             0x2000..=0x2FFF => {
-                let index = (index - 0x2000) % 0x800; // TODO - mirroring via mapper
-                self.ram.read(index)
+                self.mapper.borrow_mut().read(index)
             }
             0x3000..=0x3EFF => {
                 // Mirrors 0f 0x2000..=0x2EFF
-                let index = (index - 0x1000) % 0x800; // TODO - mirroring via mapper
-                self.ram.read(index)
+                let index = index - 0x1000;
+                self.mapper.borrow_mut().read(index)
             }
             0x3F00..=0x3FFF => {
                 let index = (index - 0x3F00) % 20;
@@ -119,13 +101,12 @@ impl MemMapped for PpuMemMap {
                 self.mapper.borrow_mut().write(index, byte)
             }
             0x2000..=0x2FFF => {
-                let index = (index - 0x2000) % 0x800; // TODO - mirroring via mapper
-                self.ram.write(index, byte)
+                self.mapper.borrow_mut().write(index, byte)
             }
             0x3000..=0x3EFF => {
                 // Mirrors 0f 0x2000..=0x2EFF
-                let index = (index - 0x1000) % 0x800; // TODO - mirroring via mapper
-                self.ram.write(index, byte)
+                let index = index - 0x1000;
+                self.mapper.borrow_mut().write(index, byte)
             }
             0x3F00..=0x3FFF => {
                 let index = (index - 0x3F00) % 32;

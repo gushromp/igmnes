@@ -33,7 +33,7 @@ impl Default for HeaderType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum MirroringMode {
     Horizontal,
     Vertical,
