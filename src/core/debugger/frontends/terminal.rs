@@ -481,8 +481,8 @@ impl CpuFacade for TerminalDebugger {
         true
     }
 
-    fn nmi(&mut self) {
-        self.cpu.nmi(&mut self.mem_map).unwrap()
+    fn nmi(&mut self, is_immediate: bool) {
+        self.cpu.nmi(&mut self.mem_map, is_immediate).unwrap()
     }
 
     fn irq(&mut self) {

@@ -11,16 +11,20 @@ use core::ppu::Ppu;
 pub struct Trace {
     pub cpu_trace: Option<String>,
     pub ppu_trace: Option<String>,
+    pub tick_time_ns: Option<i64>,
 }
 
 impl Debug for Trace {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let mut trace_line = String::new();
-        if let Some(ref cpu_trace) = self.cpu_trace {
+        if let Some(cpu_trace) = &self.cpu_trace {
             trace_line.push_str(&format!("{}", cpu_trace));
         }
-        if let Some(ref ppu_trace) = self.ppu_trace {
+        if let Some(ppu_trace) = &self.ppu_trace {
             trace_line.push_str(&format!(" {}", ppu_trace));
+        }
+        if let Some(tick_time_ns) = &self.tick_time_ns {
+            trace_line.push_str(&format!(" tck:{}", tick_time_ns));
         }
         if !trace_line.is_empty() {
             write!(fmt, "{}", trace_line).unwrap();
@@ -35,6 +39,7 @@ pub struct Tracer {
 
     current_trace: Option<Trace>,
     traces: Vec<String>,
+
 
 }
 
@@ -66,6 +71,12 @@ impl Tracer {
         if let Some(ref mut current_trace) = self.current_trace {
             let trace_line = format!("{}", ppu);
             current_trace.ppu_trace = Some(trace_line);
+        }
+    }
+
+    pub fn add_tick_time_ns(&mut self, tick_time_ns: Option<i64>) {
+        if let Some(ref mut current_trace) = self.current_trace {
+            current_trace.tick_time_ns = tick_time_ns;
         }
     }
 

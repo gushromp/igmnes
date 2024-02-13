@@ -125,7 +125,8 @@ impl StatusReg {
 #[derive(Default, Copy, Clone)]
 struct CpuInterrupt {
     is_hardware: bool,
-    is_nmi: bool
+    is_nmi: bool,
+    is_immediate: bool
 }
 
 #[derive(Default, Copy, Clone)]
@@ -219,13 +220,13 @@ impl Cpu {
 
     #[inline]
     pub fn irq(&mut self, mem_map: &mut impl MemMapped) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: false};
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: false, is_immediate: false};
         self.interrupt(mem_map, interrupt)
     }
 
     #[inline]
-    pub fn nmi(&mut self, mem_map: &mut impl MemMapped) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: true};
+    pub fn nmi(&mut self, mem_map: &mut impl MemMapped, is_immediate: bool) -> Result<(), EmulationError> {
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: true, is_immediate};
         self.interrupt(mem_map, interrupt)
     }
 
@@ -247,6 +248,12 @@ impl Cpu {
                 self.unhandled_interrupt = Some(interrupt);
                 Ok(())
             }
+        }
+    }
+
+    pub fn suppress_interrupt(&mut self) {
+        if self.pending_interrupt.is_some() {
+            self.pending_interrupt = None;
         }
     }
 
@@ -515,7 +522,7 @@ impl Cpu {
 //
     #[inline]
     fn instr_brk(&mut self, mem_map: &mut impl MemMapped) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: false, is_nmi: false };
+        let interrupt = CpuInterrupt { is_hardware: false, is_nmi: false, is_immediate: false };
         self.perform_irq(mem_map, &interrupt)?;
 
         Ok(())

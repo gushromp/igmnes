@@ -63,7 +63,7 @@ pub trait CpuFacade {
 
 
 
-    fn nmi(&mut self);
+    fn nmi(&mut self, is_immediate: bool);
     fn irq(&mut self);
 
     fn mem_map(&self) -> &CpuMemMap;
@@ -139,8 +139,8 @@ impl CpuFacade for DefaultCpuFacade {
         result
     }
 
-    fn nmi(&mut self) {
-        self.cpu.nmi(&mut self.mem_map).unwrap()
+    fn nmi(&mut self, is_immediate: bool) {
+        self.cpu.nmi(&mut self.mem_map, is_immediate).unwrap()
     }
 
     fn irq(&mut self) {
@@ -219,8 +219,6 @@ impl Core {
         let start_time = PreciseTime::now();
         let mut previous_render_time = start_time;
         let mut previous_tick_time = start_time;
-        let mut cpu_cycle_delta: u64 = 0;
-
 
         'running: loop {
             tracer.start_new_trace();
@@ -229,8 +227,8 @@ impl Core {
                 let current_time = PreciseTime::now();
                 let nanos = previous_tick_time.to(current_time).num_nanoseconds();
                 let should_tick = match nanos {
-                    Some(nanos) => nanos > 599,
-                    None => true
+                    Some(nanos) => { nanos > 599},
+                    None => { true }
                 };
                 if should_tick {
                     let current_cycle_count = self.cpu_facade.cpu().cycle_count;
@@ -238,7 +236,7 @@ impl Core {
                     let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
                     if nmi {
                         self.cpu_facade.ppu().clear_nmi();
-                        self.cpu_facade.nmi();
+                        self.cpu_facade.nmi(false);
                     }
 
                     let irq = self.cpu_facade.step_apu(current_cycle_count);
@@ -261,7 +259,17 @@ impl Core {
                     let result = self.cpu_facade.step_cpu(&mut tracer);
 
                     match result {
-                        Ok(_) => { },
+                        Ok(_) => {
+                            if self.cpu_facade.ppu().should_suppress_nmi() {
+                                self.cpu_facade.cpu().suppress_interrupt();
+                            } else if self.cpu_facade.ppu().nmi_pending {
+                                // Needs PPU to track it's own cycles in order to be more accurate
+                                self.cpu_facade.ppu().clear_nmi();
+                                self.cpu_facade.nmi(true);
+                            }
+
+
+                        },
                         Err(error) => match error {
                             EmulationError::DebuggerBreakpoint(_addr) |
                             EmulationError::DebuggerWatchpoint(_addr) => {
