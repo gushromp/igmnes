@@ -49,6 +49,7 @@ impl PpuMemMap {
     }
 
     pub fn fetch_pattern_table_entry(&mut self, pattern_table_index: u8, name_table_entry: u8, pixel_y: u16) -> Result<[u8; 2], EmulationError> {
+        // PPU addresses within the pattern tables can be decoded as follows:
         // DCBA98 76543210
         // ---------------
         // 0HNNNN NNNNPyyy
@@ -59,12 +60,12 @@ impl PpuMemMap {
         // +--------------- 0: Pattern table is at $0000-$1FFF
 
         let pattern_table_addr_low: u16 =
-            (pattern_table_index as u16) << 13
+            (pattern_table_index as u16) << 12
                 | (name_table_entry as u16) << 4
                 | pixel_y;
 
         let pattern_table_addr_high: u16 =
-            (pattern_table_index as u16) << 13
+            (pattern_table_index as u16) << 12
                 | (name_table_entry as u16) << 4
                 | 1 << 3
                 | pixel_y;
