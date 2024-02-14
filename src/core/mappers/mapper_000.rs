@@ -87,9 +87,10 @@ impl PpuMapper for NRom {
     }
 
     fn get_mirrored_index(&self, index: u16) -> u16 {
+        let index = index - 0x2000;
         match self.mirroring_mode {
-            MirroringMode::Horizontal => (index - 0x2000) % 0x400,
-            MirroringMode::Vertical => (index - 0x2000) % 0x800
+            MirroringMode::Horizontal => ((index / 0x800) * 0x400) + (index % 0x400),
+            MirroringMode::Vertical => index % 0x800
         }
     }
 }
@@ -122,7 +123,7 @@ impl MemMapped for NRom {
             }
             0x6000..=0x7FFF => self.write_prg_ram(index, byte),
             _ => {
-                println!("Attempted write to non-RAM address: 0x{:X}", index);
+                // println!("Attempted write to non-RAM address: 0x{:X}", index);
                 Ok(())
             }
         }

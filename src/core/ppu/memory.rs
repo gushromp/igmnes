@@ -2,13 +2,11 @@
 
 use std::array;
 use std::cell::RefCell;
-use std::ops::Range;
 use std::rc::Rc;
-use sdl2::pixels::Palette;
 use core::errors::EmulationError;
 use core::mappers;
 use core::mappers::Mapper;
-use core::memory::{MemMapped, Ram};
+use core::memory::MemMapped;
 use core::ppu::OamTable;
 use core::ppu::palette::PpuPalette;
 
@@ -45,21 +43,35 @@ impl PpuMemMap {
     }
 
     pub fn fetch_attribute_table_entry(&mut self, reg_v: u16) -> Result<u8, EmulationError> {
+        // attribute address = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
         let attribute_table_entry_addr = 0x23C0 | (reg_v & 0x0C00) | ((reg_v >> 4) & 0x38) | ((reg_v >> 2) & 0x07);
         self.read(attribute_table_entry_addr)
     }
 
-    pub fn fetch_pattern_table_entry(&mut self, pattern_table_index: u8, pattern_table_entry_index: u16) -> Result<[u8; 16], EmulationError> {
-        let base_addr = match pattern_table_index {
-            0b00 => 0x0000,
-            0b01 => 0x1000,
-            _ => unreachable!()
-        };
+    pub fn fetch_pattern_table_entry(&mut self, pattern_table_index: u8, name_table_entry: u8, pixel_y: u16) -> Result<[u8; 2], EmulationError> {
+        // DCBA98 76543210
+        // ---------------
+        // 0HNNNN NNNNPyyy
+        // |||||| |||||+++- T: Fine Y offset, the row number within a tile
+        // |||||| ||||+---- P: Bit plane (0: less significant bit; 1: more significant bit)
+        // ||++++-++++----- N: Tile number from name table
+        // |+-------------- H: Half of pattern table (0: "left"; 1: "right")
+        // +--------------- 0: Pattern table is at $0000-$1FFF
 
-        let pattern_table_entry_addr = base_addr + pattern_table_entry_index;
-        Ok(array::from_fn(|index| {
-            self.read(pattern_table_entry_addr + index as u16).unwrap()
-        }))
+        let pattern_table_addr_low: u16 =
+            (pattern_table_index as u16) << 13
+                | (name_table_entry as u16) << 4
+                | pixel_y;
+
+        let pattern_table_addr_high: u16 =
+            (pattern_table_index as u16) << 13
+                | (name_table_entry as u16) << 4
+                | 1 << 3
+                | pixel_y;
+
+        let pattern_table_byte_low = self.read(pattern_table_addr_low).unwrap();
+        let pattern_table_byte_high = self.read(pattern_table_addr_high).unwrap();
+        Ok([pattern_table_byte_low, pattern_table_byte_high])
     }
 }
 

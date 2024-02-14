@@ -1,5 +1,5 @@
-pub mod palette;
 pub mod memory;
+pub mod palette;
 
 use std::fmt;
 use std::fmt::{Binary, Display, Formatter};
@@ -130,7 +130,9 @@ struct PpuStatusReg {
 
 impl PpuStatusReg {
     fn read(&mut self) -> u8 {
-        let value = (self.is_in_vblank as u8) << 7 | (self.is_sprite_0_hit as u8) << 6 | (self.is_sprite_overflow as u8) << 5;
+        let value = (self.is_in_vblank as u8) << 7
+            | (self.is_sprite_0_hit as u8) << 6
+            | (self.is_sprite_overflow as u8) << 5;
         value
     }
 
@@ -196,7 +198,7 @@ impl From<u8> for OamAttributePriority {
         match value {
             0 => FRONT,
             1 => BACK,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -210,7 +212,6 @@ struct OamSpriteAttributes {
     // ||+------ Priority (0: in front of background; 1: behind background)
     // |+------- Flip sprite horizontally
     // +-------- Flip sprite vertically
-
     palette_index: u8,
     priority: OamAttributePriority,
     is_flipped_horizontally: bool,
@@ -241,14 +242,20 @@ pub struct OamTable {
 
 impl Default for OamTable {
     fn default() -> Self {
-        OamTable { oam_entries: [OamEntry::default(); 64] }
+        OamTable {
+            oam_entries: [OamEntry::default(); 64],
+        }
     }
 }
 
 impl OamTable {
     pub fn write(&mut self, cpu_mem: Vec<u8>) -> Result<(), EmulationError> {
         if cpu_mem.len() != 0x100 {
-            Err(MemoryAccess(format!("Attempted OAM DMA write with size {:2X}, expected size {:2X}", cpu_mem.len(), 0x100)))
+            Err(MemoryAccess(format!(
+                "Attempted OAM DMA write with size {:2X}, expected size {:2X}",
+                cpu_mem.len(),
+                0x100
+            )))
         } else {
             Ok(())
         }
@@ -278,9 +285,22 @@ pub struct PpuOutput {
 impl Default for PpuOutput {
     fn default() -> Self {
         PpuOutput {
-            data: Box::new([[PpuPaletteColor::default(); 256]; 240])
+            data: Box::new([[PpuPaletteColor::default(); 256]; 240]),
         }
     }
+}
+
+#[derive(Default, Copy, Clone)]
+struct PpuTile {
+    attribute_table_entry: u8,
+    pattern_table_entry: [u8; 2],
+}
+
+#[derive(Default, Copy, Clone)]
+struct PpuShiftRegisters {
+    reg_high_plane: u16,
+    reg_low_plane: u16,
+    palette_index_2: u16, // upper byte repeats lower
 }
 
 #[derive(Default)]
@@ -312,7 +332,6 @@ pub struct Ppu {
     // Internal/operational registers
     //
 
-
     // yyy NN YYYYY XXXXX
     // ||| || ||||| +++++-- coarse X scroll
     // ||| || +++++-------- coarse Y scroll
@@ -339,6 +358,9 @@ pub struct Ppu {
     mem_map_config: PpuMemMapConfig,
 
     // Rendering data
+    shift_regs: PpuShiftRegisters,
+    shift_index: usize,
+
     curr_output: PpuOutput,
     last_output: Option<PpuOutput>,
 
@@ -352,7 +374,6 @@ pub struct Ppu {
     // (CPU inputs like NMI are sampled each clock.)
     should_skip_vbl: bool,
 }
-
 
 impl Ppu {
     pub fn new(ppu_mem_map: PpuMemMap) -> Self {
@@ -422,7 +443,7 @@ impl Ppu {
 
         if (self.reg_v & 0x001F) == 31 {
             self.reg_v &= !0x001F;
-            self.reg_v ^= 0x400;
+            self.reg_v ^= 0x0400;
         } else {
             self.reg_v += 1;
         }
@@ -450,9 +471,9 @@ impl Ppu {
             let mut y = (self.reg_v & 0x03E0) >> 5;
             if y == 29 {
                 y = 0;
-                self.reg_v ^= 0800;
+                self.reg_v ^= 0x0800;
             } else if y == 31 {
-                y = 0;
+                 y = 0;
             } else {
                 y += 1;
             }
@@ -461,7 +482,8 @@ impl Ppu {
     }
 
     fn is_in_vblank(&self) -> bool {
-        return (self.curr_scanline > 240 && self.curr_scanline <= 260) || !self.is_rendering_enabled();
+        return (self.curr_scanline > 240 && self.curr_scanline <= 260)
+            || !self.is_rendering_enabled();
     }
 
     pub fn clear_nmi(&mut self) {
@@ -498,68 +520,135 @@ impl Ppu {
         self.should_skip_vbl
     }
 
+    fn fetch_tile(&mut self) -> PpuTile {
+        let addr = self.reg_v;
+        let name_table_entry = self.ppu_mem_map.fetch_name_table_entry(addr).unwrap();
+        let attribute_table_entry = self.ppu_mem_map.fetch_attribute_table_entry(addr).unwrap();
+        let pixel_y = (self.reg_v >> 12) & 0x1F;
+        let pattern_table_entry = self
+            .ppu_mem_map
+            .fetch_pattern_table_entry(
+                self.reg_ctrl.background_pattern_table_index,
+                name_table_entry,
+                pixel_y
+            )
+            .unwrap();
+        PpuTile {
+            attribute_table_entry,
+            pattern_table_entry,
+        }
+    }
+
+    fn load_shift_registers(&mut self) {
+        let tile = self.fetch_tile();
+
+        let byte_low_plane = tile.pattern_table_entry[0] as u16;
+        let byte_high_plane = tile.pattern_table_entry[1] as u16;
+        let mask = 0b0000_0000_1111_1111;
+        self.shift_regs.reg_low_plane = (self.shift_regs.reg_low_plane & !mask) | (byte_low_plane & mask);
+        self.shift_regs.reg_high_plane = (self.shift_regs.reg_high_plane & !mask) | (byte_high_plane & mask);
+
+        let attribute_table_entry = tile.attribute_table_entry;
+
+        let pixel_attribute_index_y = (((self.reg_v >> 5) & 0x1F) as usize % 4) / 2;
+        let pixel_attribute_index_x = ((self.reg_v & 0x1F) as usize % 4) / 2;
+        let attribute_shift: u8 = match (pixel_attribute_index_x, pixel_attribute_index_y) {
+            (0, 0) => 0,
+            (1, 0) => 2,
+            (0, 1) => 4,
+            (1, 1) => 6,
+            _ => unreachable!(),
+        };
+        let palette_index = ((attribute_table_entry >> attribute_shift) & 0b11) as u16;
+        let mask = 0b0000_0000_1111_1111;
+        self.shift_regs.palette_index_2 = (self.shift_regs.palette_index_2 & !mask) | (palette_index & mask);
+    }
+
+    fn shift_registers_left(&mut self) {
+        self.shift_regs.reg_high_plane <<= 1;
+        self.shift_regs.reg_low_plane <<= 1;
+        self.shift_index += 1;
+        if self.shift_index == 8 {
+            self.shift_regs.palette_index_2 <<= 8;
+            self.shift_index = 0;
+        }
+    }
+
     #[inline]
     pub fn step(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
 
+
         for _ in 0..cycles_to_run {
-            self.curr_scanline_cycle += 1;
-
             // Rendering scanlines & cycles
-            let mut pixel_x = self.curr_scanline_cycle - 1;
+            let pixel_x = self.curr_scanline_cycle.wrapping_sub(1);
             let pixel_y = self.curr_scanline;
-            if self.is_rendering_enabled() && pixel_y < 240 && pixel_x % 8 == 0 && pixel_x <= 256 - 8 {
+            if self.is_rendering_enabled()
+                && pixel_y < 240
+                && pixel_x < 256
+            {
                 // Background
-                let name_table_entry = self.ppu_mem_map.fetch_name_table_entry(self.reg_v).unwrap();
-                let attribute_table_entry = self.ppu_mem_map.fetch_attribute_table_entry(self.reg_v).unwrap();
-
-                let chr_table_entry_index = (name_table_entry as u16) * 16;
-                let chr_table_entry = self.ppu_mem_map.fetch_pattern_table_entry(self.reg_ctrl.background_pattern_table_index, chr_table_entry_index).unwrap();
-
-                self.render_background(attribute_table_entry, &chr_table_entry);
+                self.render_background(pixel_x as usize, pixel_y as usize);
             }
 
-            if self.is_rendering_enabled() && (self.curr_scanline < 240) {
-                // if (pixel_x >= 8 && pixel_x <= 256) && pixel_x % 8 == 0 {
-                if (pixel_x <= 256 - 8) && pixel_x % 8 == 0 {
+            if self.is_rendering_enabled()
+                && (self.curr_scanline < 240 || self.curr_scanline == 261)
+            {
+                if (self.curr_scanline_cycle > 0 && self.curr_scanline_cycle <= 256)
+                    || (self.curr_scanline_cycle >= 321 && self.curr_scanline_cycle <= 336) {
+                    self.shift_registers_left();
+                }
+
+                if (self.curr_scanline_cycle >= 8 && self.curr_scanline_cycle <= 256
+                    || self.curr_scanline_cycle >= 328)
+                    && self.curr_scanline_cycle % 8 == 0
+                {
                     // If rendering is enabled, the PPU increments the horizontal position in v many times across the scanline,
                     // it begins at dots 328 and 336, and will continue through the next scanline at 8, 16, 24... 240, 248, 256
                     // (every 8 dots across the scanline until 256).
                     // Across the scanline the effective coarse X scroll coordinate is incremented repeatedly,
                     // which will also wrap to the next nametable appropriately.
-                    self.increment_addr_x()
+                    self.load_shift_registers();
+                    self.increment_addr_x();
                 }
-                if pixel_x == 256 - 8 {
+
+                if self.curr_scanline_cycle == 256 {
                     // If rendering is enabled, the PPU increments the vertical position in v.
                     // The effective Y scroll coordinate is incremented, which is a complex operation that will correctly skip the attribute table memory regions,
                     // and wrap to the next nametable appropriately.
                     self.increment_addr_y()
                 }
 
-                if pixel_x == 257 - 8 {
+                if self.curr_scanline_cycle == 257 {
                     // If rendering is enabled, the PPU copies all bits related to horizontal position from t to v:
-                    // reg_v: .....A.. ...BCDEF <- reg_t: ....A.. ...BCDEF
+                    // reg_v: .....A.. ...BCDEF <- reg_t: .....A.. ...BCDEF
                     let mask = 0b0000_0100_0001_1111;
                     self.reg_v = (self.reg_v & !mask) | (self.reg_t & mask);
                 }
-            }
+
+                if self.curr_scanline == 261 && self.curr_scanline_cycle >= 280 && self.curr_scanline_cycle <= 304 {
+                    // If rendering is enabled, at the end of vblank,
+                    // shortly after the horizontal bits are copied from t to v at dot 257,
+                    // the PPU will repeatedly copy the vertical bits from t to v from dots 280 to 304,
+                    // completing the full initialization of v from t
+                    // reg_v: .GHIA.BC DEF..... <- reg_t: .GHIA.BC DEF.....
+                    let mask = 0b0111_1011_1110_0000;
+                    self.reg_v = (self.reg_v & !mask) | (self.reg_t & mask);
+                }
 
 
-            if self.is_rendering_enabled() && self.curr_scanline == 261 && pixel_x == 304 - 8 {
-                // If rendering is enabled, at the end of vblank,
-                // shortly after the horizontal bits are copied from t to v at dot 257,
-                // the PPU will repeatedly copy the vertical bits from t to v from dots 280 to 304,
-                // completing the full initialization of v from t
-                // reg_v: .GHIA.BC DEF..... <- reg_t: GHIA.BC DEF.....
-                let mask = 0b0111_1011_1110_0000;
-                self.reg_v = (self.reg_v & !mask) | (self.reg_t & mask);
             }
 
             if self.curr_scanline_cycle >= 257 && self.curr_scanline_cycle <= 320 {
                 self.reg_oam_addr = 0;
             }
 
-            if self.curr_scanline_cycle == 341 || self.curr_scanline == 261 && self.curr_scanline_cycle == 340 && self.is_odd_frame && self.is_rendering_enabled() {
+            if self.curr_scanline_cycle == 341
+                || self.curr_scanline == 261
+                && self.curr_scanline_cycle == 340
+                && self.is_odd_frame
+                && self.is_rendering_enabled()
+            {
                 self.curr_scanline_cycle = 0;
                 self.curr_scanline += 1;
             }
@@ -573,7 +662,10 @@ impl Ppu {
                 self.reg_status.is_in_vblank = false;
             }
 
-            if self.is_rendering_enabled() && self.curr_scanline == 240 && self.curr_scanline_cycle == 1 {
+            if self.is_rendering_enabled()
+                && self.curr_scanline == 240
+                && self.curr_scanline_cycle == 1
+            {
                 self.last_output = Some(self.curr_output.clone())
             }
 
@@ -585,6 +677,8 @@ impl Ppu {
                     self.should_skip_vbl = false;
                 }
             }
+
+            self.curr_scanline_cycle += 1;
         }
 
         if tracer.is_enabled() {
@@ -596,37 +690,24 @@ impl Ppu {
     }
 
     #[inline]
-    fn render_background(&mut self, attribute_table_entry: u8, pattern_table_entry: &[u8]) {
-        let coarse_index_y = ((self.reg_v >> 5) & 0x1F) as usize;
-        let coarse_index_x = (self.reg_v & 0x1F) as usize;
-        let fine_index_y = ((self.reg_v & 0x7000) >> 12) as usize;
-        let fine_index_x = self.reg_x as usize;
+    fn render_background(&mut self, pixel_x: usize, pixel_y: usize) {
+        let pixel_index_x = (15 - self.reg_x) as usize;
+        let pattern_bit_plane_low = (self.shift_regs.reg_low_plane >> pixel_index_x) & 0b1;
+        let pattern_bit_plane_high = (self.shift_regs.reg_high_plane >> pixel_index_x) & 0b1;
 
-        let index_x = coarse_index_x * 8;
-        let index_y = (coarse_index_y * 8) + fine_index_y;
-        let pixel_attribute_index_y = coarse_index_y;
-        let pattern_index = fine_index_y % 8;
+        let palette_index = if pixel_index_x >= 8 {
+            (self.shift_regs.palette_index_2 >> 8) as u8
+        } else {
+            self.shift_regs.palette_index_2 as u8
+        } & 0b11;
 
-        let pattern_bit_plane_1 = pattern_table_entry[pattern_index];
-        let pattern_bit_plane_2 = pattern_table_entry[pattern_index + 8];
+        let color_index = (pattern_bit_plane_high << 1 | pattern_bit_plane_low) as u8;
+        let color = self
+            .ppu_mem_map
+            .palette
+            .get_background_color(palette_index, color_index);
 
-        for pixel_x in index_x..=index_x + 7 {
-            let pixel_attribute_index_x = pixel_x % 32;
-            let attribute_shift = match (pixel_attribute_index_x, pixel_attribute_index_y) {
-                (0..=15, 0..=15) => 0,
-                (16..=31, 0..=15) => 2,
-                (0..=15, 16..=31) => 4,
-                (16..=31, 16..=31) => 6,
-                _ => unreachable!()
-            };
-            let palette_index = (attribute_table_entry >> attribute_shift) & 0b11;
-
-            let bit_index = 7 - (pixel_attribute_index_x % 8);
-            let color_index = (pattern_bit_plane_2.get_bit_u8(bit_index) << 1) | pattern_bit_plane_1.get_bit_u8(bit_index);
-
-            let color = self.ppu_mem_map.palette.get_background_color(palette_index, color_index);
-            self.curr_output.data[index_y][pixel_x] = color
-        }
+        self.curr_output.data[pixel_y][pixel_x] = color;
     }
 }
 
@@ -645,7 +726,11 @@ impl MemMapped for Ppu {
                 // This suppression behavior is due to the $2002 read pulling the NMI line back up too quickly after it drops (NMI is active low) for the CPU to see it.
                 // (CPU inputs like NMI are sampled each clock.)
                 if self.is_mutating_read() {
-                    if self.curr_scanline == 241 && (self.curr_scanline_cycle == 0 || self.curr_scanline_cycle == 1 || self.curr_scanline_cycle == 2) {
+                    if self.curr_scanline == 241
+                        && (self.curr_scanline_cycle == 0
+                        || self.curr_scanline_cycle == 1
+                        || self.curr_scanline_cycle == 2)
+                    {
                         self.should_skip_vbl = true;
                         self.nmi_pending = false;
                     }
@@ -669,7 +754,7 @@ impl MemMapped for Ppu {
                 }
                 Ok(data)
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -679,7 +764,10 @@ impl MemMapped for Ppu {
                 // TODO: For better accuracy, replace old_is_nmi_enabled check with PPU cycle count
                 let old_is_nmi_enabled = self.reg_ctrl.is_nmi_enabled;
                 self.reg_ctrl.write(byte);
-                if !old_is_nmi_enabled && self.reg_ctrl.is_nmi_enabled && self.reg_status.is_in_vblank {
+                if !old_is_nmi_enabled
+                    && self.reg_ctrl.is_nmi_enabled
+                    && self.reg_status.is_in_vblank
+                {
                     self.nmi_pending = true;
                 }
 
@@ -706,7 +794,7 @@ impl MemMapped for Ppu {
                     // First write
                     // reg_t: ....... ...ABCDE <- byte: ABCDE...
                     // reg_x:              FGH <- byte: .....FGH
-                    let mask_t: u16 = 0b0000_0000_0001_111;
+                    let mask_t: u16 = 0b0000_0000_0011_111;
                     let data_t = ((byte & 0b1111_1000) >> 3) as u16;
                     self.reg_t = (self.reg_t & !mask_t) | (data_t & mask_t);
 
@@ -720,7 +808,9 @@ impl MemMapped for Ppu {
                     let mask_fgh = 0b0000_0111;
                     let mask_ab = 0b1100_0000;
                     let mask_cde = 0b0011_1000;
-                    let acc = (((byte & mask_fgh) as u16) << 12) | (((byte & mask_ab) as u16) << 2) | (((byte & mask_cde) as u16) << 2);
+                    let acc = (((byte & mask_fgh) as u16) << 12)
+                        | ((((byte & mask_ab) as u16) >> 6) << 8)
+                        | ((((byte & mask_cde) as u16) >> 3) << 5);
                     self.reg_t = (self.reg_t & !mask) | acc;
                     self.reset_address_latch();
                 }
@@ -729,12 +819,12 @@ impl MemMapped for Ppu {
             6 => {
                 if !self.is_address_latch_on {
                     // First write
-                    // reg_t: .CDEFGH ........ <- byte: ..CDEFGH
+                    // reg_t: ..CDEFGH ........ <- byte: ..CDEFGH
                     //             <unused>    <- byte: AB......
                     // reg_t: Z...... ........ <- 0 (bit Z is cleared)
                     let mask_t: u16 = 0b0011_1111_0000_0000;
                     let mask_byte: u8 = 0b0011_1111;
-                    let mask_z: u16 = 0b0011_1111_1111_1111;
+                    let mask_z: u16 = 0b1011_1111_1111_1111;
                     let data = ((byte & mask_byte) as u16) << 8;
                     self.reg_t = (self.reg_t & !mask_t) | data;
                     self.reg_t = self.reg_t & mask_z;
@@ -755,7 +845,7 @@ impl MemMapped for Ppu {
                 self.increment_addr_read();
                 result
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
