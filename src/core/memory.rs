@@ -4,6 +4,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use core::rom::Rom;
 use core::apu::Apu;
+use core::controller::Controller;
 use core::dma::{Dma, DmaType};
 use core::mappers::{self, Mapper};
 use core::errors::EmulationError;
@@ -74,6 +75,7 @@ pub struct CpuMemMap {
     pub apu: Apu,
     pub ppu: Ppu,
     pub dma: Dma,
+    pub controllers: [Controller; 2],
     mapper: Rc<RefCell<dyn Mapper>>
 }
 
@@ -88,6 +90,7 @@ impl Default for CpuMemMap {
             apu: Apu::default(),
             ppu: Ppu::default(),
             dma: Dma::default(),
+            controllers: [Controller::default(); 2],
             mapper: def_mapper
         }
     }
@@ -104,6 +107,7 @@ impl CpuMemMap {
             apu: Apu::new(),
             ppu: Ppu::new(ppu_mem_map),
             dma: Dma::new(),
+            controllers: [Controller::new(); 2],
             mapper: mapper.clone()
         };
 
@@ -147,13 +151,11 @@ impl MemMapped for CpuMemMap {
             }
             // I/O
             0x4016 => {
-                // self.apu.read(index)
-                // println!("Attempted unimplemented read from I/O register: 0x{:04X}", index);
-                Ok(0)
+                Ok(self.controllers[0].read())
             }
             // I/O, Apu: This address is shared by both the APU and I/O so we can from read either one
             0x4017 => {
-                self.apu.read(index)
+                Ok(self.controllers[1].read())
             }
             0x4018..=0x401f => {
                 let _index = index % 0x4018;
@@ -191,7 +193,13 @@ impl MemMapped for CpuMemMap {
             }
             // I/O
             0x4016 => {
-                // println!("Attempted unimplemented write to I/O register: 0x{:X}", index);
+                if byte & 0b1 == 1 {
+                    self.controllers[0].start_polling();
+                    self.controllers[1].start_polling();
+                } else {
+                    self.controllers[0].stop_polling();
+                    self.controllers[1].stop_polling();
+                }
                 Ok(())
             }
             // This address is shared by both APU and I/O so we need to write the value to both

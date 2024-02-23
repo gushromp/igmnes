@@ -9,6 +9,7 @@ use std::ops::Range;
 use core::CpuFacade;
 use core::cpu::Cpu;
 use core::apu::Apu;
+use core::controller::Controller;
 use core::debug::Tracer;
 use core::memory::{CpuMemMap, MemMapped};
 use core::debugger::Debugger;
@@ -409,6 +410,10 @@ impl CpuFacade for TerminalDebugger {
     fn apu(&mut self) -> &mut Apu { &mut self.mem_map.apu }
 
     fn dma(&mut self) -> &mut Dma { &mut self.mem_map.dma }
+
+    fn controllers(&mut self) -> &mut [Controller; 2] {
+        &mut self.mem_map.controllers
+    }
 
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         let reg_pc = self.cpu.reg_pc;

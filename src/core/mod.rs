@@ -13,6 +13,7 @@ mod errors;
 mod debug;
 mod ppu;
 mod dma;
+mod controller;
 
 use std::error::Error;
 use std::path::Path;
@@ -24,6 +25,7 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::audio::AudioSpecDesired;
 use time::Duration;
+use core::controller::Controller;
 use core::debug::Tracer;
 use core::dma::Dma;
 use self::time::PreciseTime;
@@ -57,12 +59,12 @@ pub trait CpuFacade {
     fn apu(&mut self) -> &mut Apu;
     fn dma(&mut self) -> &mut Dma;
 
+    fn controllers(&mut self) -> &mut [Controller; 2];
+
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError>;
     fn step_ppu(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool;
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
     fn step_dma(&mut self) -> bool;
-
-
 
     fn nmi(&mut self, is_immediate: bool);
     fn irq(&mut self);
@@ -116,6 +118,8 @@ impl CpuFacade for DefaultCpuFacade {
     fn apu(&mut self) -> &mut Apu { &mut self.mem_map.apu }
 
     fn dma(&mut self) -> &mut Dma { &mut self.mem_map.dma }
+
+    fn controllers(&mut self) -> &mut [Controller; 2] { &mut self.mem_map.controllers }
 
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map, tracer)
@@ -220,6 +224,7 @@ impl Core {
         let start_time = PreciseTime::now();
         let mut previous_render_time = start_time;
         let mut previous_tick_time = start_time;
+        let mut previous_input_polling_time = start_time;
 
         'running: loop {
             tracer.start_new_trace();
@@ -312,21 +317,23 @@ impl Core {
                 }
             }
 
+            // Input
+            let current_time = PreciseTime::now();
+            let diff = previous_input_polling_time.to(current_time).num_nanoseconds();
+            if let Some(nanos) = diff {
+                if nanos > 1700 {
+                    previous_input_polling_time = current_time;
+                    let keyboard_state = events.keyboard_state();
+                    let keys = keyboard_state
+                        .pressed_scancodes()
+                        .filter_map(Keycode::from_scancode);
+                    self.set_controllers_state(keys);
+                }
+            }
+
             let current_time = PreciseTime::now();
             if previous_render_time.to(current_time).num_milliseconds() > 16 {
                 previous_render_time = current_time;
-
-                // Input
-                let keys: HashMap<Keycode, bool> = events
-                    .keyboard_state()
-                    .pressed_scancodes()
-                    .filter_map(Keycode::from_scancode)
-                    .map(|keycode| (keycode, true))
-                    .collect();
-
-                if !keys.is_empty() {
-                    println!("{:?}", keys);
-                }
 
 
                 // Rendering
@@ -400,5 +407,30 @@ impl Core {
         let dummy_facade = Box::new(dummy_device) as Box<dyn CpuFacade>;
 
         dummy_facade
+    }
+
+    fn set_controllers_state<I>(&mut self, state: I) where I: Iterator<Item = Keycode> {
+        use core::controller::ControllerButton;
+        let mut controller_1_state: Vec<ControllerButton> = vec![];
+
+        for key_state in state {
+            let button_state = match key_state {
+                Keycode::Z => Some(ControllerButton::A),
+                Keycode::X => Some(ControllerButton::B),
+                Keycode::RShift => Some(ControllerButton::SELECT),
+                Keycode::Return => Some(ControllerButton::START),
+                Keycode::Up => Some(ControllerButton::UP),
+                Keycode::Down => Some(ControllerButton::DOWN),
+                Keycode::Left => Some(ControllerButton::LEFT),
+                Keycode::Right => Some(ControllerButton::RIGHT),
+                _ => None
+            };
+
+            if let Some(button_state) = button_state {
+                controller_1_state.push(button_state);
+            }
+        }
+
+        self.cpu_facade.controllers()[0].set_button_state(&controller_1_state);
     }
 }
