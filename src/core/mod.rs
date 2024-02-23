@@ -17,6 +17,7 @@ mod dma;
 use std::error::Error;
 use std::path::Path;
 use std::{mem, ptr};
+use std::collections::HashMap;
 use std::ops::Deref;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -296,6 +297,7 @@ impl Core {
                 previous_tick_time = PreciseTime::now();
             }
 
+            // Events
             for event in events.poll_iter() {
                 match event {
                     Event::Quit { .. } => break 'running,
@@ -313,6 +315,21 @@ impl Core {
             let current_time = PreciseTime::now();
             if previous_render_time.to(current_time).num_milliseconds() > 16 {
                 previous_render_time = current_time;
+
+                // Input
+                let keys: HashMap<Keycode, bool> = events
+                    .keyboard_state()
+                    .pressed_scancodes()
+                    .filter_map(Keycode::from_scancode)
+                    .map(|keycode| (keycode, true))
+                    .collect();
+
+                if !keys.is_empty() {
+                    println!("{:?}", keys);
+                }
+
+
+                // Rendering
                 if let Some(output) = self.cpu_facade.ppu().get_output() {
 
                     unsafe {

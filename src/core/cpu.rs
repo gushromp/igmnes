@@ -940,7 +940,7 @@ impl Cpu {
         mem_map: &mut impl MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
-        self.perform_adc(byte);
+        self.perform_adc_sbc(byte, false);
         Ok(())
     }
 
@@ -951,7 +951,7 @@ impl Cpu {
         mem_map: &mut impl MemMapped,
     ) -> Result<(), EmulationError> {
         let byte = self.read_resolved(instruction, mem_map)?;
-        self.perform_adc(!byte);
+        self.perform_adc_sbc(byte, true);
         Ok(())
     }
 
@@ -1215,7 +1215,8 @@ impl Cpu {
     // Due to the complexity of the ADC/SBC instructions, they are
 // performed here for both instr_adc and instr_sbc
     #[inline]
-    fn perform_adc(&mut self, byte: u8) {
+    fn perform_adc_sbc(&mut self, byte: u8, is_subtract: bool) {
+        let byte = if is_subtract { !byte } else { byte };
         let old_carry = self.reg_status.carry_flag as u16;
 
         let sum: u16 = self.reg_a as u16 + byte as u16 + old_carry;
@@ -1259,7 +1260,7 @@ impl Cpu {
                 mem_map.read(arg.wrapping_add(self.reg_y as u16))
             }
             IndexedIndirectX(arg) => {
-                let arg_plus_x = arg.wrapping_add(self.reg_x) as u16;
+                let arg_plus_x = arg.wrapping_add(self.reg_x);
 
                 // When reading from addresses at page boundaries (0xFF)
                 // we read the low byte from 0xFF and high byte from 0x00
@@ -1272,8 +1273,8 @@ impl Cpu {
                 // of the destination address from $00
                 // resulting in the address $0503
 
-                let addr_low = mem_map.read(arg_plus_x)?;
-                let addr_high = mem_map.read(arg_plus_x.wrapping_add(1))?;
+                let addr_low = mem_map.read(arg_plus_x as u16)?;
+                let addr_high = mem_map.read(arg_plus_x.wrapping_add(1) as u16)?;
 
                 let addr = ((addr_high as u16) << 8) | addr_low as u16;
 
