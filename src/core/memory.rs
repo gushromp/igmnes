@@ -15,7 +15,7 @@ const RAM_SIZE: usize = 0x800;
 pub trait MemMapped {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError>;
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
-
+    
     fn read_word(&mut self, index: u16) -> Result<u16, EmulationError> {
         // little-endian!
         let nibble_low = self.read(index)?;
@@ -32,6 +32,10 @@ pub trait MemMapped {
             vec.push(self.read(index)?);
         }
         Ok(vec)
+    }
+    
+    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
+        Ok(&[])
     }
 
     fn is_mutating_read(&self) -> bool { true }
@@ -61,6 +65,10 @@ impl Ram {
 impl MemMapped for Ram {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         Ok(self.ram[index as usize])
+    }
+
+    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
+        Ok(&self.ram[range.start as usize .. range.end as usize])
     }
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
@@ -167,6 +175,11 @@ impl MemMapped for CpuMemMap {
             }
             _ => unreachable!()
         }
+    }
+
+    #[inline]
+    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
+        self.ram.read_range_ref(range)
     }
 
     #[inline]

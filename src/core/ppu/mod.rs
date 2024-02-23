@@ -1,6 +1,7 @@
 pub mod memory;
 pub mod palette;
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::{Binary, Display, Formatter};
 
@@ -218,6 +219,17 @@ struct OamSpriteAttributes {
     is_flipped_vertically: bool,
 }
 
+impl From<u8> for OamSpriteAttributes {
+    fn from(value: u8) -> Self {
+        let palette_index = value & 0b111;
+        let priority_value = value.get_bit_u8(5);
+        let priority = OamAttributePriority::from(priority_value);
+        let is_flipped_horizontally = value.get_bit(6);
+        let is_flipped_vertically = value.get_bit(7);
+        OamSpriteAttributes { palette_index, priority, is_flipped_horizontally, is_flipped_vertically }
+    }
+}
+
 impl OamSpriteAttributes {
     fn write(&mut self, byte: u8) {
         self.palette_index = byte & 0b00001111;
@@ -235,6 +247,21 @@ struct OamEntry {
     sprite_x: u8,
 }
 
+impl TryFrom<&[u8]> for OamEntry {
+    type Error = EmulationError;
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() != 4 {
+            Err(MemoryAccess("OAM Entry size must be exactly 4 bytes".into()))
+        } else {
+            let sprite_y = value[0];
+            let tile_bank_index = value[1];
+            let attributes = OamSpriteAttributes::from(value[2]);
+            let sprite_x = value[3];
+            Ok(OamEntry { sprite_y, tile_bank_index, attributes, sprite_x })
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct OamTable {
     oam_entries: [OamEntry; 64],
@@ -249,7 +276,7 @@ impl Default for OamTable {
 }
 
 impl OamTable {
-    pub fn write(&mut self, cpu_mem: Vec<u8>) -> Result<(), EmulationError> {
+    pub fn write(&mut self, cpu_mem: &[u8]) -> Result<(), EmulationError> {
         if cpu_mem.len() != 0x100 {
             Err(MemoryAccess(format!(
                 "Attempted OAM DMA write with size {:2X}, expected size {:2X}",
@@ -257,6 +284,9 @@ impl OamTable {
                 0x100
             )))
         } else {
+            for (index, chunk) in cpu_mem.chunks(4).enumerate() {
+                self.oam_entries[index] = OamEntry::try_from(chunk)?;
+            }
             Ok(())
         }
     }
@@ -300,7 +330,7 @@ struct PpuTile {
 struct PpuShiftRegisters {
     reg_high_plane: u16,
     reg_low_plane: u16,
-    palette_index_2: u16, // upper byte repeats lower
+    palette_index_2: u16, // upper byte replaces lower after 8 shifts
 }
 
 #[derive(Default)]
@@ -360,6 +390,7 @@ pub struct Ppu {
     // Rendering data
     shift_regs: PpuShiftRegisters,
     shift_index: usize,
+    secondary_oam: [Option<OamEntry>; 8],
 
     curr_output: PpuOutput,
     last_output: Option<PpuOutput>,
@@ -373,6 +404,7 @@ pub struct Ppu {
     // This suppression behavior is due to the $2002 read pulling the NMI line back up too quickly after it drops (NMI is active low) for the CPU to see it.
     // (CPU inputs like NMI are sampled each clock.)
     should_skip_vbl: bool,
+    read_buffer: u8,
 }
 
 impl Ppu {
@@ -561,7 +593,7 @@ impl Ppu {
         };
         let palette_index = ((attribute_table_entry >> attribute_shift) & 0b11) as u16;
         let mask = 0b0000_0000_1111_1111;
-        self.shift_regs.palette_index_2 = (self.shift_regs.palette_index_2 & !mask) | (palette_index & mask);
+        self.shift_regs.palette_index_2 = (self.shift_regs.palette_index_2 & !mask) | palette_index;
     }
 
     fn shift_registers_left(&mut self) {
@@ -616,7 +648,10 @@ impl Ppu {
                     // If rendering is enabled, the PPU increments the vertical position in v.
                     // The effective Y scroll coordinate is incremented, which is a complex operation that will correctly skip the attribute table memory regions,
                     // and wrap to the next nametable appropriately.
-                    self.increment_addr_y()
+                    self.increment_addr_y();
+
+                    // We also perform sprite evaluation here, to fill secondary OAM
+                    self.evaluate_sprites();
                 }
 
                 if self.curr_scanline_cycle == 257 {
@@ -624,6 +659,8 @@ impl Ppu {
                     // reg_v: .....A.. ...BCDEF <- reg_t: .....A.. ...BCDEF
                     let mask = 0b0000_0100_0001_1111;
                     self.reg_v = (self.reg_v & !mask) | (self.reg_t & mask);
+
+                    // We fill the sprite output units based on the sprite evaluation that was previously performed
                 }
 
                 if self.curr_scanline == 261 && self.curr_scanline_cycle >= 280 && self.curr_scanline_cycle <= 304 {
@@ -632,11 +669,9 @@ impl Ppu {
                     // the PPU will repeatedly copy the vertical bits from t to v from dots 280 to 304,
                     // completing the full initialization of v from t
                     // reg_v: .GHIA.BC DEF..... <- reg_t: .GHIA.BC DEF.....
-                    let mask = 0b0111_1011_1110_0000;
+                    let mask = 0b1111_1011_1110_0000;
                     self.reg_v = (self.reg_v & !mask) | (self.reg_t & mask);
                 }
-
-
             }
 
             if self.curr_scanline_cycle >= 257 && self.curr_scanline_cycle <= 320 {
@@ -644,10 +679,10 @@ impl Ppu {
             }
 
             if self.curr_scanline_cycle == 341
-                || self.curr_scanline == 261
+                || (self.curr_scanline == 261
                 && self.curr_scanline_cycle == 340
                 && self.is_odd_frame
-                && self.is_rendering_enabled()
+                && self.is_rendering_enabled())
             {
                 self.curr_scanline_cycle = 0;
                 self.curr_scanline += 1;
@@ -676,6 +711,7 @@ impl Ppu {
                 if self.should_skip_vbl {
                     self.should_skip_vbl = false;
                 }
+
             }
 
             self.curr_scanline_cycle += 1;
@@ -691,25 +727,62 @@ impl Ppu {
 
     #[inline]
     fn render_background(&mut self, pixel_x: usize, pixel_y: usize) {
-        let pixel_index_x = (15 - self.reg_x) as usize;
-        let pattern_bit_plane_low = (self.shift_regs.reg_low_plane >> pixel_index_x) & 0b1;
-        let pattern_bit_plane_high = (self.shift_regs.reg_high_plane >> pixel_index_x) & 0b1;
-
-        let palette_index = if pixel_index_x >= 8 {
-            (self.shift_regs.palette_index_2 >> 8) as u8
+        if pixel_x < 8 && !self.reg_mask.is_show_background_enabled_leftmost {
+            let color = self
+                .ppu_mem_map
+                .palette
+                .get_background_color(0, 0);
+            self.curr_output.data[pixel_y][pixel_x] = color;
         } else {
-            self.shift_regs.palette_index_2 as u8
-        } & 0b11;
+            let pixel_index_x = (15 - self.reg_x) as usize;
+            let pattern_bit_plane_low = (self.shift_regs.reg_low_plane >> pixel_index_x) & 0b1;
+            let pattern_bit_plane_high = (self.shift_regs.reg_high_plane >> pixel_index_x) & 0b1;
 
-        let color_index = (pattern_bit_plane_high << 1 | pattern_bit_plane_low) as u8;
-        let color = self
-            .ppu_mem_map
-            .palette
-            .get_background_color(palette_index, color_index);
+            let palette_index = if pixel_index_x >= 8 {
+                (self.shift_regs.palette_index_2 >> 8) as u8
+            } else {
+                self.shift_regs.palette_index_2 as u8
+            } & 0b11;
 
-        self.curr_output.data[pixel_y][pixel_x] = color;
+            let color_index = (pattern_bit_plane_high << 1 | pattern_bit_plane_low) as u8;
+            let color = self
+                .ppu_mem_map
+                .palette
+                .get_background_color(palette_index, color_index);
+
+            self.curr_output.data[pixel_y][pixel_x] = color;
+        }
+    }
+
+    #[inline]
+    fn evaluate_sprites(&mut self) {
+        self.secondary_oam = [None; 8];
+        self.reg_status.is_sprite_overflow = false;
+
+        let sprite_height_pixels = if self.reg_ctrl.sprite_height == 1 {
+            16
+        } else {
+            8
+        };
+
+        let next_scanline_index = ((self.curr_scanline + 1) % 262) as u8;
+
+        let mut num_found_sprites = 0;
+        for oam_entry in &self.ppu_mem_map.oam_table.oam_entries {
+            if next_scanline_index >= oam_entry.sprite_y && next_scanline_index <= oam_entry.sprite_y.wrapping_add(sprite_height_pixels) {
+                if num_found_sprites < 8 {
+                    self.secondary_oam[num_found_sprites] = Some(*oam_entry);
+                    num_found_sprites += 1;
+                }  else {
+                    self.reg_status.is_sprite_overflow = true;
+                }
+            }
+
+        }
     }
 }
+
+//
 
 impl MemMapped for Ppu {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
@@ -748,8 +821,9 @@ impl MemMapped for Ppu {
             }
             7 => {
                 // PPUDATA
-                let data = self.ppu_mem_map.read(self.reg_v)?;
+                let data = self.read_buffer;
                 if self.is_mutating_read() {
+                    self.read_buffer = self.ppu_mem_map.read(self.reg_v)?;
                     self.increment_addr_read();
                 }
                 Ok(data)
@@ -771,11 +845,10 @@ impl MemMapped for Ppu {
                     self.nmi_pending = true;
                 }
 
-                // reg_t: ...GH.. ........ <- byte: ......GH
-                let name_table_index = (byte & BIT_MASK_2) as u16;
-                let mask: u16 = !0b0000_1100_0000_0000;
-                self.reg_t &= mask;
-                self.reg_t |= name_table_index << 10;
+                // reg_t: ....GH.. ........ <- byte: ......GH
+                let name_table_index = ((byte & BIT_MASK_2) as u16) << 10;
+                let mask: u16 = 0b0000_1100_0000_0000;
+                self.reg_t = (self.reg_t & !mask) | (name_table_index & mask);
                 Ok(())
             }
             1 => Ok(self.reg_mask.write(byte)),

@@ -2,6 +2,7 @@
 
 use std::array;
 use std::cell::RefCell;
+use std::cmp::max;
 use std::rc::Rc;
 use core::errors::EmulationError;
 use core::mappers;
