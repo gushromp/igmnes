@@ -1,6 +1,7 @@
 mod mapper_000;
 
 use std::cell::RefCell;
+use std::ops::Range;
 use std::rc::Rc;
 use self::mapper_000::NRom;
 use core::memory::MemMapped;
@@ -19,6 +20,8 @@ pub trait CpuMapper : MemMapped {
 pub trait PpuMapper : MemMapped {
     // Reads from CHR ROM
     fn read_chr_rom(&self, index: u16) -> Result<u8, EmulationError>;
+    fn read_chr_rom_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError>;
+
     // Reads/Writes to CHR RAM
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError>;
     fn write_chr_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;

@@ -11,7 +11,7 @@ const DEFAULT_PALETTE_SUBPATH: &str = "palette/DigitalPrime.pal";
 
 const PALETTE_COLOR_BYTE_LEN: usize = 3;
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 #[repr(C)]
 pub struct PpuPaletteColor {
     pub red: u8,
@@ -89,10 +89,9 @@ impl PpuPalette {
         Self::load(&default_palette_path)
     }
 
-    pub fn get_background_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor
-    {
+    pub fn get_background_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor {
         if color_index == 0 {
-            self.colors[self.mapping[0]]
+            self.get_transparent_color()
         } else {
             let base_mapping_index = match palette_index {
                 0 => 0x1,
@@ -100,11 +99,36 @@ impl PpuPalette {
                 2 => 0x9,
                 3 => 0xD,
                 _ => unreachable!()
-            } as usize;
+            };
             let mapping_index = base_mapping_index + color_index as usize - 1;
             let color_index = self.mapping[mapping_index];
             self.colors[color_index]
         }
+    }
+
+    pub fn get_sprite_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor {
+        if color_index == 0 {
+            self.get_transparent_color()
+        } else {
+            let base_mapping_index = match palette_index {
+                0 => 0x11,
+                1 => 0x15,
+                2 => 0x19,
+                3 => 0x1D,
+                _ => unreachable!()
+            };
+            let mapping_index = base_mapping_index + color_index as usize - 1;
+            let color_index = self.mapping[mapping_index];
+            self.colors[color_index]
+        }
+    }
+
+    pub fn get_transparent_color(&self) -> PpuPaletteColor {
+        self.colors[self.mapping[0]]
+    }
+
+    pub fn is_transparent_color(&self, color: &PpuPaletteColor) -> bool {
+        *color == self.colors[self.mapping[0]]
     }
 }
 

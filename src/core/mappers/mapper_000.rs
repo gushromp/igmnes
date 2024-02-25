@@ -1,3 +1,4 @@
+use std::ops::Range;
 use core::mappers::{CpuMapper, Mapper, PpuMapper};
 use core::memory::{MemMapped, Ram};
 use core::rom::{MirroringMode, Rom};
@@ -77,6 +78,10 @@ impl PpuMapper for NRom {
         }
     }
 
+    fn read_chr_rom_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+        Ok(self.chr_rom_bytes[range.start as usize .. range.end as usize].to_vec())
+    }
+
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {
         Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index)))
 
@@ -113,6 +118,14 @@ impl MemMapped for NRom {
 
             }
         }
+    }
+
+    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+        match range.start {
+            0..=0x1FFF => self.read_chr_rom_range(range),
+            _ => unimplemented!()
+        }
+
     }
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {

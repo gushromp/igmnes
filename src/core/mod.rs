@@ -321,7 +321,7 @@ impl Core {
             let current_time = PreciseTime::now();
             let diff = previous_input_polling_time.to(current_time).num_nanoseconds();
             if let Some(nanos) = diff {
-                if nanos > 1800 {
+                if nanos > 1600 {
                     previous_input_polling_time = current_time;
                     let keyboard_state = events.keyboard_state();
                     let keys = keyboard_state

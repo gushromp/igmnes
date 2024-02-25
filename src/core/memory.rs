@@ -26,12 +26,8 @@ pub trait MemMapped {
         Ok(word)
     }
 
-    fn read_range(&mut self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        let mut vec = Vec::with_capacity(range.len());
-        for index in range {
-            vec.push(self.read(index)?);
-        }
-        Ok(vec)
+    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+        Ok(vec![])
     }
     
     fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {

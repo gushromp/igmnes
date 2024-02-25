@@ -162,7 +162,7 @@ impl ApuChannel for Pulse {
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0
+        self.enabled && self.length_counter > 0 && self.timer_counter >= 8
     }
 
     fn clock_timer(&mut self) {

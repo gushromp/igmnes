@@ -3,6 +3,7 @@
 use std::array;
 use std::cell::RefCell;
 use std::cmp::max;
+use std::ops::Range;
 use std::rc::Rc;
 use core::errors::EmulationError;
 use core::mappers;
@@ -44,8 +45,8 @@ impl PpuMemMap {
     }
 
     pub fn fetch_attribute_table_entry(&mut self, reg_v: u16) -> Result<u8, EmulationError> {
-        // attribute address = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
-        let attribute_table_entry_addr = 0x23C0 | (reg_v & 0x0C00) | ((reg_v >> 4) & 0x38) | ((reg_v >> 2) & 0x07);
+        // attribute address =                 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
+        let attribute_table_entry_addr  = 0x23C0 | (reg_v & 0x0C00) | ((reg_v >> 4) & 0x38) | ((reg_v >> 2) & 0x07);
         self.read(attribute_table_entry_addr)
     }
 
@@ -74,6 +75,17 @@ impl PpuMemMap {
         let pattern_table_byte_low = self.read(pattern_table_addr_low).unwrap();
         let pattern_table_byte_high = self.read(pattern_table_addr_high).unwrap();
         Ok([pattern_table_byte_low, pattern_table_byte_high])
+    }
+
+    pub fn fetch_sprite_pattern(&mut self, pattern_table_index: u8, pattern_entry_index: u8) -> Result<[u8; 16], EmulationError> {
+        let base_addr = (pattern_table_index as u16) << 12;
+        let pattern_entry_addr = base_addr + (pattern_entry_index as u16 * 16);
+
+        let byte_slice = self.read_range(pattern_entry_addr..pattern_entry_addr + 16)?;
+        let result: [u8; 16] = array::from_fn(|index| {
+            byte_slice[index]
+        });
+        Ok(result)
     }
 }
 
@@ -107,6 +119,10 @@ impl MemMapped for PpuMemMap {
             }
             _ => unreachable!()
         }
+    }
+
+    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+        self.mapper.borrow_mut().read_range(range)
     }
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
