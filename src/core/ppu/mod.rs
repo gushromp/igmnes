@@ -326,7 +326,7 @@ struct SecondaryOamEntry {
     sprite_index: usize,
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct SpriteOutputUnit {
     secondary_oam_entry: SecondaryOamEntry,
     pattern_data: [[u8; 2]; 8],
@@ -674,9 +674,11 @@ impl Ppu {
                 let sprite_pixel = self.get_sprite_pixel(pixel_x, pixel_y);
 
                 let is_sprite_color_transparent = self.ppu_mem_map.palette.is_transparent_color(&sprite_pixel.color);
+                let is_background_color_transparent = self.ppu_mem_map.palette.is_transparent_color(&background_color);
 
-                let output_pixel = match (sprite_pixel.priority, is_sprite_color_transparent) {
-                    (OamAttributePriority::FRONT, false) => sprite_pixel.color,
+                let output_pixel = match (sprite_pixel.priority, is_sprite_color_transparent, is_background_color_transparent) {
+                    (OamAttributePriority::FRONT, false, _) |
+                    (OamAttributePriority::BACK, false, true) => sprite_pixel.color,
                     _ => background_color
                 };
 
@@ -827,10 +829,11 @@ impl Ppu {
         for unit in self.sprite_output_units.units.iter().flat_map(|unit| unit).rev() {
             let sprite_first_pixel_x = unit.secondary_oam_entry.oam_entry.sprite_x as usize;
             let sprite_first_pixel_y = (unit.secondary_oam_entry.oam_entry.sprite_y + 1) as usize;
-            if pixel_x < sprite_first_pixel_x || pixel_x > sprite_first_pixel_x + 7 {
+            let sprite_index_y = pixel_y - sprite_first_pixel_y;
+            if pixel_x < sprite_first_pixel_x || pixel_x > sprite_first_pixel_x + 7 || sprite_index_y > 7 {
                 continue;
             }
-            let sprite_index_y = pixel_y - sprite_first_pixel_y;
+            
             let pixel_line = unit.pattern_data[sprite_index_y];
 
             let pixel_index_x = pixel_x - unit.secondary_oam_entry.oam_entry.sprite_x as usize;
@@ -854,7 +857,6 @@ impl Ppu {
     #[inline]
     fn evaluate_sprites(&mut self) {
         self.secondary_oam = [None; 8];
-        self.reg_status.is_sprite_overflow = false;
 
         let sprite_height_pixels = if self.reg_ctrl.sprite_height == 1 {
             16
@@ -862,13 +864,11 @@ impl Ppu {
             8
         };
 
-        let next_scanline_index = ((self.curr_scanline + 1) % 262) as u8;
-
-
+        let next_scanline_index = ((self.curr_scanline + 1) % 262) as usize;
         let mut num_found_sprites = 0;
         for (sprite_index, oam_entry) in self.ppu_mem_map.oam_table.oam_entries.iter().enumerate() {
-            let sprite_y_shifted = oam_entry.sprite_y.wrapping_add(1);
-            if next_scanline_index >= sprite_y_shifted && next_scanline_index < sprite_y_shifted.wrapping_add(sprite_height_pixels) {
+            let sprite_y_shifted = oam_entry.sprite_y.wrapping_add(1) as usize;
+            if next_scanline_index >= sprite_y_shifted && next_scanline_index < sprite_y_shifted + sprite_height_pixels {
                 if num_found_sprites < 8 {
                     self.secondary_oam[num_found_sprites] = Some(SecondaryOamEntry { oam_entry: *oam_entry, sprite_index });
                     num_found_sprites += 1;
@@ -881,6 +881,8 @@ impl Ppu {
 
     #[inline]
     fn prepare_sprite_units(&mut self) {
+        self.sprite_output_units.units = [None; 8];
+
         for (index, secondary_oam_entry) in self.secondary_oam.iter().enumerate() {
             let unit = match secondary_oam_entry {
                 Some(secondary_oam_entry) => {
@@ -934,7 +936,7 @@ impl Ppu {
 impl MemMapped for Ppu {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match index {
-            0 | 1 | 3 | 5 | 6 => Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
+            0 | 1 | 3 | 5 | 6 => Ok(0), // Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
             2 => {
                 // PPUSTATUS
                 let value = self.reg_status.read();

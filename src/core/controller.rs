@@ -56,7 +56,7 @@ impl Controller {
             // After 8 bits are read, all subsequent bits will report 1 on a standard NES controller,
             // but third party and other controllers may report other values here.
             if self.read_index == 8 {
-                0b1
+                0b0
             } else {
                 let result = (self.button_state >> self.read_index) & 0b1;
                 self.read_index += 1;

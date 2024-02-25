@@ -233,8 +233,8 @@ impl Core {
                 let current_time = PreciseTime::now();
                 let nanos = previous_tick_time.to(current_time).num_nanoseconds();
                 let should_tick = match nanos {
-                    Some(nanos) => { nanos > 599},
-                    None => { true }
+                    Some(nanos) => { nanos > 558 },
+                    None => { false }
                 };
                 if should_tick {
                     let current_cycle_count = self.cpu_facade.cpu().cycle_count;
@@ -273,8 +273,6 @@ impl Core {
                                 self.cpu_facade.ppu().clear_nmi();
                                 self.cpu_facade.nmi(true);
                             }
-
-
                         },
                         Err(error) => match error {
                             EmulationError::DebuggerBreakpoint(_addr) |
@@ -321,7 +319,7 @@ impl Core {
             let current_time = PreciseTime::now();
             let diff = previous_input_polling_time.to(current_time).num_nanoseconds();
             if let Some(nanos) = diff {
-                if nanos > 1600 {
+                if nanos > 1800 {
                     previous_input_polling_time = current_time;
                     let keyboard_state = events.keyboard_state();
                     let keys = keyboard_state
@@ -332,22 +330,24 @@ impl Core {
             }
 
             let current_time = PreciseTime::now();
-            if previous_render_time.to(current_time).num_milliseconds() > 16 {
-                previous_render_time = current_time;
+            let nanos = previous_render_time.to(current_time).num_nanoseconds();
+            if let Some(nanos) = nanos {
+                if nanos > 16600000 {
+                    previous_render_time = current_time;
 
 
-                // Rendering
-                if let Some(output) = self.cpu_facade.ppu().get_output() {
+                    // Rendering
+                    if let Some(output) = self.cpu_facade.ppu().get_output() {
+                        unsafe {
+                            let pointer = ptr::addr_of!(*output.data);
+                            let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
+                            let mut data = *pointer_arr;
 
-                    unsafe {
-                        let pointer = ptr::addr_of!(*output.data);
-                        let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
-                        let mut data = *pointer_arr;
-
-                        let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256*3, PixelFormatEnum::RGB24).unwrap();
-                        let tex = surface.as_texture(&texture_creator).unwrap();
-                        renderer.copy(&tex, None, None).unwrap();
-                        renderer.present();
+                            let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
+                            let tex = surface.as_texture(&texture_creator).unwrap();
+                            renderer.copy(&tex, None, None).unwrap();
+                            renderer.present();
+                        }
                     }
                 }
             }
