@@ -96,7 +96,7 @@ impl PpuMapper for NRom {
         let index = index - 0x2000;
         match self.mirroring_mode {
             MirroringMode::Horizontal => ((index / 0x800) * 0x400) + (index % 0x400),
-            MirroringMode::Vertical => min(index % 0x800 + 2, 2047)
+            MirroringMode::Vertical => index % 0x800
         }
     }
 }
