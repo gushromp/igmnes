@@ -12,7 +12,7 @@ use core::errors::EmulationError::MemoryAccess;
 
 use core::memory::MemMapped;
 use core::ppu::memory::PpuMemMap;
-use core::ppu::palette::PpuPaletteColor;
+use core::ppu::palette::{PpuPalette, PpuPaletteColor};
 
 const BIT_MASK: u8 = 0b0000_0001;
 const BIT_MASK_2: u8 = 0b0000_0011;
@@ -590,10 +590,6 @@ impl Ppu {
         self.curr_scanline_cycle = 0;
     }
 
-    pub fn get_output(&mut self) -> &Option<PpuOutput> {
-        &self.last_output
-    }
-
     pub fn should_suppress_nmi(&self) -> bool {
         self.should_skip_vbl
     }
@@ -770,11 +766,16 @@ impl Ppu {
                 self.reg_status.is_sprite_0_hit = false;
             }
 
-            if self.is_rendering_enabled()
-                && self.curr_scanline == 240
+            // if self.is_rendering_enabled() &&
+                if self.curr_scanline == 240
                 && self.curr_scanline_cycle == 1
             {
-                self.last_output = Some(self.curr_output.clone())
+                if self.is_rendering_enabled() {
+                    self.last_output = Some(self.curr_output.clone())
+                } else {
+                    let transparent_color = self.ppu_mem_map.palette.get_transparent_color();
+                    self.last_output = Some(PpuOutput { data: Box::new([[transparent_color; 256]; 240]) })
+                }
             }
 
             if self.curr_scanline == 262 {
@@ -925,6 +926,18 @@ impl Ppu {
             };
             self.sprite_output_units.units[index] = unit;
         }
+    }
+
+    pub fn is_frame_ready(&self) -> bool {
+        self.last_output.is_some()
+    }
+
+    pub fn get_frame(&mut self) -> Box<[[PpuPaletteColor; 256]; 240]> {
+        if self.last_output.is_none() {
+            unimplemented!()
+        }
+        let frame = std::mem::replace(&mut self.last_output, None);
+        frame.unwrap().data
     }
 
 }

@@ -4,9 +4,12 @@ use core::errors::EmulationError;
 
 // Actually it's (super::MASTER_CLOCK_NTSC / super::CLOCK_DIVISOR_NTSC) but
 // we need something divisible by 240
-// const APU_SAMPLE_RATE: usize = 1_789_920;
-const APU_SAMPLE_RATE: usize = 1_786_800;
-const OUTPUT_SAMPLE_RATE: usize = 48_000;
+// const APU_SAMPLE_RATE: usize = 1_789_000;
+const APU_SAMPLE_RATE: usize = 1_789_773;
+// const APU_SAMPLE_RATE: usize = 1_776_000;
+const OUTPUT_SAMPLE_RATE: usize = 44_100;
+
+const SAMPLE_RATE_REMAINDER: f32 = 0.2869375;
 
 const SAMPLE_AVERAGE_COUNT: usize = 4;
 const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
@@ -130,14 +133,16 @@ impl Sweep {
             timer
         };
 
+        if self.enabled {
         if self.divider == 0 || self.reload_flag {
             self.divider = self.period;
             self.reload_flag = false;
         } else {
             self.divider -= 1;
         }
+            }
 
-        self.should_mute = timer < 8 || timer > 0x7FF || new_timer > 0x7FF;
+        self.should_mute = timer <= 8 ||  new_timer > 0x7FF;
         new_timer
     }
 }
@@ -737,6 +742,7 @@ pub struct Apu {
 
     nes_samples: Vec<f32>,
     out_samples: Vec<f32>,
+    sample_rate_current_remainder: f32,
 }
 
 impl Default for Apu {
@@ -768,6 +774,7 @@ impl Default for Apu {
 
             nes_samples: Vec::new(),
             out_samples: Vec::new(),
+            sample_rate_current_remainder: 0.0
         }
     }
 }
@@ -803,12 +810,15 @@ impl Apu {
         apu
     }
 
-    pub fn get_out_samples(&mut self, num_samples: usize) -> Option<Drain<f32>> {
-        if num_samples < self.out_samples.len() {
-            Some(self.out_samples.drain(..))
+    pub fn get_out_samples(&mut self) -> Option<Vec<f32>> {
+        if !self.out_samples.is_empty() {
+            let samples = self.out_samples.clone();
+            self.out_samples.clear();
+            Some(samples)
         } else {
             None
         }
+
     }
 
     fn read_status(&self) -> u8 {
@@ -892,15 +902,26 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        if self.nes_samples.len() < APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE + 1 { return; }
+        self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;
+        let target_samples_count = if self.sample_rate_current_remainder > 1.0 {
+            self.sample_rate_current_remainder -= 1.0;
+            (APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE) + 1
+        } else {
+            APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE
+        };
+        if self.nes_samples.len() < target_samples_count { return }
+
         let sum = self.nes_samples.iter().cloned().reduce(|a, b| a + b);
         if let Some(sum) = sum {
             let avg = sum / self.nes_samples.len() as f32;
             self.out_samples.push(avg);
         }
 
-        // if self.nes_samples.len() < OUTPUT_SAMPLE_RATE * SAMPLE_RATE_RATIO { return; }
-        //
+        self.nes_samples.clear();
+
+        // if self.nes_samples.len() < OUTPUT_SAMPLE_RATE { return }
+        // //
+        // // let samples_to_average: Vec<f32> = self.nes_samples.iter().copied().step_by(SAMPLE_RATE_RATIO).collect();
         // let samples_to_average: Vec<f32> = self.nes_samples.iter().copied().step_by(SAMPLE_RATE_RATIO).collect();
         // for samples in samples_to_average.chunks(SAMPLE_AVERAGE_COUNT) {
         //     let avg_sample = samples.iter().copied().reduce(|a, b| a + b).map(|sample| sample / SAMPLE_AVERAGE_COUNT as f32);
@@ -909,7 +930,6 @@ impl Apu {
         //     }
         // }
 
-        self.nes_samples.clear();
     }
 
     fn clock_frame_counter(&mut self) {

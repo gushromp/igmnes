@@ -16,7 +16,7 @@ mod controller;
 
 use std::error::Error;
 use std::path::Path;
-use std::{mem, ptr};
+use std::{mem, ptr, slice};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -192,7 +192,7 @@ impl Core {
         let audio_subsystem = sdl_context.audio().unwrap();
         //
         let audio_spec_desired = AudioSpecDesired {
-            freq: Some(48_000),
+            freq: Some(44_100),
             channels: Some(1),
             samples: Some(256),
         };
@@ -227,21 +227,35 @@ impl Core {
         let start_time = Instant::now();
         let mut previous_render_time = start_time;
         let mut previous_tick_time = start_time;
-        let mut previous_input_polling_time = start_time;
-        let mut previous_cycles = self.cpu_facade.cpu().cycle_count;
 
         'running: loop {
             tracer.start_new_trace();
 
-            if self.is_running {
-                let current_cycles = self.cpu_facade.cpu().cycle_count;
-                let cycle_diff = (current_cycles - previous_cycles) as u128;
-                previous_cycles = current_cycles;
-                let current_time = Instant::now();
-                let nanos = current_time.duration_since(previous_tick_time).as_nanos();
 
-                let should_tick = nanos > 230 * cycle_diff;
-                if should_tick {
+            if self.is_running {
+                // Events
+                for event in events.poll_iter() {
+                    match event {
+                        Event::Quit { .. } => break 'running,
+                        Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                            let debugger = self.attach_debugger();
+
+                            if !debugger.is_listening() {
+                                debugger.start_listening();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                while !self.cpu_facade.ppu().is_frame_ready() {
+                    // Input
+                    let keyboard_state = events.keyboard_state();
+                    let keys = keyboard_state
+                        .pressed_scancodes()
+                        .filter_map(Keycode::from_scancode);
+                    self.set_controllers_state(keys);
+
                     let current_cycle_count = self.cpu_facade.cpu().cycle_count;
 
                     let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
@@ -290,67 +304,64 @@ impl Core {
                         }
                     }
                 }
-                let apu = self.cpu_facade.apu();
 
-                // let remaining_samples = audio_queue.spec().freq - audio_queue.size() as i32;
-                // if remaining_samples > 0 {
-                //     if let Some(out_samples) = apu.get_out_samples(remaining_samples as usize + 1) {
-                //         audio_queue.queue_audio(out_samples.as_ref()).unwrap();
-                //     }
+
+
+            }
+            previous_tick_time = Instant::now();
+
+            let apu = self.cpu_facade.apu();
+            if let Some(samples) = apu.get_out_samples() {
+                // let sample_rate = audio_queue.spec().freq;
+                // let surplus_samples = sample_rate - audio_queue.size() as i32;
+                // //
+                // // if audio_queue.size() as i32 > sample_rate {
+                // //     println!("Overflow")
+                // // }
+                // //
+                // // if surplus_samples < 0 {
+                // //     println!("Overflow")
+                // // } else {
+                // //     let range_upper = std::cmp::min(samples.len(), surplus_samples as usize);
+                // //     audio_queue.queue_audio(&samples[..range_upper]).unwrap();
+                // // }
+                // if surplus_samples > 0 {
+                //     let range_upper = std::cmp::min(samples.len(), surplus_samples as usize);
+                //     audio_queue.queue_audio(&samples[..range_upper]).unwrap();
                 // }
-                if let Some(out_samples) = apu.get_out_samples(2048) {
-                    audio_queue.queue_audio(out_samples.as_ref()).unwrap();
-                }
-
-                previous_tick_time = Instant::now();
+                audio_queue.queue_audio(&samples).unwrap();
             }
 
-            // Events
-            for event in events.poll_iter() {
-                match event {
-                    Event::Quit { .. } => break 'running,
-                    Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
-                        let debugger = self.attach_debugger();
+            // Rendering
+            let frame = self.cpu_facade.ppu().get_frame();
+            unsafe {
+                let pointer = ptr::addr_of!(*frame);
+                let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
+                let mut data = *pointer_arr;
 
-                        if !debugger.is_listening() {
-                            debugger.start_listening();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            // Input
-            let current_time = Instant::now();
-            let nanos = current_time.duration_since(previous_input_polling_time).as_nanos();
-            if nanos > 2500 {
-                previous_input_polling_time = current_time;
-                let keyboard_state = events.keyboard_state();
-                let keys = keyboard_state
-                    .pressed_scancodes()
-                    .filter_map(Keycode::from_scancode);
-                self.set_controllers_state(keys);
+                let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
+                let tex = surface.as_texture(&texture_creator).unwrap();
+                renderer.copy(&tex, None, None).unwrap();
+                renderer.present();
             }
 
             let current_time = Instant::now();
-            let nanos = current_time.duration_since(previous_render_time).as_nanos() as u32;
-            if nanos > 16600000 {
-                previous_render_time = current_time;
+            let millis = (current_time.duration_since(previous_render_time).as_millis() + current_time.duration_since(previous_tick_time).as_millis()) as u32;
+            let nanos = (current_time.duration_since(previous_render_time).as_nanos() + current_time.duration_since(previous_tick_time).as_nanos()) as u32;
 
-                // Rendering
-                if let Some(output) = self.cpu_facade.ppu().get_output() {
-                    unsafe {
-                        let pointer = ptr::addr_of!(*output.data);
-                        let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
-                        let mut data = *pointer_arr;
+            // let remaining_samples = (millis * 48) as i32 - audio_queue.size() as i32;
+            // if remaining_samples > 0 {
+            //     println!("UNDERRUN");
+            // } else {
+            //     println!("{}", remaining_samples)
+            // }
 
-                        let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
-                        let tex = surface.as_texture(&texture_creator).unwrap();
-                        renderer.copy(&tex, None, None).unwrap();
-                        renderer.present();
-                    }
-                }
+            if nanos < NANOS_PER_FRAME {
+                std::thread::sleep(Duration::new(0, NANOS_PER_FRAME - nanos));
             }
+
+            let current_time = Instant::now();
+            previous_render_time = current_time;
         }
 
         if tracer.has_traces() {
