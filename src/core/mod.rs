@@ -1,6 +1,5 @@
 extern crate sdl2;
-extern crate time;
-extern crate bmp;
+extern crate shuteye;
 
 mod debugger;
 mod mappers;
@@ -18,17 +17,18 @@ mod controller;
 use std::error::Error;
 use std::path::Path;
 use std::{mem, ptr};
+use std::cmp::max;
 use std::collections::HashMap;
 use std::ops::Deref;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::pixels::PixelFormatEnum;
 use sdl2::audio::AudioSpecDesired;
-use time::Duration;
 use core::controller::Controller;
 use core::debug::Tracer;
 use core::dma::Dma;
-use self::time::PreciseTime;
+use std::time::{Duration, Instant};
+use self::shuteye::sleep;
 use self::memory::*;
 use self::cpu::Cpu;
 use self::ppu::Ppu;
@@ -38,17 +38,21 @@ use self::debugger::Debugger;
 use self::debugger::frontends::terminal::TerminalDebugger;
 use self::errors::EmulationError;
 
-pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32; // 21.477272 MHz
+pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32;
+// 21.477272 MHz
 pub const CPU_CLOCK_DIVISOR_NTSC: f32 = 12.0;
 
 pub const CPU_CLOCK_RATIO_NTSC: f32 = MASTER_CLOCK_NTSC / CPU_CLOCK_DIVISOR_NTSC;
 pub const PPU_CLOCK_DIVISOR_NTSC: f32 = 4.0;
 pub const PPU_STEPS_PER_CPU_STEP_NTSC: usize = (CPU_CLOCK_DIVISOR_NTSC / PPU_CLOCK_DIVISOR_NTSC) as usize;
 
-const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32; // 26.601712 MHz
+const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32;
+// 26.601712 MHz
 const CLOCK_DIVISOR_PAL: i32 = 15;
 
 const WINDOW_SCALING: u32 = 3;
+
+const NANOS_PER_FRAME: u32 = 16_666_667;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -70,12 +74,11 @@ pub trait CpuFacade {
     fn irq(&mut self);
 
     fn mem_map(&self) -> &CpuMemMap;
-
 }
 
 struct DefaultCpuFacade {
     cpu: Cpu,
-    mem_map: CpuMemMap
+    mem_map: CpuMemMap,
 }
 
 impl DefaultCpuFacade {
@@ -221,21 +224,23 @@ impl Core {
             self.cpu_facade.cpu().reg_pc = entry_point;
         }
 
-        let start_time = PreciseTime::now();
+        let start_time = Instant::now();
         let mut previous_render_time = start_time;
         let mut previous_tick_time = start_time;
         let mut previous_input_polling_time = start_time;
+        let mut previous_cycles = self.cpu_facade.cpu().cycle_count;
 
         'running: loop {
             tracer.start_new_trace();
 
             if self.is_running {
-                let current_time = PreciseTime::now();
-                let nanos = previous_tick_time.to(current_time).num_nanoseconds();
-                let should_tick = match nanos {
-                    Some(nanos) => { nanos > 558 },
-                    None => { false }
-                };
+                let current_cycles = self.cpu_facade.cpu().cycle_count;
+                let cycle_diff = (current_cycles - previous_cycles) as u128;
+                previous_cycles = current_cycles;
+                let current_time = Instant::now();
+                let nanos = current_time.duration_since(previous_tick_time).as_nanos();
+
+                let should_tick = nanos > 230 * cycle_diff;
                 if should_tick {
                     let current_cycle_count = self.cpu_facade.cpu().cycle_count;
 
@@ -273,7 +278,7 @@ impl Core {
                                 self.cpu_facade.ppu().clear_nmi();
                                 self.cpu_facade.nmi(true);
                             }
-                        },
+                        }
                         Err(error) => match error {
                             EmulationError::DebuggerBreakpoint(_addr) |
                             EmulationError::DebuggerWatchpoint(_addr) => {
@@ -297,7 +302,7 @@ impl Core {
                     audio_queue.queue_audio(out_samples.as_ref()).unwrap();
                 }
 
-                previous_tick_time = PreciseTime::now();
+                previous_tick_time = Instant::now();
             }
 
             // Events
@@ -311,43 +316,38 @@ impl Core {
                             debugger.start_listening();
                         }
                     }
-                    _ => {},
+                    _ => {}
                 }
             }
 
             // Input
-            let current_time = PreciseTime::now();
-            let diff = previous_input_polling_time.to(current_time).num_nanoseconds();
-            if let Some(nanos) = diff {
-                if nanos > 1800 {
-                    previous_input_polling_time = current_time;
-                    let keyboard_state = events.keyboard_state();
-                    let keys = keyboard_state
-                        .pressed_scancodes()
-                        .filter_map(Keycode::from_scancode);
-                    self.set_controllers_state(keys);
-                }
+            let current_time = Instant::now();
+            let nanos = current_time.duration_since(previous_input_polling_time).as_nanos();
+            if nanos > 2500 {
+                previous_input_polling_time = current_time;
+                let keyboard_state = events.keyboard_state();
+                let keys = keyboard_state
+                    .pressed_scancodes()
+                    .filter_map(Keycode::from_scancode);
+                self.set_controllers_state(keys);
             }
 
-            let current_time = PreciseTime::now();
-            let nanos = previous_render_time.to(current_time).num_nanoseconds();
-            if let Some(nanos) = nanos {
-                if nanos > 16600000 {
-                    previous_render_time = current_time;
+            let current_time = Instant::now();
+            let nanos = current_time.duration_since(previous_render_time).as_nanos() as u32;
+            if nanos > 16600000 {
+                previous_render_time = current_time;
 
+                // Rendering
+                if let Some(output) = self.cpu_facade.ppu().get_output() {
+                    unsafe {
+                        let pointer = ptr::addr_of!(*output.data);
+                        let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
+                        let mut data = *pointer_arr;
 
-                    // Rendering
-                    if let Some(output) = self.cpu_facade.ppu().get_output() {
-                        unsafe {
-                            let pointer = ptr::addr_of!(*output.data);
-                            let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
-                            let mut data = *pointer_arr;
-
-                            let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
-                            let tex = surface.as_texture(&texture_creator).unwrap();
-                            renderer.copy(&tex, None, None).unwrap();
-                            renderer.present();
-                        }
+                        let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
+                        let tex = surface.as_texture(&texture_creator).unwrap();
+                        renderer.copy(&tex, None, None).unwrap();
+                        renderer.present();
                     }
                 }
             }
@@ -357,8 +357,8 @@ impl Core {
             tracer.write_to_file(Path::new("./trace.log"));
         }
 
-        let cur_time = PreciseTime::now();
-        let seconds = start_time.to(cur_time).num_milliseconds() as f64 / 1000.0;
+        let cur_time = Instant::now();
+        let seconds = cur_time.duration_since(start_time).as_millis() as f64 / 1000.0;
         println!("Cycles: {}", self.cpu_facade.cpu().cycle_count);
         println!("Seconds: {}", seconds);
         if seconds > 0.0 {
@@ -409,7 +409,7 @@ impl Core {
         dummy_facade
     }
 
-    fn set_controllers_state<I>(&mut self, state: I) where I: Iterator<Item = Keycode> {
+    fn set_controllers_state<I>(&mut self, state: I) where I: Iterator<Item=Keycode> {
         use core::controller::ControllerButton;
         let mut controller_1_state: Vec<ControllerButton> = vec![];
 

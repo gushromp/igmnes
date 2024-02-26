@@ -836,7 +836,7 @@ impl Ppu {
             
             let pixel_line = unit.pattern_data[sprite_index_y];
 
-            let pixel_index_x = pixel_x - unit.secondary_oam_entry.oam_entry.sprite_x as usize;
+            let pixel_index_x = 7 - (pixel_x - unit.secondary_oam_entry.oam_entry.sprite_x as usize);
             let pattern_bit_plane_low = (pixel_line[0] >> pixel_index_x) & 0b1;
             let pattern_bit_plane_high = (pixel_line[1] >> pixel_index_x) & 0b1;
 
@@ -896,21 +896,19 @@ impl Ppu {
                                 .unwrap();
 
                         if secondary_oam_entry.oam_entry.attributes.is_flipped_vertically {
-                            // let flipped_low_plane = pattern_data[0..8].iter().rev();
-                            // let flipped_high_plane = pattern_data[8..16].iter().rev();
-                            // let reversed_slice: &[u8] = flipped_low_plane.chain(flipped_high_plane).collect();
-                            // pattern_data = array::from_fn(|index| {
-                            //     reversed_slice[index]
-                            // });
+                            let flipped_low_plane: Vec<&u8> = pattern_data[0..8].iter().rev().collect();
+                            let flipped_high_plane: Vec<&u8> = pattern_data[8..16].iter().rev().collect();
+                            let reversed_slice: Vec<&&u8> = flipped_low_plane.iter().chain(flipped_high_plane.iter()).collect();
+                            pattern_data = array::from_fn(|index| {
+                                **reversed_slice[index]
+                            });
 
                         }
 
-                        if !secondary_oam_entry.oam_entry.attributes.is_flipped_horizontally {
+                        if secondary_oam_entry.oam_entry.attributes.is_flipped_horizontally {
                             for index in 0..pattern_data.len() {
                                 pattern_data[index] = pattern_data[index].reverse_bits();
                             }
-                            // pattern_data[0] = pattern_data[0].flip_nibbles();
-                            // pattern_data[1] = pattern_data[1].flip_nibbles();
                         }
 
                         let mut pattern_data_bitplanes: [[u8; 2]; 8] = [[0; 2]; 8];

@@ -59,14 +59,94 @@ trait ApuChannel {
 
     fn clock_envelope(&mut self);
 
+    fn clock_sweep(&mut self);
+
     fn output(&self) -> u8;
+}
+
+//
+// APU Envelope
+//
+#[derive(Debug, Default, Clone, Copy)]
+struct Envelope {
+    start: bool,
+    period: u8,
+    decay: u8,
+}
+
+impl Envelope {
+    fn clock(&mut self, volume: u8, env_loop: bool) {
+        if self.start {
+            self.start = false;
+            self.period = volume;
+            self.decay = 15;
+        } else {
+            if self.period == 0 {
+                self.period = volume;
+                if self.decay > 0 {
+                    self.decay -= 1;
+                } else if env_loop {
+                    self.decay = 15;
+                }
+            } else {
+                self.period -= 1;
+            }
+        }
+    }
+}
+
+//
+// APU Sweep
+//
+#[derive(Debug, Default, Clone, Copy)]
+struct Sweep {
+    enabled: bool,
+    period: u8,
+    negate: bool,
+    shift: u8,
+
+    divider: u8,
+    reload_flag: bool,
+
+    should_mute: bool
+}
+impl Sweep {
+    fn clock(&mut self, timer: u16) -> u16 {
+        let new_timer: u16 = if self.enabled && self.divider == 0 && self.shift > 0 {
+            if !self.should_mute {
+                let mut change_amount = (timer as i16) >> (self.shift as usize);
+                if self.negate {
+                    change_amount = -change_amount;
+                }
+                let mut result = (timer as i16) + change_amount;
+                if result < 0 {
+                    result = 0;
+                }
+                result as u16
+            } else {
+                timer
+            }
+        } else {
+            timer
+        };
+
+        if self.divider == 0 || self.reload_flag {
+            self.divider = self.period;
+            self.reload_flag = false;
+        } else {
+            self.divider -= 1;
+        }
+
+        self.should_mute = timer < 8 || timer > 0x7FF || new_timer > 0x7FF;
+        new_timer
+    }
 }
 
 //
 // Pulse channels
 //
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 struct Pulse {
     enabled: bool,
     // Duty for current APU frame
@@ -76,14 +156,9 @@ struct Pulse {
     constant_volume: bool,
     volume: u8,
     // Envelope
-    envelope_start: bool,
-    envelope_period: u8,
-    envelope_decay: u8,
+    envelope: Envelope,
     // Sweep:
-    sweep_enabled: bool,
-    sweep_period: u8,
-    sweep_negate: bool,
-    sweep_shift: u8,
+    sweep: Sweep,
     // Timer is 11-bit (bits 11-15 are disregarded)
     timer: u16,
     timer_counter: u16,
@@ -103,14 +178,15 @@ impl Pulse {
         self.lc_halt_env_loop = lc_halt_env_loop;
         // self.should_toggle_halt_lc = lc_halt_env_loop != self.lc_halt_env_loop;
 
-        self.envelope_start = true;
+        self.envelope.start = true;
     }
 
     fn write_epppnsss(&mut self, byte: u8) {
-        self.sweep_enabled = byte & 0b1000_0000 != 0;
-        self.sweep_period = (byte >> 4) & 0b111;
-        self.sweep_negate = byte & 0b0000_1000 != 0;
-        self.sweep_shift = byte & 0b111;
+        self.sweep.enabled = byte & 0b1000_0000 != 0;
+        self.sweep.period = (byte >> 4) & 0b111;
+        self.sweep.negate = byte & 0b0000_1000 != 0;
+        self.sweep.shift = byte & 0b111;
+        self.sweep.reload_flag = true;
     }
 
     fn write_tttttttt(&mut self, byte: u8) {
@@ -134,7 +210,7 @@ impl Pulse {
             0
         };
 
-        self.envelope_start = true;
+        self.envelope.start = true;
     }
 }
 
@@ -162,7 +238,7 @@ impl ApuChannel for Pulse {
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0 && self.timer_counter >= 8
+        self.enabled && self.length_counter > 0 && !self.sweep.should_mute
     }
 
     fn clock_timer(&mut self) {
@@ -191,22 +267,12 @@ impl ApuChannel for Pulse {
 
     fn clock_envelope(&mut self) {
         if !self.enabled || self.volume == 0 { return }
-        if self.envelope_start {
-            self.envelope_start = false;
-            self.envelope_period = self.volume;
-            self.envelope_decay = 15;
-        } else {
-            if self.envelope_period == 0 {
-                self.envelope_period = self.volume;
-                if self.envelope_decay > 0 {
-                    self.envelope_decay -= 1;
-                } else if self.lc_halt_env_loop {
-                    self.envelope_decay = 15;
-                }
-            } else {
-                self.envelope_period -= 1;
-            }
-        }
+        self.envelope.clock(self.volume, self.lc_halt_env_loop);
+    }
+
+    fn clock_sweep(&mut self) {
+        let new_timer = self.sweep.clock(self.timer);
+        self.timer = new_timer
     }
 
     fn output(&self) -> u8 {
@@ -215,7 +281,7 @@ impl ApuChannel for Pulse {
             let volume = if self.constant_volume {
                 self.volume
             } else {
-                self.envelope_decay
+                self.envelope.decay
             };
             waveform * volume
         } else {
@@ -338,6 +404,10 @@ impl ApuChannel for Triangle {
         // No envelope on this channel
     }
 
+    fn clock_sweep(&mut self) {
+        // No sweep on this channel
+    }
+
     fn output(&self) -> u8 {
         if self.is_audible() {
             let waveform = TRIANGLE_WAVEFORM[self.waveform_counter];
@@ -373,9 +443,7 @@ struct Noise {
     lc_halt_env_loop: bool,
     constant_volume: bool,
     // Envelope
-    envelope_start: bool,
-    envelope_period: u8,
-    envelope_decay: u8,
+    envelope: Envelope,
     looping: bool,
     period: u16,
     period_counter: u16,
@@ -391,7 +459,7 @@ impl Noise {
         self.volume = byte & 0b1111;
 
         if !self.constant_volume {
-            self.envelope_start = true;
+            self.envelope.start = true;
         }
     }
 
@@ -471,22 +539,11 @@ impl ApuChannel for Noise {
 
     fn clock_envelope(&mut self) {
         if !self.enabled { return }
-        if self.envelope_start {
-            self.envelope_start = false;
-            self.envelope_period = self.volume + 1;
-            self.envelope_decay = 15;
-        } else {
-            if self.envelope_period == 0 {
-                self.envelope_period = self.volume;
-                if self.envelope_decay > 0 {
-                    self.envelope_decay -= 1;
-                } else if self.lc_halt_env_loop {
-                    self.envelope_decay = 15;
-                }
-            } else {
-                self.envelope_period -= 1;
-            }
-        }
+        self.envelope.clock(self.volume, self.lc_halt_env_loop);
+    }
+
+    fn clock_sweep(&mut self) {
+        // No sweep on this channel
     }
 
     fn output(&self) -> u8 {
@@ -494,7 +551,7 @@ impl ApuChannel for Noise {
             if self.constant_volume {
                 self.volume
             } else {
-                self.envelope_decay
+                self.envelope.decay
             }
         } else {
             0
@@ -568,6 +625,11 @@ impl ApuChannel for DMC {
     fn clock_envelope(&mut self) {
         // No envelope on this channel
     }
+
+    fn clock_sweep(&mut self) {
+        // No sweep on this channel
+    }
+
     fn output(&self) -> u8 {
         0
     }
@@ -875,6 +937,7 @@ impl Apu {
                 channel.clock_length_counter();
 
                 // Sweep
+                channel.clock_sweep();
             }
         }
     }

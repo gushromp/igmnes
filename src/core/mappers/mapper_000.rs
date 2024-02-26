@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use std::ops::Range;
 use core::mappers::{CpuMapper, Mapper, PpuMapper};
 use core::memory::{MemMapped, Ram};
@@ -95,7 +96,7 @@ impl PpuMapper for NRom {
         let index = index - 0x2000;
         match self.mirroring_mode {
             MirroringMode::Horizontal => ((index / 0x800) * 0x400) + (index % 0x400),
-            MirroringMode::Vertical => index % 0x800
+            MirroringMode::Vertical => min(index % 0x800 + 2, 2047)
         }
     }
 }
