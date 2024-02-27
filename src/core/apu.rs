@@ -5,11 +5,13 @@ use core::errors::EmulationError;
 // Actually it's (super::MASTER_CLOCK_NTSC / super::CLOCK_DIVISOR_NTSC) but
 // we need something divisible by 240
 // const APU_SAMPLE_RATE: usize = 1_789_000;
-const APU_SAMPLE_RATE: usize = 1_789_773;
+// const APU_SAMPLE_RATE: usize = 1_789_773;
 // const APU_SAMPLE_RATE: usize = 1_776_000;
+const APU_SAMPLE_RATE: usize = 1_719_900;
+
 const OUTPUT_SAMPLE_RATE: usize = 44_100;
 
-const SAMPLE_RATE_REMAINDER: f32 = 0.585;
+const SAMPLE_RATE_REMAINDER: f32 = 0.5844;
 
 const SAMPLE_AVERAGE_COUNT: usize = 4;
 const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
@@ -64,6 +66,8 @@ trait ApuChannel {
 
     fn clock_sweep(&mut self);
 
+    fn set_muted(&mut self, is_muted: bool);
+
     fn output(&self) -> u8;
 }
 
@@ -106,44 +110,41 @@ struct Sweep {
     enabled: bool,
     period: u8,
     negate: bool,
+    is_twos_complement_negate: bool,
     shift: u8,
 
     divider: u8,
     reload_flag: bool,
 
-    should_mute: bool
+    should_mute: bool,
+    new_timer: u16,
 }
-impl Sweep {
-    fn clock(&mut self, timer: u16) -> u16 {
-        let new_timer: u16 = if self.enabled && self.divider == 0 && self.shift > 0 {
-            if !self.should_mute {
-                let mut change_amount = (timer as i16) >> (self.shift as usize);
-                if self.negate {
-                    change_amount *= -1;
-                }
-                let mut result = (timer as i16) + change_amount;
-                if result < 0 {
-                    result = 0;
-                }
-                result as u16
-            } else {
-                timer
-            }
-        } else {
-            timer
-        };
 
-        if self.enabled {
+impl Sweep {
+    fn clock(&mut self) -> bool {
+        let result = self.enabled && self.divider == 0 && self.shift > 0 && !self.should_mute;
+
         if self.divider == 0 || self.reload_flag {
             self.divider = self.period;
             self.reload_flag = false;
         } else {
             self.divider -= 1;
         }
-            }
 
-        self.should_mute = timer <= 8 ||  new_timer > 0x7FF;
-        new_timer
+        result
+    }
+
+    pub fn set_target_period(&mut self, timer: u16) {
+        let change_amount = timer >> (self.shift as usize);
+        let result = if self.negate {
+            timer.saturating_sub(change_amount + (!self.is_twos_complement_negate as u16))
+        } else {
+            timer.saturating_add(change_amount)
+        };
+
+        self.new_timer = result;
+        self.should_mute = timer < 8 || self.new_timer > 0x700;
+
     }
 }
 
@@ -171,19 +172,26 @@ struct Pulse {
     should_toggle_halt_lc: bool,
     lc_halt_env_loop: bool,
     length_counter: u8,
+
+    is_muted: bool,
 }
 
 impl Pulse {
+    fn new(is_sweep_twos_complement_negate: bool) -> Pulse {
+        let mut pulse = Pulse::default();
+        pulse.sweep.is_twos_complement_negate = is_sweep_twos_complement_negate;
+        pulse
+    }
     fn write_ddlcvvvv(&mut self, byte: u8) {
         self.duty = byte >> 6;
-        let lc_halt_env_loop = byte & 0b0010_0000 != 0;
+
         self.constant_volume = byte & 0b0001_0000 != 0;
         self.volume = byte & 0b1111;
 
-        self.lc_halt_env_loop = lc_halt_env_loop;
-        // self.should_toggle_halt_lc = lc_halt_env_loop != self.lc_halt_env_loop;
+        let lc_halt_env_loop = byte & 0b0010_0000 != 0;
 
-        self.envelope.start = true;
+        // self.should_toggle_halt_lc = lc_halt_env_loop != self.lc_halt_env_loop;
+        self.lc_halt_env_loop = lc_halt_env_loop;
     }
 
     fn write_epppnsss(&mut self, byte: u8) {
@@ -192,21 +200,24 @@ impl Pulse {
         self.sweep.negate = byte & 0b0000_1000 != 0;
         self.sweep.shift = byte & 0b111;
         self.sweep.reload_flag = true;
+        self.sweep.set_target_period(self.timer);
     }
 
     fn write_tttttttt(&mut self, byte: u8) {
         let timer_high = self.timer >> 8;
         let timer_low = byte as u16;
         self.timer = (timer_high << 8) | timer_low;
+        self.sweep.set_target_period(self.timer);
     }
 
     fn write_lllllttt(&mut self, byte: u8) {
         let timer_high = (byte & 0b111) as u16;
         let timer_low = self.timer & 0xFF;
         self.timer = (timer_high << 8) | timer_low;
+        self.sweep.set_target_period(self.timer);
 
-        self.timer_counter = self.timer + 1;
-        self.waveform_counter = 1;
+        self.timer_counter = self.timer;
+        self.waveform_counter = 0;
 
         let length_counter_index = (byte >> 3) as usize;
         self.length_counter = if self.enabled {
@@ -236,14 +247,13 @@ impl ApuChannel for Pulse {
 
     fn toggle_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
-
         if !enabled {
             self.length_counter = 0;
         }
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0 && !self.sweep.should_mute
+        self.enabled && self.length_counter > 0 && !self.sweep.should_mute && !self.is_muted
     }
 
     fn clock_timer(&mut self) {
@@ -261,23 +271,27 @@ impl ApuChannel for Pulse {
     }
 
     fn clock_length_counter(&mut self) {
-        if !self.enabled { return; }
+        if !self.enabled { return }
         if self.length_counter > 0 && !self.lc_halt_env_loop {
             self.length_counter -= 1;
-        }
-        if self.should_toggle_halt_lc {
-            self.lc_halt_env_loop = !self.lc_halt_env_loop;
         }
     }
 
     fn clock_envelope(&mut self) {
-        if !self.enabled || self.volume == 0 { return }
         self.envelope.clock(self.volume, self.lc_halt_env_loop);
     }
 
     fn clock_sweep(&mut self) {
-        let new_timer = self.sweep.clock(self.timer);
-        self.timer = new_timer
+        let should_set_timer = self.sweep.clock();
+
+        if should_set_timer {
+            self.timer = self.sweep.new_timer;
+            self.sweep.set_target_period(self.timer);
+        }
+    }
+
+    fn set_muted(&mut self, is_muted: bool) {
+        self.is_muted = is_muted
     }
 
     fn output(&self) -> u8 {
@@ -314,6 +328,8 @@ struct Triangle {
     timer_counter: u16,
 
     length_counter: u8,
+
+    is_muted: bool
 }
 
 impl Triangle {
@@ -369,7 +385,7 @@ impl ApuChannel for Triangle {
     }
 
     fn is_audible(&self) -> bool {
-        self.is_enabled() && self.linear_counter > 0
+        self.is_enabled() && self.linear_counter > 0 && !self.is_muted
     }
 
     fn clock_timer(&mut self) {
@@ -411,6 +427,10 @@ impl ApuChannel for Triangle {
 
     fn clock_sweep(&mut self) {
         // No sweep on this channel
+    }
+
+    fn set_muted(&mut self, is_muted: bool) {
+        self.is_muted = is_muted
     }
 
     fn output(&self) -> u8 {
@@ -455,6 +475,8 @@ struct Noise {
 
     shift_register: NoiseShiftRegister,
     length_counter: u8,
+
+    is_muted: bool,
 }
 
 impl Noise {
@@ -523,7 +545,7 @@ impl ApuChannel for Noise {
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0 && (self.shift_register.shift_register & 0b1) as u8 == 0
+        self.enabled && self.length_counter > 0 && (self.shift_register.shift_register & 0b1) as u8 == 0 && !self.is_muted
     }
 
     fn clock_timer(&mut self) {
@@ -536,19 +558,23 @@ impl ApuChannel for Noise {
     }
 
     fn clock_length_counter(&mut self) {
-        if !self.enabled { return }
+        if !self.enabled { return; }
         if self.length_counter > 0 && !self.lc_halt_env_loop {
             self.length_counter -= 1;
         }
     }
 
     fn clock_envelope(&mut self) {
-        if !self.enabled { return }
+        if !self.enabled { return; }
         self.envelope.clock(self.volume, self.lc_halt_env_loop);
     }
 
     fn clock_sweep(&mut self) {
         // No sweep on this channel
+    }
+
+    fn set_muted(&mut self, is_muted: bool) {
+        self.is_muted = is_muted
     }
 
     fn output(&self) -> u8 {
@@ -578,6 +604,8 @@ struct DMC {
     load_counter: u8,
     sample_address: u8,
     sample_length: u8,
+
+    is_muted: bool,
 }
 
 impl DMC {
@@ -633,6 +661,10 @@ impl ApuChannel for DMC {
 
     fn clock_sweep(&mut self) {
         // No sweep on this channel
+    }
+
+    fn set_muted(&mut self, is_muted: bool) {
+        self.is_muted = is_muted
     }
 
     fn output(&self) -> u8 {
@@ -748,9 +780,9 @@ pub struct Apu {
 
 impl Default for Apu {
     fn default() -> Apu {
-        let channels = [
-            Box::new(Pulse::default()) as Box<dyn ApuChannel>,
-            Box::new(Pulse::default()) as Box<dyn ApuChannel>,
+        let mut channels = [
+            Box::new(Pulse::new(false)) as Box<dyn ApuChannel>,
+            Box::new(Pulse::new(true)) as Box<dyn ApuChannel>,
             Box::new(Triangle::default()) as Box<dyn ApuChannel>,
             Box::new(Noise::default()) as Box<dyn ApuChannel>,
             Box::new(DMC::default()) as Box<dyn ApuChannel>
@@ -776,7 +808,7 @@ impl Default for Apu {
 
             nes_samples: Vec::new(),
             out_samples: Vec::new(),
-            sample_rate_current_remainder: 0.0
+            sample_rate_current_remainder: 0.0,
         }
     }
 }
@@ -820,10 +852,9 @@ impl Apu {
         } else {
             None
         }
-
     }
 
-    fn read_status(&self) -> u8 {
+    fn read_status(&mut self) -> u8 {
         let pulse1_enabled = self.channels[PULSE_1].is_enabled();
         let pulse2_enabled = self.channels[PULSE_2].is_enabled();
         let triangle_enabled = self.channels[TRIANGLE].is_enabled();
@@ -832,6 +863,8 @@ impl Apu {
 
         let frame_irq = self.frame_irq;
         let dmc_irq = self.dmc_irq;
+
+        self.frame_irq = false;
 
         let mut byte: u8 = 0;
 
@@ -880,7 +913,6 @@ impl Apu {
 
         self.frame_counter.set_mode(frame_counter_mode);
         self.frame_counter.delayed_reset = true;
-
     }
 
     fn clock_channel_output(&mut self) {
@@ -906,12 +938,12 @@ impl Apu {
     fn generate_output_samples(&mut self) {
         let target_samples_count = if self.sample_rate_current_remainder > 1.0 {
             self.sample_rate_current_remainder -= 1.0;
-            (APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE) + 1
+            41
         } else {
-            APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE
+            40
         };
 
-        if self.nes_samples.len() < target_samples_count { return }
+        if self.nes_samples.len() < 41 { return; }
         self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;
 
         let sum = self.nes_samples.iter().cloned().reduce(|a, b| a + b);

@@ -762,7 +762,7 @@ impl Ppu {
             }
 
             // if self.is_rendering_enabled() &&
-                if self.curr_scanline == 240
+                if self.curr_scanline == 241
                 && self.curr_scanline_cycle == 1
             {
                 if self.is_rendering_enabled() {
@@ -805,8 +805,8 @@ impl Ppu {
             let pixel_index_x = 15 - self.reg_x as usize;
             let pattern_bit_plane_low = (self.shift_regs.reg_low_plane >> pixel_index_x) & 0b1;
             let pattern_bit_plane_high = (self.shift_regs.reg_high_plane >> pixel_index_x) & 0b1;
-            let palette_index_high = (self.shift_regs.palette_index_high >> pixel_index_x) & 0b1;
-            let palette_index_low  = (self.shift_regs.palette_index_low >> pixel_index_x) & 0b1;
+            let palette_index_high = (self.shift_regs.palette_index_high >> pixel_index_x % 8) & 0b1;
+            let palette_index_low  = (self.shift_regs.palette_index_low >> pixel_index_x % 8) & 0b1;
             let palette_index = palette_index_high << 1 | palette_index_low;
             let color_index = (pattern_bit_plane_high << 1 | pattern_bit_plane_low) as u8;
 
