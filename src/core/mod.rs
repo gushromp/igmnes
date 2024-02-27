@@ -304,32 +304,20 @@ impl Core {
                         }
                     }
                 }
-
-
-
             }
             previous_tick_time = Instant::now();
 
             let apu = self.cpu_facade.apu();
             if let Some(samples) = apu.get_out_samples() {
-                // let sample_rate = audio_queue.spec().freq;
-                // let surplus_samples = sample_rate - audio_queue.size() as i32;
-                // //
-                // // if audio_queue.size() as i32 > sample_rate {
-                // //     println!("Overflow")
-                // // }
-                // //
-                // // if surplus_samples < 0 {
-                // //     println!("Overflow")
-                // // } else {
-                // //     let range_upper = std::cmp::min(samples.len(), surplus_samples as usize);
-                // //     audio_queue.queue_audio(&samples[..range_upper]).unwrap();
-                // // }
-                // if surplus_samples > 0 {
-                //     let range_upper = std::cmp::min(samples.len(), surplus_samples as usize);
-                //     audio_queue.queue_audio(&samples[..range_upper]).unwrap();
-                // }
-                audio_queue.queue_audio(&samples).unwrap();
+                let sample_rate = audio_queue.spec().freq;
+                let surplus_samples = sample_rate - audio_queue.size() as i32;
+
+                if audio_queue.size() as i32 > sample_rate {
+                    println!("Audio buffer overflow")
+                }
+
+                let samples_to_enqueue_len = std::cmp::min(samples.len(), surplus_samples as usize);
+                audio_queue.queue_audio(&samples[..samples_to_enqueue_len]).unwrap();
             }
 
             // Rendering

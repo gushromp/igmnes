@@ -9,7 +9,7 @@ const APU_SAMPLE_RATE: usize = 1_789_773;
 // const APU_SAMPLE_RATE: usize = 1_776_000;
 const OUTPUT_SAMPLE_RATE: usize = 44_100;
 
-const SAMPLE_RATE_REMAINDER: f32 = 0.2869375;
+const SAMPLE_RATE_REMAINDER: f32 = 0.585;
 
 const SAMPLE_AVERAGE_COUNT: usize = 4;
 const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
@@ -119,7 +119,7 @@ impl Sweep {
             if !self.should_mute {
                 let mut change_amount = (timer as i16) >> (self.shift as usize);
                 if self.negate {
-                    change_amount = -change_amount;
+                    change_amount *= -1;
                 }
                 let mut result = (timer as i16) + change_amount;
                 if result < 0 {
@@ -739,6 +739,7 @@ pub struct Apu {
     cpu_cycles: u64,
     apu_cycles: f64,
     next_irq_cycles: u64,
+    cpu_cycles_since_output: u64,
 
     nes_samples: Vec<f32>,
     out_samples: Vec<f32>,
@@ -771,6 +772,7 @@ impl Default for Apu {
             cpu_cycles: 0,
             apu_cycles: 0.0,
             next_irq_cycles: 0,
+            cpu_cycles_since_output: 0,
 
             nes_samples: Vec::new(),
             out_samples: Vec::new(),
@@ -902,14 +904,15 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;
         let target_samples_count = if self.sample_rate_current_remainder > 1.0 {
             self.sample_rate_current_remainder -= 1.0;
             (APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE) + 1
         } else {
             APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE
         };
+
         if self.nes_samples.len() < target_samples_count { return }
+        self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;
 
         let sum = self.nes_samples.iter().cloned().reduce(|a, b| a + b);
         if let Some(sum) = sum {
@@ -918,18 +921,6 @@ impl Apu {
         }
 
         self.nes_samples.clear();
-
-        // if self.nes_samples.len() < OUTPUT_SAMPLE_RATE { return }
-        // //
-        // // let samples_to_average: Vec<f32> = self.nes_samples.iter().copied().step_by(SAMPLE_RATE_RATIO).collect();
-        // let samples_to_average: Vec<f32> = self.nes_samples.iter().copied().step_by(SAMPLE_RATE_RATIO).collect();
-        // for samples in samples_to_average.chunks(SAMPLE_AVERAGE_COUNT) {
-        //     let avg_sample = samples.iter().copied().reduce(|a, b| a + b).map(|sample| sample / SAMPLE_AVERAGE_COUNT as f32);
-        //     if let Some(avg_sample) = avg_sample {
-        //         self.out_samples.push(avg_sample);
-        //     }
-        // }
-
     }
 
     fn clock_frame_counter(&mut self) {
