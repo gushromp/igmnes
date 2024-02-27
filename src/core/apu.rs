@@ -762,7 +762,6 @@ pub struct Apu {
     // Frame counter
     // Mode (M, 0 = 4-step, 1 = 5-step), IRQ inhibit flag (I), unused (U)
     frame_counter: FrameCounter,
-    delayed_frame_counter_write: Option<u8>,
 
     irq_inhibit: bool,
     frame_irq: bool,
@@ -780,7 +779,7 @@ pub struct Apu {
 
 impl Default for Apu {
     fn default() -> Apu {
-        let mut channels = [
+        let channels = [
             Box::new(Pulse::new(false)) as Box<dyn ApuChannel>,
             Box::new(Pulse::new(true)) as Box<dyn ApuChannel>,
             Box::new(Triangle::default()) as Box<dyn ApuChannel>,
@@ -789,13 +788,12 @@ impl Default for Apu {
         ];
 
         Apu {
-            channels: channels,
+            channels,
 
             pulse_table: [0.0; 31],
             tnd_table: [0.0; 203],
 
             frame_counter: FrameCounter::new(),
-            delayed_frame_counter_write: None,
 
             irq_inhibit: false,
             frame_irq: false,

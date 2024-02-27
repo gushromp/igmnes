@@ -52,7 +52,8 @@ const CLOCK_DIVISOR_PAL: i32 = 15;
 
 const WINDOW_SCALING: u32 = 3;
 
-const NANOS_PER_FRAME: u32 = 16_666_667;
+// const NANOS_PER_FRAME: u32 = 16_666_667;
+const NANOS_PER_FRAME: u32 = 16_466_666;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -316,8 +317,11 @@ impl Core {
                     println!("Audio buffer overflow")
                 }
 
-                let samples_to_enqueue_len = std::cmp::min(samples.len(), surplus_samples as usize);
-                audio_queue.queue_audio(&samples[..samples_to_enqueue_len]).unwrap();
+                // if surplus_samples > 0 {
+                //     let samples_to_enqueue_len = std::cmp::min(samples.len(), (surplus_samples - 1) as usize);
+                //     audio_queue.queue_audio(&samples[..samples_to_enqueue_len]).unwrap();
+                // }
+                audio_queue.queue_audio(&samples).unwrap();
             }
 
             // Rendering
