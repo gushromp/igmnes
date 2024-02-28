@@ -225,6 +225,16 @@ impl From<u8> for OamAttributePriority {
     }
 }
 
+impl Into<u8> for OamAttributePriority {
+    fn into(self) -> u8 {
+        use core::ppu::OamAttributePriority::{BACK, FRONT};
+        match self {
+            FRONT => 0,
+            BACK => 1
+        }
+    }
+}
+
 #[derive(Default, Copy, Clone)]
 struct OamSpriteAttributes {
     // 76543210
@@ -251,6 +261,16 @@ impl From<u8> for OamSpriteAttributes {
     }
 }
 
+impl Into<u8> for OamSpriteAttributes {
+    fn into(self) -> u8 {
+        let priority_u8: u8 = self.priority.into();
+        ((self.is_flipped_vertically as u8) << 7)
+            | ((self.is_flipped_horizontally as u8) << 6)
+            | (priority_u8 << 5)
+            | self.palette_index
+
+    }
+}
 impl OamSpriteAttributes {
     fn write(&mut self, byte: u8) {
         self.palette_index = byte & 0b00001111;
@@ -283,6 +303,27 @@ impl TryFrom<&[u8]> for OamEntry {
     }
 }
 
+impl OamEntry {
+    fn write_u8(&mut self, index: usize, byte: u8) {
+        match index {
+            0 => self.sprite_y = byte,
+            1 => self.tile_bank_index = byte,
+            2 => self.attributes.write(byte),
+            3 => self.sprite_x = byte,
+            _ => unreachable!()
+        }
+    }
+    fn read(&self, index: usize) -> u8 {
+        match index {
+            0 => self.sprite_y,
+            1 => self.tile_bank_index,
+            2 => self.attributes.into(),
+            3 => self.sprite_x,
+            _ => unreachable!()
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct OamTable {
     oam_entries: [OamEntry; 64],
@@ -310,6 +351,18 @@ impl OamTable {
             }
             Ok(())
         }
+    }
+
+    pub fn write_u8(&mut self, index: u8, byte: u8) -> Result<(), EmulationError> {
+        let oam_entry_index = (index / 4) as usize;
+        let oam_byte_index = (index % 4) as usize;
+
+        Ok(self.oam_entries[oam_entry_index].write_u8(oam_byte_index, byte))
+    }
+    pub fn read(&self, index: u8) -> Result<u8, EmulationError> {
+        let oam_entry_index = (index / 4) as usize;
+        let oam_byte_index = (index % 4) as usize;
+        Ok(self.oam_entries[oam_entry_index].read(oam_byte_index))
     }
 }
 
@@ -394,7 +447,7 @@ pub struct Ppu {
     reg_status: PpuStatusReg,
 
     // Write only
-    reg_oam_addr: u8,
+    pub reg_oam_addr: u8,
     // Read/write
     reg_oam_data: u8,
 
@@ -651,7 +704,6 @@ impl Ppu {
     pub fn step(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
 
-
         for _ in 0..cycles_to_run {
             // Rendering scanlines & cycles
             let pixel_x = self.curr_scanline_cycle.wrapping_sub(1) as usize;
@@ -739,31 +791,17 @@ impl Ppu {
                 self.reg_oam_addr = 0;
             }
 
-            if self.curr_scanline_cycle == 341
-                || (self.curr_scanline == 261
-                && self.curr_scanline_cycle == 340
-                && self.is_odd_frame
-                && self.is_rendering_enabled())
-            {
-                self.curr_scanline_cycle = 0;
-                self.curr_scanline += 1;
-            }
-
             if self.is_vblank_starting_cycle() && !self.should_skip_vbl {
                 self.reg_status.is_in_vblank = true;
 
-                if self.reg_ctrl.is_nmi_enabled {
-                    self.nmi_pending = true;
-                }
-            } else if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
-                self.reg_status.is_in_vblank = false;
-                self.reg_status.is_sprite_overflow = false;
-                self.reg_status.is_sprite_0_hit = false;
+
             }
 
-            // if self.is_rendering_enabled() &&
-                if self.curr_scanline == 241
-                && self.curr_scanline_cycle == 1
+            if self.curr_scanline == 241 && self.curr_scanline_cycle == 1 && self.reg_ctrl.is_nmi_enabled {
+                self.nmi_pending = true;
+            }
+
+            if self.curr_scanline == 241 && self.curr_scanline_cycle == 1
             {
                 if self.is_rendering_enabled() {
                     self.last_output = Some(self.curr_output.clone())
@@ -773,16 +811,29 @@ impl Ppu {
                 }
             }
 
-            if self.curr_scanline == 262 {
-                self.curr_scanline = 0;
+            if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
+                self.reg_status.is_in_vblank = false;
+                self.reg_status.is_sprite_overflow = false;
+                self.reg_status.is_sprite_0_hit = false;
                 self.is_odd_frame = !self.is_odd_frame;
-
-                if self.should_skip_vbl {
-                    self.should_skip_vbl = false;
-                }
+                self.should_skip_vbl = false;
+                self.nmi_pending = false;
             }
 
+            if self.curr_scanline_cycle == 341
+                || (self.curr_scanline == 261
+                && self.curr_scanline_cycle == 340
+                && self.is_odd_frame
+                && self.is_rendering_enabled())
+            {
+                self.curr_scanline_cycle = 0;
+                self.curr_scanline += 1;
+            }
+            if self.curr_scanline == 262 {
+                self.curr_scanline = 0;
+            }
             self.curr_scanline_cycle += 1;
+
         }
 
         if tracer.is_enabled() {
@@ -814,15 +865,6 @@ impl Ppu {
                 .ppu_mem_map
                 .palette
                 .get_background_color(palette_index, color_index);
-
-            // if pixel_x >= 0x10 * 8 && pixel_x < 0x12 * 8 && pixel_y == 0x12 * 8 + 1 {
-            //     println!("pixel_x: {}; reg_x: {}, pixel_index_x: {}, mod: {}, palette_index: {}, color: {:?}", pixel_x, self.reg_x, pixel_index_x, pixel_x % 8, palette_index, color);
-            // //     println!("x: {}, y: {}, palette_index: {}, color_index: {}, color: {:?}, reg_x: {}", pixel_x, pixel_y, palette_index, color_index, color, self.reg_x);
-            //     if pixel_x == 0x12 * 8 - 1 {
-            //         println!();
-            //     }
-            // }
-
             color
         }
     }
@@ -994,11 +1036,19 @@ impl MemMapped for Ppu {
             }
             4 => {
                 // OAMDATA
+                if self.is_mutating_read() {
+                    self.reg_oam_data = self.ppu_mem_map.oam_table.read(self.reg_oam_addr)?;
+                }
                 Ok(self.reg_oam_data)
             }
             7 => {
                 // PPUDATA
-                let data = self.read_buffer;
+                let data = if (0x3F00..=0x3FFF).contains(&self.reg_v) {
+                    // Reads from palette RAM are not buffered
+                    self.ppu_mem_map.read(self.reg_v)?
+                } else {
+                    self.read_buffer
+                };
                 if self.is_mutating_read() {
                     self.read_buffer = self.ppu_mem_map.read(self.reg_v)?;
                     self.increment_addr_read();
@@ -1034,7 +1084,7 @@ impl MemMapped for Ppu {
                 Ok(())
             }
             4 => {
-                self.reg_oam_data = byte;
+                self.ppu_mem_map.oam_table.write_u8(self.reg_oam_addr, byte)?;
                 self.reg_oam_addr += 1;
                 Ok(())
             }

@@ -82,9 +82,13 @@ impl PpuMemMap {
         let pattern_entry_addr = base_addr + (pattern_entry_index as u16 * 16);
 
         let byte_slice = self.read_range(pattern_entry_addr..pattern_entry_addr + 16)?;
-        let result: [u8; 16] = array::from_fn(|index| {
-            byte_slice[index]
-        });
+        let result: [u8; 16] = if byte_slice.len() == 0 {
+            [0; 16]
+        } else {
+            array::from_fn(|index| {
+                byte_slice[index]
+            })
+        };
         Ok(result)
     }
 }

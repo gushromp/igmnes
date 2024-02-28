@@ -80,7 +80,12 @@ impl PpuMapper for NRom {
     }
 
     fn read_chr_rom_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        Ok(self.chr_rom_bytes[range.start as usize .. range.end as usize].to_vec())
+        if self.chr_rom_bytes.len() == 0 {
+            // Mainly for test roms that don't contain CHR
+            Ok(vec![])
+        } else {
+            Ok(self.chr_rom_bytes[range.start as usize..range.end as usize].to_vec())
+        }
     }
 
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {
