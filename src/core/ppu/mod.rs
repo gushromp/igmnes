@@ -2,7 +2,7 @@ pub mod memory;
 pub mod palette;
 
 use std::convert::TryFrom;
-use std::{array, fmt};
+use std::{array, fmt, mem};
 use std::fmt::{Binary, Display, Formatter};
 
 use core::debug::Tracer;
@@ -498,8 +498,9 @@ pub struct Ppu {
     secondary_oam: [Option<SecondaryOamEntry>; 8],
     sprite_output_units: SpriteOutputUnits,
 
-    curr_output: PpuOutput,
-    last_output: Option<PpuOutput>,
+    curr_frame: PpuOutput,
+    last_frame: Option<PpuOutput>,
+    output: Option<PpuOutput>,
 
     // Quirks
 
@@ -725,7 +726,7 @@ impl Ppu {
                 let background_pixel = self.get_background_pixel(pixel_x, pixel_y);
                 let sprite_pixel = self.get_sprite_pixel(pixel_x, pixel_y);
 
-                let output_pixel = match (sprite_pixel.priority, sprite_pixel.is_transparent, background_pixel.is_transparent) {
+                let output_color = match (sprite_pixel.priority, sprite_pixel.is_transparent, background_pixel.is_transparent) {
                     (OamAttributePriority::FRONT, false, _) |
                     (OamAttributePriority::BACK, false, true) => sprite_pixel.color,
                     _ => background_pixel.color
@@ -740,7 +741,7 @@ impl Ppu {
                     self.reg_status.is_sprite_0_hit = true;
                 }
 
-                self.curr_output.data[pixel_y][pixel_x] = output_pixel;
+                self.curr_frame.data[pixel_y][pixel_x] = output_color;
             }
 
             if self.is_rendering_enabled()
@@ -811,14 +812,16 @@ impl Ppu {
             if self.curr_scanline == 241 && self.curr_scanline_cycle == 1
             {
                 if self.is_rendering_enabled() {
-                    self.last_output = Some(self.curr_output.clone())
+                    self.last_frame = Some(self.curr_frame.clone())
                 } else {
                     let transparent_color = self.ppu_mem_map.palette.get_transparent_color();
-                    self.last_output = Some(PpuOutput { data: Box::new([[transparent_color; 256]; 240]) })
+                    self.last_frame = Some(PpuOutput { data: Box::new([[transparent_color; 256]; 240]) })
                 }
             }
 
             if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
+                let output = mem::replace(&mut self.last_frame, None);
+                self.output = output;
                 self.reg_status.is_in_vblank = false;
                 self.reg_status.is_sprite_overflow = false;
                 self.reg_status.is_sprite_0_hit = false;
@@ -1050,14 +1053,11 @@ impl Ppu {
     }
 
     pub fn is_frame_ready(&self) -> bool {
-        self.last_output.is_some()
+        self.output.is_some()
     }
 
     pub fn get_frame(&mut self) -> Box<[[PpuPaletteColor; 256]; 240]> {
-        if self.last_output.is_none() {
-            unimplemented!()
-        }
-        let frame = std::mem::replace(&mut self.last_output, None);
+        let frame = mem::replace(&mut self.output, None);
         frame.unwrap().data
     }
 

@@ -28,7 +28,6 @@ use core::controller::Controller;
 use core::debug::Tracer;
 use core::dma::Dma;
 use std::time::{Duration, Instant};
-use self::shuteye::sleep;
 use self::memory::*;
 use self::cpu::Cpu;
 use self::ppu::Ppu;
@@ -53,9 +52,9 @@ const CLOCK_DIVISOR_PAL: i32 = 15;
 const WINDOW_SCALING: u32 = 3;
 
 // const NANOS_PER_FRAME: u32 = 16_666_667;
-const NANOS_PER_FRAME: u32 = 16_466_666;
+// const NANOS_PER_FRAME: u32 = 16_466_666;
 // const NANOS_PER_FRAME: u32 = 16_465_700;
-// const NANOS_PER_FRAME: u32 = 16_333_334;
+const NANOS_PER_FRAME: u32 = 16_333_334;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -314,16 +313,9 @@ impl Core {
             if let Some(samples) = apu.get_out_samples() {
                 let sample_rate = audio_queue.spec().freq as u32;
 
-
                 if audio_queue.size() < sample_rate {
                     audio_queue.queue_audio(&samples).unwrap();
-                    // let surplus_samples = sample_rate - audio_queue.size();
-                    // audio_queue.queue_audio(&samples[..surplus_samples as usize]).unwrap();
                 }
-                // else {
-                //     println!("Audio buffer overflow");
-                //
-                // }
             }
 
             // Rendering
@@ -340,15 +332,7 @@ impl Core {
             }
 
             let current_time = Instant::now();
-            let millis = (current_time.duration_since(previous_render_time).as_millis() + current_time.duration_since(previous_tick_time).as_millis()) as u32;
             let nanos = (current_time.duration_since(previous_render_time).as_nanos() + current_time.duration_since(previous_tick_time).as_nanos()) as u32;
-
-            // let remaining_samples = (millis * 48) as i32 - audio_queue.size() as i32;
-            // if remaining_samples > 0 {
-            //     println!("UNDERRUN");
-            // } else {
-            //     println!("{}", remaining_samples)
-            // }
 
             if nanos < NANOS_PER_FRAME {
                 std::thread::sleep(Duration::new(0, NANOS_PER_FRAME - nanos));
