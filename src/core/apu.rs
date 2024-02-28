@@ -1,4 +1,3 @@
-use std::vec::Drain;
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
@@ -143,7 +142,7 @@ impl Sweep {
         };
 
         self.new_timer = result;
-        self.should_mute = timer < 8 || self.new_timer > 0x700;
+        self.should_mute = timer < 8 || self.new_timer > 0x7FF;
 
     }
 }
@@ -484,10 +483,6 @@ impl Noise {
         self.lc_halt_env_loop = byte & 0b0010_0000 != 0;
         self.constant_volume = byte & 0b0001_0000 != 0;
         self.volume = byte & 0b1111;
-
-        if !self.constant_volume {
-            self.envelope.start = true;
-        }
     }
 
     fn write_uuuuuuuu(&mut self, _byte: u8) {}
@@ -505,6 +500,7 @@ impl Noise {
         } else {
             0
         };
+        self.envelope.start = true;
     }
 
     fn clock_shift_register(&mut self) {

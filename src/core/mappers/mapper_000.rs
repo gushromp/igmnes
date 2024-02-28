@@ -1,4 +1,3 @@
-use std::cmp::{max, min};
 use std::ops::Range;
 use core::mappers::{CpuMapper, Mapper, PpuMapper};
 use core::memory::{MemMapped, Ram};
@@ -33,7 +32,7 @@ impl NRom {
 
     // Mirrors if prg size is smaller than 32k
     fn get_prg_rom_index(&self, index: u16) -> usize {
-        // CPU memory map maps maps the cart address space from 0x4020 to 0xFFFF
+        // CPU memory map maps the cart address space from 0x4020 to 0xFFFF
         // NROM starts mapping ROM at 0x8000
         let index = index - 0x8000;
         if index > 0x3FFF && self.prg_rom_bytes.len() < 0x8000 {
@@ -90,7 +89,10 @@ impl PpuMapper for NRom {
 
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {
         Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index)))
+    }
 
+    fn read_chr_ram_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+        Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}", range)))
     }
 
     fn write_chr_ram(&mut self, index: u16, _byte: u8) -> Result<(), EmulationError> {
@@ -126,14 +128,6 @@ impl MemMapped for NRom {
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        match range.start {
-            0..=0x1FFF => self.read_chr_rom_range(range),
-            _ => unimplemented!()
-        }
-
-    }
-
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match index {
             0x2000..=0x2FFF => {
@@ -142,9 +136,15 @@ impl MemMapped for NRom {
             }
             0x6000..=0x7FFF => self.write_prg_ram(index, byte),
             _ => {
-                // println!("Attempted write to non-RAM address: 0x{:X}", index);
                 Ok(())
             }
+        }
+    }
+
+    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+        match range.start {
+            0..=0x1FFF => self.read_chr_rom_range(range),
+            _ => unimplemented!()
         }
     }
 }

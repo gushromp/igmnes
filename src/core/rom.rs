@@ -85,7 +85,7 @@ impl Rom {
 
         let rom = parse_rom(&bytes).unwrap().1;
 
-        if rom.header.tv_system == TVSystem::NTSC {
+        if rom.header.tv_system != TVSystem::PAL {
             Ok(rom)
         } else {
             Err(Box::from(format!("Unsupported system type: {:?}", rom.header.tv_system)))

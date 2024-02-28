@@ -53,7 +53,7 @@ impl Default for Ram {
 impl Ram {
     pub fn new() -> Ram {
         Ram {
-            ram: [0; RAM_SIZE]
+            ram: [0xFF; RAM_SIZE]
         }
     }
 }
@@ -63,13 +63,13 @@ impl MemMapped for Ram {
         Ok(self.ram[index as usize])
     }
 
-    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
-        Ok(&self.ram[range.start as usize .. range.end as usize])
-    }
-
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         self.ram[index as usize] = byte;
         Ok(())
+    }
+
+    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
+        Ok(&self.ram[range.start as usize .. range.end as usize])
     }
 }
 

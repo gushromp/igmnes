@@ -4,8 +4,6 @@ pub mod palette;
 use std::convert::TryFrom;
 use std::{array, fmt};
 use std::fmt::{Binary, Display, Formatter};
-use std::mem::size_of;
-use sdl2::keyboard::Keycode::P;
 
 use core::debug::Tracer;
 use core::errors::EmulationError;
@@ -375,7 +373,7 @@ struct SecondaryOamEntry {
 #[derive(Default, Copy, Clone)]
 struct SpriteOutputUnit {
     secondary_oam_entry: SecondaryOamEntry,
-    pattern_data: [[u8; 2]; 8],
+    pattern_data: [[u8; 2]; 16],
 }
 
 #[derive(Default)]
@@ -388,6 +386,13 @@ struct SpritePixel {
     color: PpuPaletteColor,
     priority: OamAttributePriority,
     sprite_index: usize,
+    is_transparent: bool
+}
+
+#[derive(Default)]
+struct BackgroundPixel {
+    color: PpuPaletteColor,
+    is_transparent: bool
 }
 
 #[derive(Copy, Clone)]
@@ -554,6 +559,10 @@ impl Ppu {
         self.reg_mask.is_show_background_enabled || self.reg_mask.is_show_sprites_enabled
     }
 
+    fn is_sprite_and_background_rendering_enabled(&self) -> bool {
+        self.reg_mask.is_show_background_enabled && self.reg_mask.is_show_sprites_enabled
+    }
+
     fn increment_addr_read(&mut self) {
         self.reg_v = if self.reg_ctrl.is_increment_mode_32 {
             self.reg_v.wrapping_add(32)
@@ -713,21 +722,20 @@ impl Ppu {
                 && pixel_x < 256
             {
                 // Background
-                let background_color = self.get_background_color(pixel_x, pixel_y);
+                let background_pixel = self.get_background_pixel(pixel_x, pixel_y);
                 let sprite_pixel = self.get_sprite_pixel(pixel_x, pixel_y);
 
-                let is_sprite_color_transparent = self.ppu_mem_map.palette.is_transparent_color(&sprite_pixel.color);
-                let is_background_color_transparent = self.ppu_mem_map.palette.is_transparent_color(&background_color);
-
-                let output_pixel = match (sprite_pixel.priority, is_sprite_color_transparent, is_background_color_transparent) {
+                let output_pixel = match (sprite_pixel.priority, sprite_pixel.is_transparent, background_pixel.is_transparent) {
                     (OamAttributePriority::FRONT, false, _) |
                     (OamAttributePriority::BACK, false, true) => sprite_pixel.color,
-                    _ => background_color
+                    _ => background_pixel.color
                 };
 
-                let is_sprite_0_hit = sprite_pixel.sprite_index == 0
-                    && !self.ppu_mem_map.palette.is_transparent_color(&sprite_pixel.color)
-                    && !self.ppu_mem_map.palette.is_transparent_color(&background_color);
+                let is_sprite_0_hit =
+                    self.is_sprite_and_background_rendering_enabled()
+                    && sprite_pixel.sprite_index == 0
+                    && !sprite_pixel.is_transparent
+                    && !background_pixel.is_transparent;
                 if is_sprite_0_hit {
                     self.reg_status.is_sprite_0_hit = true;
                 }
@@ -761,9 +769,6 @@ impl Ppu {
                     // The effective Y scroll coordinate is incremented, which is a complex operation that will correctly skip the attribute table memory regions,
                     // and wrap to the next nametable appropriately.
                     self.increment_addr_y();
-
-                    // We also perform sprite evaluation here, to fill secondary OAM
-                    self.evaluate_sprites();
                 }
 
                 if self.curr_scanline_cycle == 257 {
@@ -772,6 +777,8 @@ impl Ppu {
                     let mask = 0b0000_0100_0001_1111;
                     self.reg_v = (self.reg_v & !mask) | (self.reg_t & mask);
 
+                    // We perform sprite evaluation here, to fill secondary OAM
+                    self.evaluate_sprites();
                     // We fill the sprite output units based on the sprite evaluation that was previously performed
                     self.prepare_sprite_units();
                 }
@@ -845,13 +852,13 @@ impl Ppu {
     }
 
     #[inline]
-    fn get_background_color(&mut self, pixel_x: usize, pixel_y: usize) -> PpuPaletteColor {
+    fn get_background_pixel(&mut self, pixel_x: usize, pixel_y: usize) -> BackgroundPixel {
         if pixel_x < 8 && !self.reg_mask.is_show_background_enabled_leftmost {
             let color = self
                 .ppu_mem_map
                 .palette
                 .get_background_color(0, 0);
-            color
+            BackgroundPixel { color, is_transparent: true }
         } else {
             let pixel_index_x = 15 - self.reg_x as usize;
             let pattern_bit_plane_low = (self.shift_regs.reg_low_plane >> pixel_index_x) & 0b1;
@@ -865,7 +872,7 @@ impl Ppu {
                 .ppu_mem_map
                 .palette
                 .get_background_color(palette_index, color_index);
-            color
+            BackgroundPixel { color, is_transparent: color_index == 0 }
         }
     }
 
@@ -874,8 +881,13 @@ impl Ppu {
         let mut color = self.ppu_mem_map.palette.get_transparent_color();
         let mut priority = OamAttributePriority::default();
         let mut sprite_index = 0;
+        let mut is_transparent = true;
 
-
+        let sprite_height_pixels = if self.reg_ctrl.sprite_height == 1 {
+            16
+        } else {
+            8
+        };
 
         for unit in self.sprite_output_units.units.iter().flat_map(|unit| unit).rev() {
             if pixel_x < 8 && !self.reg_mask.is_show_sprites_enabled_leftmost {
@@ -885,11 +897,13 @@ impl Ppu {
                     .get_sprite_color(0, 0);
                 priority = unit.secondary_oam_entry.oam_entry.attributes.priority;
                 sprite_index = unit.secondary_oam_entry.sprite_index;
+                is_transparent = true;
             } else {
                 let sprite_first_pixel_x = unit.secondary_oam_entry.oam_entry.sprite_x as usize;
-                let sprite_first_pixel_y = (unit.secondary_oam_entry.oam_entry.sprite_y + 1) as usize;
+                let sprite_first_pixel_y = (unit.secondary_oam_entry.oam_entry.sprite_y.wrapping_add(1)) as usize;
                 let sprite_index_y = pixel_y - sprite_first_pixel_y;
-                if pixel_x < sprite_first_pixel_x || pixel_x > sprite_first_pixel_x + 7 || sprite_index_y > 7 {
+                if pixel_x < sprite_first_pixel_x || pixel_x > sprite_first_pixel_x + 7 || sprite_index_y > (sprite_height_pixels - 1) {
+
                     continue;
                 }
 
@@ -908,10 +922,11 @@ impl Ppu {
                         .get_sprite_color(palette_index, color_index);
                     priority = unit.secondary_oam_entry.oam_entry.attributes.priority;
                     sprite_index = unit.secondary_oam_entry.sprite_index;
+                    is_transparent = false;
                 }
             }
         }
-        SpritePixel { color, priority, sprite_index }
+        SpritePixel { color, priority, sprite_index, is_transparent }
     }
 
     #[inline]
@@ -927,13 +942,17 @@ impl Ppu {
         let next_scanline_index = ((self.curr_scanline + 1) % 262) as usize;
         let mut num_found_sprites = 0;
         for (sprite_index, oam_entry) in self.ppu_mem_map.oam_table.oam_entries.iter().enumerate() {
-            let sprite_y_shifted = oam_entry.sprite_y.wrapping_add(1) as usize;
-            if next_scanline_index >= sprite_y_shifted && next_scanline_index < sprite_y_shifted + sprite_height_pixels {
+            let sprite_y_first_pixel = oam_entry.sprite_y.saturating_add(1) as usize;
+            let sprite_y_last_pixel = sprite_y_first_pixel + sprite_height_pixels - 1;
+            let is_overflowing_y = sprite_y_last_pixel >= 240;
+            if next_scanline_index > 0 && next_scanline_index >= sprite_y_first_pixel && (next_scanline_index <= sprite_y_last_pixel || is_overflowing_y)  {
                 if num_found_sprites < 8 {
                     self.secondary_oam[num_found_sprites] = Some(SecondaryOamEntry { oam_entry: *oam_entry, sprite_index });
                     num_found_sprites += 1;
                 } else {
-                    self.reg_status.is_sprite_overflow = true;
+                    if sprite_y_first_pixel > 0 && sprite_y_first_pixel <= 240 {
+                        self.reg_status.is_sprite_overflow = true;
+                    }
                 }
             }
         }
@@ -946,9 +965,46 @@ impl Ppu {
         for (index, secondary_oam_entry) in self.secondary_oam.iter().enumerate() {
             let unit = match secondary_oam_entry {
                 Some(secondary_oam_entry) => {
+                    let mut pattern_data_bitplanes: [[u8; 2]; 16] = [[0; 2]; 16];
+
                     if self.reg_ctrl.sprite_height == 1 {
-                        None
+                        // 8x16 sprites
+                        let pattern_entry_byte = secondary_oam_entry.oam_entry.tile_bank_index;
+                        let pattern_table_index = pattern_entry_byte & 0b1;
+
+                        let pattern_entry_index_top = pattern_entry_byte & 0xFE;
+                        let pattern_entry_index_bottom = pattern_entry_index_top + 1;
+
+                        let mut pattern_data_top = self.ppu_mem_map.fetch_sprite_pattern(pattern_table_index, pattern_entry_index_top)
+                            .unwrap();
+                        let mut pattern_data_bottom = self.ppu_mem_map.fetch_sprite_pattern(pattern_table_index, pattern_entry_index_bottom)
+                            .unwrap();
+
+                        if secondary_oam_entry.oam_entry.attributes.is_flipped_vertically {
+                            let temp = pattern_data_top;
+                            pattern_data_top = pattern_data_bottom;
+                            pattern_data_bottom = temp;
+
+                            pattern_data_top = Self::flip_pattern_data_vertically(pattern_data_top);
+                            pattern_data_bottom = Self::flip_pattern_data_vertically(pattern_data_bottom);
+                        }
+
+                        if secondary_oam_entry.oam_entry.attributes.is_flipped_horizontally {
+                            pattern_data_top = Self::flip_pattern_data_horizontally(pattern_data_top);
+                            pattern_data_bottom = Self::flip_pattern_data_horizontally(pattern_data_bottom);
+                        }
+
+                        for index in 0..8 {
+                            pattern_data_bitplanes[index][0] = pattern_data_top[index];
+                            pattern_data_bitplanes[index][1] = pattern_data_top[index + 8];
+                        }
+
+                        for index in 8..16 {
+                            pattern_data_bitplanes[index][0] = pattern_data_bottom[index - 8];
+                            pattern_data_bitplanes[index][1] = pattern_data_bottom[index];
+                        }
                     } else {
+                        // 8x8 sprites
                         let pattern_table_index = self.reg_ctrl.sprite_pattern_table_index;
                         let pattern_entry_index = secondary_oam_entry.oam_entry.tile_bank_index;
                         let mut pattern_data =
@@ -956,35 +1012,41 @@ impl Ppu {
                                 .unwrap();
 
                         if secondary_oam_entry.oam_entry.attributes.is_flipped_vertically {
-                            let flipped_low_plane: Vec<&u8> = pattern_data[0..8].iter().rev().collect();
-                            let flipped_high_plane: Vec<&u8> = pattern_data[8..16].iter().rev().collect();
-                            let reversed_slice: Vec<&&u8> = flipped_low_plane.iter().chain(flipped_high_plane.iter()).collect();
-                            pattern_data = array::from_fn(|index| {
-                                **reversed_slice[index]
-                            });
-
+                            pattern_data = Self::flip_pattern_data_vertically(pattern_data);
                         }
 
                         if secondary_oam_entry.oam_entry.attributes.is_flipped_horizontally {
-                            for index in 0..pattern_data.len() {
-                                pattern_data[index] = pattern_data[index].reverse_bits();
-                            }
+                            pattern_data = Self::flip_pattern_data_horizontally(pattern_data);
                         }
 
-                        let mut pattern_data_bitplanes: [[u8; 2]; 8] = [[0; 2]; 8];
-                        for index in 0..pattern_data_bitplanes.len() {
+                        for index in 0..8 {
                             pattern_data_bitplanes[index][0] = pattern_data[index];
                             pattern_data_bitplanes[index][1] = pattern_data[index + 8];
                         }
-
-                        Some(SpriteOutputUnit { secondary_oam_entry: *secondary_oam_entry, pattern_data: pattern_data_bitplanes })
-
                     }
+                    Some(SpriteOutputUnit { secondary_oam_entry: *secondary_oam_entry, pattern_data: pattern_data_bitplanes })
                 },
                 None => None
             };
             self.sprite_output_units.units[index] = unit;
         }
+    }
+
+    fn flip_pattern_data_vertically(pattern_data: [u8; 16]) -> [u8; 16] {
+        let flipped_low_plane: Vec<&u8> = pattern_data[0..8].iter().rev().collect();
+        let flipped_high_plane: Vec<&u8> = pattern_data[8..16].iter().rev().collect();
+        let reversed_slice: Vec<&&u8> = flipped_low_plane.iter().chain(flipped_high_plane.iter()).collect();
+        array::from_fn(|index| {
+            **reversed_slice[index]
+        })
+    }
+
+    fn flip_pattern_data_horizontally(pattern_data: [u8; 16]) -> [u8; 16] {
+        let mut pattern_data = pattern_data;
+        for index in 0..pattern_data.len() {
+            pattern_data[index] = pattern_data[index].reverse_bits();
+        }
+        pattern_data
     }
 
     pub fn is_frame_ready(&self) -> bool {

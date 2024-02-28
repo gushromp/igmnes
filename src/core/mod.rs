@@ -54,6 +54,8 @@ const WINDOW_SCALING: u32 = 3;
 
 // const NANOS_PER_FRAME: u32 = 16_666_667;
 const NANOS_PER_FRAME: u32 = 16_466_666;
+// const NANOS_PER_FRAME: u32 = 16_465_700;
+// const NANOS_PER_FRAME: u32 = 16_333_334;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -249,14 +251,14 @@ impl Core {
                     }
                 }
 
-                while !self.cpu_facade.ppu().is_frame_ready() {
-                    // Input
-                    let keyboard_state = events.keyboard_state();
-                    let keys = keyboard_state
-                        .pressed_scancodes()
-                        .filter_map(Keycode::from_scancode);
-                    self.set_controllers_state(keys);
+                // Input
+                let keyboard_state = events.keyboard_state();
+                let pressed_scancodes = keyboard_state.pressed_scancodes();
+                let keys: Vec<Keycode> = pressed_scancodes
+                    .filter_map(Keycode::from_scancode).collect();
 
+                while !self.cpu_facade.ppu().is_frame_ready() {
+                    self.set_controllers_state(keys.iter());
                     let current_cycle_count = self.cpu_facade.cpu().cycle_count;
 
                     let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
@@ -310,18 +312,18 @@ impl Core {
 
             let apu = self.cpu_facade.apu();
             if let Some(samples) = apu.get_out_samples() {
-                let sample_rate = audio_queue.spec().freq;
-                let surplus_samples = sample_rate - audio_queue.size() as i32;
+                let sample_rate = audio_queue.spec().freq as u32;
 
-                if audio_queue.size() as i32 > sample_rate {
-                    println!("Audio buffer overflow")
+
+                if audio_queue.size() < sample_rate {
+                    audio_queue.queue_audio(&samples).unwrap();
+                    // let surplus_samples = sample_rate - audio_queue.size();
+                    // audio_queue.queue_audio(&samples[..surplus_samples as usize]).unwrap();
                 }
-
-                // if surplus_samples > 0 {
-                //     let samples_to_enqueue_len = std::cmp::min(samples.len(), (surplus_samples - 1) as usize);
-                //     audio_queue.queue_audio(&samples[..samples_to_enqueue_len]).unwrap();
+                // else {
+                //     println!("Audio buffer overflow");
+                //
                 // }
-                audio_queue.queue_audio(&samples).unwrap();
             }
 
             // Rendering
@@ -412,7 +414,7 @@ impl Core {
         dummy_facade
     }
 
-    fn set_controllers_state<I>(&mut self, state: I) where I: Iterator<Item=Keycode> {
+    fn set_controllers_state<'a, I>(&mut self, state: I) where I: Iterator<Item=&'a Keycode> {
         use core::controller::ControllerButton;
         let mut controller_1_state: Vec<ControllerButton> = vec![];
 

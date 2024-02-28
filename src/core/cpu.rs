@@ -243,11 +243,11 @@ impl Cpu {
         }
         else {
             if !self.reg_status.interrupt_disable {
-                self.perform_irq(mem_map, &interrupt)
+                self.perform_irq(mem_map, &interrupt).unwrap();
             } else {
                 self.unhandled_interrupt = Some(interrupt);
-                Ok(())
             }
+            Ok(())
         }
     }
 
