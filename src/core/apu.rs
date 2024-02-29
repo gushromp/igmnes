@@ -929,9 +929,9 @@ impl Apu {
     fn generate_output_samples(&mut self) {
         let target_samples = if self.sample_rate_current_remainder > 1.0 {
             self.sample_rate_current_remainder -= 1.0;
-            42
-        } else {
             41
+        } else {
+            40
         };
         if self.nes_samples.len() < target_samples { return; }
         self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;
