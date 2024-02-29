@@ -1,5 +1,6 @@
 mod mapper_000;
 mod mapper_002;
+mod mapper_003;
 
 use std::cell::{Ref, RefCell};
 use std::ops::Range;
@@ -9,6 +10,7 @@ use core::memory::MemMapped;
 use core::rom::Rom;
 use core::errors::EmulationError;
 use core::mappers::mapper_002::UxROM;
+use core::mappers::mapper_003::CNROM;
 
 pub trait CpuMapper : MemMapped {
 
@@ -38,6 +40,7 @@ pub fn load_mapper_for_rom(rom: &Rom) -> Result<Rc<RefCell<dyn Mapper>>, String>
     match rom.header.mapper_number {
         0 => Ok(Rc::new(RefCell::new(NRom::new(rom)))),
         2 => Ok(Rc::new(RefCell::new(UxROM::new(rom)))),
+        3 => Ok(Rc::new(RefCell::new(CNROM::new(rom)))),
         mapper_num @ _ => Err(format!("Unsupported mapper number: {}", mapper_num)),
     }
 }
