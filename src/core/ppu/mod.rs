@@ -9,7 +9,7 @@ use core::debug::Tracer;
 use core::errors::EmulationError;
 use core::errors::EmulationError::MemoryAccess;
 
-use core::memory::MemMapped;
+use core::memory::{MemMapConfig, MemMapped};
 use core::ppu::memory::PpuMemMap;
 use core::ppu::palette::{PpuPalette, PpuPaletteColor};
 
@@ -250,7 +250,7 @@ struct OamSpriteAttributes {
 
 impl From<u8> for OamSpriteAttributes {
     fn from(value: u8) -> Self {
-        let palette_index = value & 0b111;
+        let palette_index = value & 0b11;
         let priority_value = value.get_bit_u8(5);
         let priority = OamAttributePriority::from(priority_value);
         let is_flipped_horizontally = value.get_bit(6);
@@ -395,19 +395,6 @@ struct BackgroundPixel {
     is_transparent: bool
 }
 
-#[derive(Copy, Clone)]
-struct PpuMemMapConfig {
-    is_mutating_read: bool,
-}
-
-impl Default for PpuMemMapConfig {
-    fn default() -> Self {
-        PpuMemMapConfig {
-            is_mutating_read: true,
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct PpuOutput {
     pub data: Box<[[PpuPaletteColor; 256]; 240]>,
@@ -491,7 +478,7 @@ pub struct Ppu {
     pub nmi_pending: bool,
 
     pub ppu_mem_map: PpuMemMap,
-    mem_map_config: PpuMemMapConfig,
+    mem_map_config: MemMapConfig,
 
     // Rendering data
     shift_regs: PpuShiftRegisters,

@@ -51,10 +51,10 @@ const CLOCK_DIVISOR_PAL: i32 = 15;
 
 const WINDOW_SCALING: u32 = 3;
 
-// const NANOS_PER_FRAME: u32 = 16_666_667;
+const NANOS_PER_FRAME: u32 = 16_666_667;
 // const NANOS_PER_FRAME: u32 = 16_466_666;
 // const NANOS_PER_FRAME: u32 = 16_465_700;
-const NANOS_PER_FRAME: u32 = 16_333_334;
+// const NANOS_PER_FRAME: u32 = 16_333_334;
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -196,8 +196,9 @@ impl Core {
         let audio_spec_desired = AudioSpecDesired {
             freq: Some(44_100),
             channels: Some(1),
-            samples: Some(256),
+            samples: Some(1),
         };
+
 
         let audio_queue = audio_subsystem.open_queue::<f32, _>(None, &audio_spec_desired).unwrap();
         audio_queue.resume();
@@ -248,7 +249,7 @@ impl Core {
                     }
                 }
 
-                while !self.cpu_facade.ppu().is_frame_ready() {
+                while !self.cpu_facade.ppu().is_frame_ready() || !self.cpu_facade.apu().is_output_ready() {
                     tracer.start_new_trace();
 
                     // Input
@@ -306,16 +307,24 @@ impl Core {
                     }
                 }
             }
-            previous_tick_time = Instant::now();
+
+            let tick_time = Instant::now();
+            let tick_time_delta = tick_time.duration_since(previous_tick_time).as_nanos();
+            previous_tick_time = tick_time;
 
             let apu = self.cpu_facade.apu();
-            if let Some(samples) = apu.get_out_samples() {
-                let sample_rate = audio_queue.spec().freq as u32;
+            let samples = apu.get_out_samples();
+            let sample_rate = audio_queue.spec().freq as u32;
+            let old_size = audio_queue.size();
+            let remaining_samples = sample_rate.saturating_sub(audio_queue.size()) as usize / 4;
+            let samples_to_queue = std::cmp::min(remaining_samples, samples.len());
+            audio_queue.queue_audio(&samples).unwrap();
+            if audio_queue.size() <= sample_rate {
 
-                if audio_queue.size() < sample_rate {
-                    audio_queue.queue_audio(&samples).unwrap();
-                }
+            } else {
+                println!("Audio buffer overflow! old_size: {}, new_size: {}, remaining: {}, to_queue: {}", old_size, audio_queue.size(), remaining_samples, samples_to_queue);
             }
+
 
             // Rendering
             let frame = self.cpu_facade.ppu().get_frame();
@@ -331,14 +340,14 @@ impl Core {
             }
 
             let current_time = Instant::now();
-            let nanos = (current_time.duration_since(previous_render_time).as_nanos() + current_time.duration_since(previous_tick_time).as_nanos()) as u32;
+            let nanos = (current_time.duration_since(previous_render_time).as_nanos() + current_time.duration_since(previous_tick_time).as_nanos() - 150000) as u32;
+
 
             if nanos < NANOS_PER_FRAME {
                 std::thread::sleep(Duration::new(0, NANOS_PER_FRAME - nanos));
             }
 
-            let current_time = Instant::now();
-            previous_render_time = current_time;
+            previous_render_time = Instant::now();
         }
 
         if tracer.has_traces() {

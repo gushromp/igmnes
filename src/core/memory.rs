@@ -39,6 +39,19 @@ pub trait MemMapped {
     fn set_is_mutating_read(&mut self, _: bool) { }
 }
 
+#[derive(Copy, Clone)]
+pub struct MemMapConfig {
+    pub is_mutating_read: bool,
+}
+
+impl Default for MemMapConfig {
+    fn default() -> Self {
+        MemMapConfig {
+            is_mutating_read: true,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Ram {
     pub ram: [u8; RAM_SIZE],
@@ -80,7 +93,7 @@ pub struct CpuMemMap {
     pub ppu: Ppu,
     pub dma: Dma,
     pub controllers: [Controller; 2],
-    mapper: Rc<RefCell<dyn Mapper>>
+    mapper: Rc<RefCell<dyn Mapper>>,
 }
 
 
@@ -95,7 +108,7 @@ impl Default for CpuMemMap {
             ppu: Ppu::default(),
             dma: Dma::default(),
             controllers: [Controller::default(); 2],
-            mapper: def_mapper
+            mapper: def_mapper,
         }
     }
 }
@@ -112,7 +125,7 @@ impl CpuMemMap {
             ppu: Ppu::new(ppu_mem_map),
             dma: Dma::new(),
             controllers: [Controller::new(); 2],
-            mapper: mapper.clone()
+            mapper: mapper.clone(),
         };
 
         mem_map
@@ -155,11 +168,11 @@ impl MemMapped for CpuMemMap {
             }
             // I/O
             0x4016 => {
-                Ok(self.controllers[0].read())
+                self.controllers[0].read(index)
             }
             // I/O, Apu: This address is shared by both the APU and I/O so we can from read either one
             0x4017 => {
-                Ok(self.controllers[1].read())
+                self.controllers[1].read(index)
             }
             0x4018..=0x401f => {
                 let _index = index % 0x4018;
@@ -171,11 +184,6 @@ impl MemMapped for CpuMemMap {
             }
             _ => unreachable!()
         }
-    }
-
-    #[inline]
-    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
-        self.ram.read_range_ref(range)
     }
 
     #[inline]
@@ -228,8 +236,16 @@ impl MemMapped for CpuMemMap {
         }
     }
 
+    #[inline]
+    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
+        self.ram.read_range_ref(range)
+    }
+
     fn set_is_mutating_read(&mut self, is_mutating_read: bool) {
         self.ppu.set_is_mutating_read(is_mutating_read);
+        for controller in self.controllers.iter_mut() {
+            controller.set_is_mutating_read(is_mutating_read);
+        }
     }
 }
 

@@ -3,17 +3,16 @@ use core::errors::EmulationError;
 
 // Actually it's (super::MASTER_CLOCK_NTSC / super::CLOCK_DIVISOR_NTSC) but
 // we need something divisible by 240
-// const APU_SAMPLE_RATE: usize = 1_789_000;
 // const APU_SAMPLE_RATE: usize = 1_789_773;
 // const APU_SAMPLE_RATE: usize = 1_776_000;
-const APU_SAMPLE_RATE: usize = 1_719_900;
+// const APU_SAMPLE_RATE: usize = 1_719_900;
 
 const OUTPUT_SAMPLE_RATE: usize = 44_100;
 
-const SAMPLE_RATE_REMAINDER: f32 = 0.5844;
+const SAMPLE_RATE_REMAINDER: f32 = 0.5844217687;
 
-const SAMPLE_AVERAGE_COUNT: usize = 4;
-const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
+// const SAMPLE_AVERAGE_COUNT: usize = 4;
+// const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
 
 const FC_4STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 29829];
 const FC_5STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 37281];
@@ -766,7 +765,6 @@ pub struct Apu {
     cpu_cycles: u64,
     apu_cycles: f64,
     next_irq_cycles: u64,
-    cpu_cycles_since_output: u64,
 
     nes_samples: Vec<f32>,
     out_samples: Vec<f32>,
@@ -798,7 +796,6 @@ impl Default for Apu {
             cpu_cycles: 0,
             apu_cycles: 0.0,
             next_irq_cycles: 0,
-            cpu_cycles_since_output: 0,
 
             nes_samples: Vec::new(),
             out_samples: Vec::new(),
@@ -838,14 +835,14 @@ impl Apu {
         apu
     }
 
-    pub fn get_out_samples(&mut self) -> Option<Vec<f32>> {
-        if !self.out_samples.is_empty() {
-            let samples = self.out_samples.clone();
-            self.out_samples.clear();
-            Some(samples)
-        } else {
-            None
-        }
+    pub fn is_output_ready(&self) -> bool {
+        self.out_samples.len() >= (OUTPUT_SAMPLE_RATE / 60) - 0
+    }
+
+    pub fn get_out_samples(&mut self) -> Vec<f32> {
+        let samples = self.out_samples.clone();
+        self.out_samples.clear();
+        samples
     }
 
     fn read_status(&mut self) -> u8 {
@@ -930,14 +927,13 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        let target_samples_count = if self.sample_rate_current_remainder > 1.0 {
+        let target_samples = if self.sample_rate_current_remainder > 1.0 {
             self.sample_rate_current_remainder -= 1.0;
             41
         } else {
             40
         };
-
-        if self.nes_samples.len() < 41 { return; }
+        if self.nes_samples.len() < target_samples { return; }
         self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;
 
         let sum = self.nes_samples.iter().cloned().reduce(|a, b| a + b);
