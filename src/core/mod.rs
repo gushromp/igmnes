@@ -28,6 +28,7 @@ use core::controller::Controller;
 use core::debug::Tracer;
 use core::dma::Dma;
 use std::time::{Duration, Instant};
+use sdl2::render::{TextureCreator, WindowCanvas};
 use self::memory::*;
 use self::cpu::Cpu;
 use self::ppu::Ppu;
@@ -255,24 +256,14 @@ impl Core {
                 let keys: Vec<Keycode> = pressed_scancodes
                     .filter_map(Keycode::from_scancode).collect();
 
+
                 // Run emulation until PPU frame ready
                 while !self.cpu_facade.ppu().is_frame_ready() {
                     self.step(&mut tracer, &keys)
                 }
 
                 // Render frame
-                let frame = self.cpu_facade.ppu().get_frame();
-                unsafe {
-                    let pointer = ptr::addr_of!(**frame);
-                    let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
-                    let mut data = *pointer_arr;
-
-                    let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
-                    let tex = surface.as_texture(&texture_creator).unwrap();
-                    renderer.copy(&tex, None, None).unwrap();
-                    renderer.present();
-                }
-
+                self.render_frame(&mut renderer, &texture_creator);
 
                 // Audio
                 while !self.cpu_facade.apu().is_output_ready() {
@@ -281,7 +272,6 @@ impl Core {
                 }
                 let samples = self.cpu_facade.apu().get_out_samples();
                 audio_queue.queue_audio(&samples).unwrap();
-
 
                 // Sleep
                 let frame_duration = Instant::now().duration_since(frame_start);
@@ -293,9 +283,9 @@ impl Core {
 
                     let duration_to_sleep = Duration::from_millis(ms_to_sleep);
                     std::thread::sleep(duration_to_sleep);
-
-                    while Instant::now().duration_since(frame_start).as_nanos() < NANOS_PER_FRAME { }
+                        while Instant::now().duration_since(frame_start).as_nanos() < NANOS_PER_FRAME { }
                 }
+
             }
 
         }
@@ -431,6 +421,20 @@ impl Core {
                 }
                 e @ _ => println!("{}", e),
             }
+        }
+    }
+
+    fn render_frame<T>(&mut self, renderer: &mut WindowCanvas, texture_creator: &TextureCreator<T>) {
+        let frame = self.cpu_facade.ppu().get_frame();
+        unsafe {
+            let pointer = ptr::addr_of!(**frame);
+            let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
+            let mut data = *pointer_arr;
+
+            let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
+            let tex = surface.as_texture(texture_creator).unwrap();
+            renderer.copy(&tex, None, None).unwrap();
+            renderer.present();
         }
     }
 }

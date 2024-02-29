@@ -62,7 +62,8 @@ impl MemMapped for Controller {
             // After 8 bits are read, all subsequent bits will report 1 on a standard NES controller,
             // but third party and other controllers may report other values here.
             if self.read_index == 8 {
-                Ok(0b0)
+                self.button_state = 0;
+                Ok(self.button_state)
             } else {
                 let result = (self.button_state >> self.read_index) & 0b1;
                 if self.is_mutating_read() {

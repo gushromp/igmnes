@@ -1,13 +1,11 @@
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
-// Actually it's (super::MASTER_CLOCK_NTSC / super::CLOCK_DIVISOR_NTSC) but
-// we need something divisible by 240
-// const APU_SAMPLE_RATE: usize = 1_789_773;
-// const APU_SAMPLE_RATE: usize = 1_776_000;
-// const APU_SAMPLE_RATE: usize = 1_719_900;
+const APU_SAMPLE_RATE: usize = 1_789_773;
 
 const OUTPUT_SAMPLE_RATE: usize = 44_100;
+
+const SAMPLES_PER_OUTPUT_SAMPLE: usize = (APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE) + 1;
 
 const SAMPLE_RATE_REMAINDER: f32 = 0.5844217687;
 
@@ -690,7 +688,6 @@ struct FrameCounter {
     cycles: u64,
     delayed_reset: bool,
     reset_after_cycles: u64,
-    cycles_since_interrupt: u64,
     odd_frame: bool,
 
     clock_envelope: bool,
@@ -767,7 +764,7 @@ pub struct Apu {
     next_irq_cycles: u64,
 
     nes_samples: Vec<f32>,
-    out_samples: Vec<f32>,
+    pub out_samples: Vec<f32>,
     sample_rate_current_remainder: f32,
 }
 
@@ -842,6 +839,7 @@ impl Apu {
     pub fn get_out_samples(&mut self) -> Vec<f32> {
         let samples = self.out_samples.clone();
         self.out_samples.clear();
+
         samples
     }
 
@@ -927,18 +925,13 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        let target_samples = if self.sample_rate_current_remainder > 1.0 {
-            self.sample_rate_current_remainder -= 1.0;
-            41
-        } else {
-            40
-        };
-        if self.nes_samples.len() < target_samples { return; }
-        self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;
+        if self.nes_samples.len() < SAMPLES_PER_OUTPUT_SAMPLE { return }
+
+        // Resampling + simple low pass filtering (boxcar)
 
         let sum = self.nes_samples.iter().cloned().reduce(|a, b| a + b);
         if let Some(sum) = sum {
-            let avg = sum / self.nes_samples.len() as f32;
+            let avg = sum / (SAMPLES_PER_OUTPUT_SAMPLE as f32);
             self.out_samples.push(avg);
         }
 
