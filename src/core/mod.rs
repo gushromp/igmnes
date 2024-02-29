@@ -231,14 +231,12 @@ impl Core {
         let mut previous_tick_time = start_time;
 
         'running: loop {
-            tracer.start_new_trace();
-
-
             if self.is_running {
                 // Events
                 for event in events.poll_iter() {
                     match event {
-                        Event::Quit { .. } => break 'running,
+                        Event::Quit { .. } |
+                        Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
                         Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
                             let debugger = self.attach_debugger();
 
@@ -250,13 +248,14 @@ impl Core {
                     }
                 }
 
-                // Input
-                let keyboard_state = events.keyboard_state();
-                let pressed_scancodes = keyboard_state.pressed_scancodes();
-                let keys: Vec<Keycode> = pressed_scancodes
-                    .filter_map(Keycode::from_scancode).collect();
-
                 while !self.cpu_facade.ppu().is_frame_ready() {
+                    tracer.start_new_trace();
+
+                    // Input
+                    let keyboard_state = events.keyboard_state();
+                    let pressed_scancodes = keyboard_state.pressed_scancodes();
+                    let keys: Vec<Keycode> = pressed_scancodes
+                        .filter_map(Keycode::from_scancode).collect();
                     self.set_controllers_state(keys.iter());
                     let current_cycle_count = self.cpu_facade.cpu().cycle_count;
 

@@ -801,27 +801,25 @@ impl Ppu {
 
             if self.is_vblank_starting_cycle() && !self.should_skip_vbl {
                 self.reg_status.is_in_vblank = true;
-
-
             }
 
-            if self.curr_scanline == 241 && self.curr_scanline_cycle == 1 && self.reg_ctrl.is_nmi_enabled {
+            if self.curr_scanline == 241 && self.curr_scanline_cycle == 1 && self.reg_ctrl.is_nmi_enabled && !self.should_skip_vbl {
                 self.nmi_pending = true;
             }
 
             if self.curr_scanline == 241 && self.curr_scanline_cycle == 1
             {
                 if self.is_rendering_enabled() {
-                    self.last_frame = Some(self.curr_frame.clone())
+                    self.output = Some(self.curr_frame.clone())
                 } else {
                     let transparent_color = self.ppu_mem_map.palette.get_transparent_color();
-                    self.last_frame = Some(PpuOutput { data: Box::new([[transparent_color; 256]; 240]) })
+                    self.output = Some(PpuOutput { data: Box::new([[transparent_color; 256]; 240]) })
                 }
             }
 
             if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
-                let output = mem::replace(&mut self.last_frame, None);
-                self.output = output;
+                // let output = mem::replace(&mut self.last_frame, None);
+                // self.output = output;
                 self.reg_status.is_in_vblank = false;
                 self.reg_status.is_sprite_overflow = false;
                 self.reg_status.is_sprite_0_hit = false;
@@ -1080,14 +1078,16 @@ impl MemMapped for Ppu {
                 // This suppression behavior is due to the $2002 read pulling the NMI line back up too quickly after it drops (NMI is active low) for the CPU to see it.
                 // (CPU inputs like NMI are sampled each clock.)
                 if self.is_mutating_read() {
-                    if self.curr_scanline == 241
-                        && (self.curr_scanline_cycle == 0
-                        || self.curr_scanline_cycle == 1
-                        || self.curr_scanline_cycle == 2)
-                    {
-                        self.should_skip_vbl = true;
-                        self.nmi_pending = false;
+                    if self.curr_scanline == 241 {
+                        if self.curr_scanline_cycle == 0 {
+                            self.should_skip_vbl = true;
+                            self.nmi_pending = false;
+                        } else if self.curr_scanline_cycle == 1 || self.curr_scanline_cycle == 2 || self.curr_scanline_cycle == 3 {
+                            self.should_skip_vbl = true;
+                            self.nmi_pending = false;
+                        }
                     }
+
 
                     // Reading from this register also resets the write latch and vblank active flag
                     self.reset_address_latch();
@@ -1130,8 +1130,12 @@ impl MemMapped for Ppu {
                 if !old_is_nmi_enabled
                     && self.reg_ctrl.is_nmi_enabled
                     && self.reg_status.is_in_vblank
+                    && self.curr_scanline_cycle > 3
                 {
                     self.nmi_pending = true;
+                }
+                if !self.reg_ctrl.is_nmi_enabled {
+                    self.nmi_pending = false;
                 }
 
                 // reg_t: ....GH.. ........ <- byte: ......GH
