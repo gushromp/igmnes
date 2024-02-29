@@ -340,8 +340,7 @@ impl Core {
             }
 
             let current_time = Instant::now();
-            let nanos = (current_time.duration_since(previous_render_time).as_nanos() + current_time.duration_since(previous_tick_time).as_nanos() - 150000) as u32;
-
+            let nanos = (current_time.duration_since(previous_render_time).as_nanos() + current_time.duration_since(previous_tick_time).as_nanos()) as u32;
 
             if nanos < NANOS_PER_FRAME {
                 std::thread::sleep(Duration::new(0, NANOS_PER_FRAME - nanos));
