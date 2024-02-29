@@ -388,7 +388,7 @@ impl ApuChannel for Triangle {
 
     fn clock_timer(&mut self) {
         if self.timer_counter == 0 {
-            self.timer_counter = self.timer + 1;
+            self.timer_counter = self.timer;
 
             if self.waveform_counter == 0 {
                 self.waveform_counter = TRIANGLE_WAVEFORM.len() - 1;
@@ -836,7 +836,7 @@ impl Apu {
     }
 
     pub fn is_output_ready(&self) -> bool {
-        self.out_samples.len() >= (OUTPUT_SAMPLE_RATE / 60) - 0
+        self.out_samples.len() >= OUTPUT_SAMPLE_RATE / 60
     }
 
     pub fn get_out_samples(&mut self) -> Vec<f32> {
@@ -929,9 +929,9 @@ impl Apu {
     fn generate_output_samples(&mut self) {
         let target_samples = if self.sample_rate_current_remainder > 1.0 {
             self.sample_rate_current_remainder -= 1.0;
-            41
+            42
         } else {
-            40
+            41
         };
         if self.nes_samples.len() < target_samples { return; }
         self.sample_rate_current_remainder += SAMPLE_RATE_REMAINDER;

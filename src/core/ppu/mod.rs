@@ -486,7 +486,8 @@ pub struct Ppu {
     sprite_output_units: SpriteOutputUnits,
 
     curr_frame: PpuOutput,
-    last_frame: Option<PpuOutput>,
+
+    is_frame_ready: bool,
     output: Option<PpuOutput>,
 
     // Quirks
@@ -802,17 +803,17 @@ impl Ppu {
                     let transparent_color = self.ppu_mem_map.palette.get_transparent_color();
                     self.output = Some(PpuOutput { data: Box::new([[transparent_color; 256]; 240]) })
                 }
+                self.is_frame_ready = true;
             }
 
             if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
-                // let output = mem::replace(&mut self.last_frame, None);
-                // self.output = output;
                 self.reg_status.is_in_vblank = false;
                 self.reg_status.is_sprite_overflow = false;
                 self.reg_status.is_sprite_0_hit = false;
                 self.is_odd_frame = !self.is_odd_frame;
                 self.should_skip_vbl = false;
                 self.nmi_pending = false;
+                self.is_frame_ready = false;
             }
 
             if self.curr_scanline_cycle == 341
@@ -1038,12 +1039,17 @@ impl Ppu {
     }
 
     pub fn is_frame_ready(&self) -> bool {
-        self.output.is_some()
+        self.is_frame_ready
     }
 
-    pub fn get_frame(&mut self) -> Box<[[PpuPaletteColor; 256]; 240]> {
-        let frame = mem::replace(&mut self.output, None);
-        frame.unwrap().data
+    pub fn get_frame(&mut self) -> &Box<[[PpuPaletteColor; 256]; 240]> {
+        self.is_frame_ready = false;
+        if let Some(output) = &self.output {
+            &output.data
+        } else {
+            &self.curr_frame.data
+        }
+
     }
 
 }

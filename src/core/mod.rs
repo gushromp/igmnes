@@ -21,7 +21,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::ops::Deref;
 use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
+use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::audio::AudioSpecDesired;
 use core::controller::Controller;
@@ -51,7 +51,7 @@ const CLOCK_DIVISOR_PAL: i32 = 15;
 
 const WINDOW_SCALING: u32 = 3;
 
-const NANOS_PER_FRAME: u32 = 16_666_667;
+const NANOS_PER_FRAME: u128 = 16_666_667;
 // const NANOS_PER_FRAME: u32 = 16_466_666;
 // const NANOS_PER_FRAME: u32 = 16_465_700;
 // const NANOS_PER_FRAME: u32 = 16_333_334;
@@ -228,11 +228,11 @@ impl Core {
         }
 
         let start_time = Instant::now();
-        let mut previous_render_time = start_time;
-        let mut previous_tick_time = start_time;
 
         'running: loop {
             if self.is_running {
+                let frame_start = Instant::now();
+
                 // Events
                 for event in events.poll_iter() {
                     match event {
@@ -249,104 +249,50 @@ impl Core {
                     }
                 }
 
-                while !self.cpu_facade.ppu().is_frame_ready() || !self.cpu_facade.apu().is_output_ready() {
-                    tracer.start_new_trace();
+                // Input
+                let keyboard_state = events.keyboard_state();
+                let pressed_scancodes = keyboard_state.pressed_scancodes();
+                let keys: Vec<Keycode> = pressed_scancodes
+                    .filter_map(Keycode::from_scancode).collect();
 
-                    // Input
-                    let keyboard_state = events.keyboard_state();
-                    let pressed_scancodes = keyboard_state.pressed_scancodes();
-                    let keys: Vec<Keycode> = pressed_scancodes
-                        .filter_map(Keycode::from_scancode).collect();
-                    self.set_controllers_state(keys.iter());
-                    let current_cycle_count = self.cpu_facade.cpu().cycle_count;
-
-                    let nmi = self.cpu_facade.step_ppu(current_cycle_count, &mut tracer);
-                    if nmi {
-                        self.cpu_facade.ppu().clear_nmi();
-                        self.cpu_facade.nmi(false);
-                    }
-
-                    let irq = self.cpu_facade.step_apu(current_cycle_count);
-                    if irq && !nmi {
-                        self.cpu_facade.irq();
-                    }
-
-                    let dma = self.cpu_facade.dma().is_dma_active();
-                    if dma {
-                        self.cpu_facade.step_dma();
-                        self.cpu_facade.cpu().dma();
-                    }
-
-                    if let Some(debugger) = self.cpu_facade.debugger() {
-                        if debugger.is_listening() {
-                            debugger.break_into();
-                        }
-                    }
-
-                    let result = self.cpu_facade.step_cpu(&mut tracer);
-
-                    match result {
-                        Ok(_) => {
-                            if self.cpu_facade.ppu().should_suppress_nmi() {
-                                self.cpu_facade.cpu().suppress_interrupt();
-                            } else if self.cpu_facade.ppu().nmi_pending {
-                                // Needs PPU to track it's own cycles in order to be more accurate
-                                self.cpu_facade.ppu().clear_nmi();
-                                self.cpu_facade.nmi(true);
-                            }
-                        }
-                        Err(error) => match error {
-                            EmulationError::DebuggerBreakpoint(_addr) |
-                            EmulationError::DebuggerWatchpoint(_addr) => {
-                                if self.is_debugger_attached {
-                                    self.debugger().unwrap().start_listening();
-                                }
-                            }
-                            e @ _ => println!("{}", e),
-                        }
-                    }
+                // Run emulation until PPU frame ready
+                while !self.cpu_facade.ppu().is_frame_ready() {
+                    self.step(&mut tracer, &keys)
                 }
+
+                // Render frame
+                let frame = self.cpu_facade.ppu().get_frame();
+                unsafe {
+                    let pointer = ptr::addr_of!(**frame);
+                    let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
+                    let mut data = *pointer_arr;
+
+                    let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
+                    let tex = surface.as_texture(&texture_creator).unwrap();
+                    renderer.copy(&tex, None, None).unwrap();
+                    renderer.present();
+                }
+
+
+                // Audio
+                while !self.cpu_facade.apu().is_output_ready() {
+                    // Keep running (if necessary) until we have audio enough samples for this frame
+                    self.step(&mut tracer, &keys);
+                }
+                let samples = self.cpu_facade.apu().get_out_samples();
+                audio_queue.queue_audio(&samples).unwrap();
+
+
+                // Sleep
+                // let time_delta = Instant::now().duration_since(frame_start).as_nanos();
+                // if time_delta < NANOS_PER_FRAME {
+                //     let nanos_to_sleep = (NANOS_PER_FRAME - time_delta - 300000) as u32;
+                //     std::thread::sleep(Duration::new(0, nanos_to_sleep));
+                // }
+
+                while Instant::now().duration_since(frame_start).as_nanos() < NANOS_PER_FRAME { }
             }
 
-            let tick_time = Instant::now();
-            let tick_time_delta = tick_time.duration_since(previous_tick_time).as_nanos();
-            previous_tick_time = tick_time;
-
-            let apu = self.cpu_facade.apu();
-            let samples = apu.get_out_samples();
-            let sample_rate = audio_queue.spec().freq as u32;
-            let old_size = audio_queue.size();
-            let remaining_samples = sample_rate.saturating_sub(audio_queue.size()) as usize / 4;
-            let samples_to_queue = std::cmp::min(remaining_samples, samples.len());
-            audio_queue.queue_audio(&samples).unwrap();
-            if audio_queue.size() <= sample_rate {
-
-            } else {
-                println!("Audio buffer overflow! old_size: {}, new_size: {}, remaining: {}, to_queue: {}", old_size, audio_queue.size(), remaining_samples, samples_to_queue);
-            }
-
-
-            // Rendering
-            let frame = self.cpu_facade.ppu().get_frame();
-            unsafe {
-                let pointer = ptr::addr_of!(*frame);
-                let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
-                let mut data = *pointer_arr;
-
-                let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
-                let tex = surface.as_texture(&texture_creator).unwrap();
-                renderer.copy(&tex, None, None).unwrap();
-                renderer.present();
-            }
-
-            let current_time = Instant::now();
-            let nanos = (current_time.duration_since(previous_render_time).as_nanos() + current_time.duration_since(previous_tick_time).as_nanos()) as u32;
-
-            if nanos < NANOS_PER_FRAME {
-                std::thread::sleep(Duration::new(0, NANOS_PER_FRAME - nanos));
-            }
-
-            previous_render_time = Instant::now();
         }
 
         if tracer.has_traces() {
@@ -428,5 +374,58 @@ impl Core {
         }
 
         self.cpu_facade.controllers()[0].set_button_state(&controller_1_state);
+    }
+
+    fn step(&mut self, tracer: &mut Tracer, keys: &Vec<Keycode>) {
+        tracer.start_new_trace();
+
+        self.set_controllers_state(keys.iter());
+        let current_cycle_count = self.cpu_facade.cpu().cycle_count;
+
+        let nmi = self.cpu_facade.step_ppu(current_cycle_count, tracer);
+        if nmi {
+            self.cpu_facade.ppu().clear_nmi();
+            self.cpu_facade.nmi(false);
+        }
+
+        let irq = self.cpu_facade.step_apu(current_cycle_count);
+        if irq && !nmi {
+            self.cpu_facade.irq();
+        }
+
+        let dma = self.cpu_facade.dma().is_dma_active();
+        if dma {
+            self.cpu_facade.step_dma();
+            self.cpu_facade.cpu().dma();
+        }
+
+        if let Some(debugger) = self.cpu_facade.debugger() {
+            if debugger.is_listening() {
+                debugger.break_into();
+            }
+        }
+
+        let result = self.cpu_facade.step_cpu(tracer);
+
+        match result {
+            Ok(_) => {
+                if self.cpu_facade.ppu().should_suppress_nmi() {
+                    self.cpu_facade.cpu().suppress_interrupt();
+                } else if self.cpu_facade.ppu().nmi_pending {
+                    // Needs PPU to track it's own cycles in order to be more accurate
+                    self.cpu_facade.ppu().clear_nmi();
+                    self.cpu_facade.nmi(true);
+                }
+            }
+            Err(error) => match error {
+                EmulationError::DebuggerBreakpoint(_addr) |
+                EmulationError::DebuggerWatchpoint(_addr) => {
+                    if self.is_debugger_attached {
+                        self.debugger().unwrap().start_listening();
+                    }
+                }
+                e @ _ => println!("{}", e),
+            }
+        }
     }
 }
