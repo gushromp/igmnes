@@ -284,13 +284,16 @@ impl Core {
 
 
                 // Sleep
-                // let time_delta = Instant::now().duration_since(frame_start).as_nanos();
-                // if time_delta < NANOS_PER_FRAME {
-                //     let nanos_to_sleep = (NANOS_PER_FRAME - time_delta - 300000) as u32;
-                //     std::thread::sleep(Duration::new(0, nanos_to_sleep));
-                // }
+                let frame_duration = Instant::now().duration_since(frame_start);
+                let frame_duration_nanos = frame_duration.as_nanos();
+                if frame_duration_nanos < NANOS_PER_FRAME {
+                    // Sleep for a certain amount to alleviate CPU usage, then use busy loop for rest for accurate timing
+                    let frame_duration_millis = frame_duration.as_millis();
+                    let nanos_to_sleep = (16 - frame_duration_millis - 1) * 1_000_000;
+                    std::thread::sleep(Duration::new(0, nanos_to_sleep as u32));
 
-                while Instant::now().duration_since(frame_start).as_nanos() < NANOS_PER_FRAME { }
+                    while Instant::now().duration_since(frame_start).as_nanos() < NANOS_PER_FRAME { }
+                }
             }
 
         }
