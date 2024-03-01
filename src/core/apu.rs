@@ -1,16 +1,9 @@
 use core::memory::MemMapped;
 use core::errors::EmulationError;
 
-const APU_SAMPLE_RATE: usize = 1_789_773;
-
 const OUTPUT_SAMPLE_RATE: usize = 44_100;
+const SAMPLES_PER_OUTPUT_SAMPLE: usize = 40;
 
-const SAMPLES_PER_OUTPUT_SAMPLE: usize = (APU_SAMPLE_RATE / OUTPUT_SAMPLE_RATE) + 1;
-
-const SAMPLE_RATE_REMAINDER: f32 = 0.5844217687;
-
-// const SAMPLE_AVERAGE_COUNT: usize = 4;
-// const SAMPLE_RATE_RATIO: usize = (APU_SAMPLE_RATE / (OUTPUT_SAMPLE_RATE * SAMPLE_AVERAGE_COUNT)) + 1;
 
 const FC_4STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 29829];
 const FC_5STEP_CYCLE_TABLE_NTSC: &'static [u64; 4] = &[7457, 14913, 22371, 37281];
@@ -381,7 +374,7 @@ impl ApuChannel for Triangle {
     }
 
     fn is_audible(&self) -> bool {
-        self.is_enabled() && self.linear_counter > 0 && !self.is_muted
+        self.is_enabled() && self.linear_counter > 0 && self.timer > 4 && !self.is_muted
     }
 
     fn clock_timer(&mut self) {
@@ -764,8 +757,7 @@ pub struct Apu {
     next_irq_cycles: u64,
 
     nes_samples: Vec<f32>,
-    pub out_samples: Vec<f32>,
-    sample_rate_current_remainder: f32,
+    pub out_samples: Vec<f32>
 }
 
 impl Default for Apu {
@@ -795,8 +787,7 @@ impl Default for Apu {
             next_irq_cycles: 0,
 
             nes_samples: Vec::new(),
-            out_samples: Vec::new(),
-            sample_rate_current_remainder: 0.0,
+            out_samples: Vec::new()
         }
     }
 }
@@ -925,16 +916,15 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        if self.nes_samples.len() < SAMPLES_PER_OUTPUT_SAMPLE { return }
+        if self.nes_samples.len() < SAMPLES_PER_OUTPUT_SAMPLE * 16 { return }
 
-        // Resampling + simple low pass filtering (boxcar)
-
-        let sum = self.nes_samples.iter().cloned().reduce(|a, b| a + b);
-        if let Some(sum) = sum {
-            let avg = sum / (SAMPLES_PER_OUTPUT_SAMPLE as f32);
-            self.out_samples.push(avg);
+        // Resampling + low pass filter
+        for samples in self.nes_samples.chunks(SAMPLES_PER_OUTPUT_SAMPLE) {
+            let sum = samples.iter().cloned().reduce(|a, b| a + b).unwrap();
+            let out_sample = sum / SAMPLES_PER_OUTPUT_SAMPLE as f32;
+            self.out_samples.push(out_sample);
         }
-
+        
         self.nes_samples.clear();
     }
 
