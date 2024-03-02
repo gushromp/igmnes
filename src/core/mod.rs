@@ -1,5 +1,4 @@
 extern crate sdl2;
-extern crate shuteye;
 
 mod debugger;
 mod mappers;
