@@ -50,11 +50,13 @@ const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32;
 const CLOCK_DIVISOR_PAL: i32 = 15;
 
 const WINDOW_SCALING: u32 = 3;
+const PIXELS_PER_SCANLINE: usize = 256_usize;
+const BYTES_PER_SCANLINE: usize = PIXELS_PER_SCANLINE * 3;
+const SCANLINES: usize = 240;
+const SCANLINES_OFFSET: usize = 8;
 
 const NANOS_PER_FRAME: u128 = 16_666_667;
-// const NANOS_PER_FRAME: u32 = 16_466_666;
-// const NANOS_PER_FRAME: u32 = 16_465_700;
-// const NANOS_PER_FRAME: u32 = 16_333_334;
+
 
 pub trait CpuFacade {
     fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
@@ -426,14 +428,19 @@ impl Core {
     fn render_frame<T>(&mut self, renderer: &mut WindowCanvas, texture_creator: &TextureCreator<T>) {
         let frame = self.cpu_facade.ppu().get_frame();
         unsafe {
+
+            
             let pointer = ptr::addr_of!(**frame);
-            let pointer_arr = pointer as *mut [u8; 256 * 240 * 3];
+            let pointer_arr = pointer as *mut [u8; BYTES_PER_SCANLINE * SCANLINES];
             let mut data = *pointer_arr;
 
-            let surface = sdl2::surface::Surface::from_data(&mut data, 256, 240, 256 * 3, PixelFormatEnum::RGB24).unwrap();
+            let offset = BYTES_PER_SCANLINE * SCANLINES_OFFSET;
+            let data_slice = &mut data[offset..];
+            let surface = sdl2::surface::Surface::from_data(data_slice, 256, 240 - (SCANLINES_OFFSET as u32 * 2), BYTES_PER_SCANLINE as u32, PixelFormatEnum::RGB24).unwrap();
             let tex = surface.as_texture(texture_creator).unwrap();
             renderer.copy(&tex, None, None).unwrap();
             renderer.present();
         }
     }
 }
+
