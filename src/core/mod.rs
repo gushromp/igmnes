@@ -28,6 +28,7 @@ use core::debug::Tracer;
 use core::dma::Dma;
 use std::time::{Duration, Instant};
 use sdl2::render::{TextureCreator, WindowCanvas};
+use sdl2::video::FullscreenType;
 use self::memory::*;
 use self::cpu::Cpu;
 use self::ppu::Ppu;
@@ -208,12 +209,14 @@ impl Core {
         let mut events = sdl_context.event_pump().unwrap();
 
         let window = video_subsystem.window("IGMNes", 256 * WINDOW_SCALING, 240 * WINDOW_SCALING)
+            .resizable()
             .position_centered()
             .build()
             .unwrap();
 
 
         let mut renderer = window.into_canvas().build().unwrap();
+        renderer.set_logical_size(256, 232).unwrap();
 
         let texture_creator = renderer.texture_creator();
 
@@ -240,7 +243,15 @@ impl Core {
                     match event {
                         Event::Quit { .. } |
                         Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
-                        Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                        Event::KeyDown { keycode: Some(Keycode::F9), .. } => {
+                            let new_state = if renderer.window().fullscreen_state() == FullscreenType::Desktop {
+                                FullscreenType::Off
+                            } else {
+                                FullscreenType::Desktop
+                            };
+                            renderer.window_mut().set_fullscreen(new_state).unwrap();
+                        }
+                            Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
                             let debugger = self.attach_debugger();
 
                             if !debugger.is_listening() {
@@ -353,8 +364,8 @@ impl Core {
 
         for key_state in state {
             let button_state = match key_state {
-                Keycode::Z => Some(ControllerButton::A),
-                Keycode::X => Some(ControllerButton::B),
+                Keycode::X => Some(ControllerButton::A),
+                Keycode::Z => Some(ControllerButton::B),
                 Keycode::RShift => Some(ControllerButton::SELECT),
                 Keycode::Return => Some(ControllerButton::START),
                 Keycode::Up => Some(ControllerButton::UP),
