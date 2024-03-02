@@ -28,7 +28,7 @@ use core::debug::Tracer;
 use core::dma::Dma;
 use std::time::{Duration, Instant};
 use sdl2::render::{TextureCreator, WindowCanvas};
-use sdl2::video::FullscreenType;
+use sdl2::video::{FlashOperation, FullscreenType};
 use self::memory::*;
 use self::cpu::Cpu;
 use self::ppu::Ppu;
@@ -238,18 +238,22 @@ impl Core {
             if self.is_running {
                 let frame_start = Instant::now();
 
+                let mut did_change_fullscreen_state = false;
                 // Events
                 for event in events.poll_iter() {
+
                     match event {
                         Event::Quit { .. } |
                         Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
                         Event::KeyDown { keycode: Some(Keycode::F9), .. } => {
+                            if did_change_fullscreen_state { break }
                             let new_state = if renderer.window().fullscreen_state() == FullscreenType::Desktop {
                                 FullscreenType::Off
                             } else {
                                 FullscreenType::Desktop
                             };
                             renderer.window_mut().set_fullscreen(new_state).unwrap();
+                            did_change_fullscreen_state = true;
                         }
                             Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
                             let debugger = self.attach_debugger();
@@ -440,7 +444,7 @@ impl Core {
         let frame = self.cpu_facade.ppu().get_frame();
         unsafe {
 
-            
+
             let pointer = ptr::addr_of!(**frame);
             let pointer_arr = pointer as *mut [u8; BYTES_PER_SCANLINE * SCANLINES];
             let mut data = *pointer_arr;
