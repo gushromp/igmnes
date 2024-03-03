@@ -1144,7 +1144,7 @@ impl MemMapped for Ppu {
             }
             4 => {
                 self.ppu_mem_map.oam_table.write_u8(self.reg_oam_addr, byte)?;
-                self.reg_oam_addr += 1;
+                self.reg_oam_addr = self.reg_oam_addr.wrapping_add(1);
                 Ok(())
             }
             2 => Ok(()),

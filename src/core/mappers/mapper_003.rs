@@ -20,7 +20,7 @@ pub struct CNROM {
 impl CNROM {
     pub fn new(rom: &Rom) -> CNROM {
         let prg_rom_bytes = rom.prg_rom_bytes.clone(); // TODO use references!
-        let chr_rom_bytes: Vec<u8> = rom.chr_rom_bytes.clone();
+        let chr_rom_bytes = rom.chr_rom_bytes.clone();
         CNROM {
             vram: Ram::default(),
             prg_rom_bytes,
@@ -44,9 +44,12 @@ impl CNROM {
         (self.bank_index * BANK_SIZE_BYTES) + index as usize
     }
 
-    fn select_bank(&mut self, byte: u8) {
-        self.bank_index = (byte & 0b1111) as usize;
+    fn select_bank(&mut self, index: u16, byte: u8) {
+        let byte_in_rom = self.read_prg_rom(index).unwrap();
+        let resulting_byte = (byte & 0b11) & byte_in_rom;
+        self.bank_index = resulting_byte as usize;
     }
+
 }
 
 impl CpuMapper for CNROM {
@@ -59,9 +62,7 @@ impl CpuMapper for CNROM {
         Ok(0)
     }
 
-    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
-        Ok(())
-    }
+    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> { Ok(()) }
 }
 
 impl PpuMapper for CNROM {
@@ -71,7 +72,9 @@ impl PpuMapper for CNROM {
     }
 
     fn read_chr_rom_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        Ok(self.chr_rom_bytes[range.start as usize..range.end as usize].to_vec())
+        let adjusted_range_start_index = self.get_chr_rom_index(range.start);
+        let adjusted_range = adjusted_range_start_index..adjusted_range_start_index + range.len();
+        Ok(self.chr_rom_bytes[adjusted_range].to_vec())
     }
 
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {
@@ -121,7 +124,7 @@ impl MemMapped for CNROM {
                 let index = self.get_mirrored_index(index);
                 self.vram.write(index, byte)
             },
-            0x8000..=0xFFFF => Ok(self.select_bank(byte)), // TODO bus conflicts
+            0x8000..=0xFFFF => Ok(self.select_bank(index, byte)),
             _ => {
                 Ok(())
             }
