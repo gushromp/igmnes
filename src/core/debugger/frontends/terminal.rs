@@ -1,23 +1,22 @@
-
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::io::prelude::*;
-use std::collections::{HashSet, HashMap};
-use std::collections::hash_map::Entry;
 use std::ops::Range;
 
 
-use crate::core::CpuFacade;
-use crate::core::cpu::Cpu;
 use crate::core::apu::Apu;
 use crate::core::controller::Controller;
+use crate::core::cpu::Cpu;
 use crate::core::debug::Tracer;
-use crate::core::memory::{CpuMemMap, MemMapped};
-use crate::core::debugger::Debugger;
 use crate::core::debugger::command::Command;
 use crate::core::debugger::disassembler;
+use crate::core::debugger::Debugger;
 use crate::core::dma::Dma;
 use crate::core::errors::EmulationError;
+use crate::core::memory::{CpuMemMap, MemMapped};
 use crate::core::ppu::Ppu;
+use crate::core::BusOps;
 
 struct MemMapShim<'a> {
     mem_map: &'a mut CpuMemMap,
@@ -392,15 +391,10 @@ impl Debugger for TerminalDebugger {
     }
 
 }
-impl CpuFacade for TerminalDebugger {
+impl BusOps for TerminalDebugger {
 
-    fn consume(self: Box<Self>) -> (Cpu, CpuMemMap) {
-        let this = *self;
-
-        (this.cpu, this.mem_map)
-    }
-    fn debugger(&mut self) -> Option<&mut dyn Debugger> {
-        Some(self)
+    fn consume(self) -> (Cpu, CpuMemMap) {
+        (self.cpu, self.mem_map)
     }
 
     fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }

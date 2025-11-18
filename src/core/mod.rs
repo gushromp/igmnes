@@ -13,6 +13,7 @@ mod ppu;
 mod dma;
 mod controller;
 
+use crate::core::debugger::DebuggerFrontend;
 use self::apu::Apu;
 use self::cpu::Cpu;
 use self::debugger::frontends::terminal::TerminalDebugger;
@@ -34,6 +35,7 @@ use std::error::Error;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{mem, ptr};
+use enum_dispatch::enum_dispatch;
 
 pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32;
 // 21.477272 MHz
@@ -55,10 +57,9 @@ const SCANLINES_OFFSET: usize = 8;
 
 const NANOS_PER_FRAME: u128 = 16_666_667;
 
-
-pub trait CpuFacade {
-    fn consume(self: Box<Self>) -> (Cpu, CpuMemMap);
-    fn debugger(&mut self) -> Option<&mut dyn Debugger>;
+#[enum_dispatch]
+pub trait BusOps {
+    fn consume(self) -> (Cpu, CpuMemMap);
 
     fn cpu(&mut self) -> &mut Cpu;
     fn ppu(&mut self) -> &mut Ppu;
@@ -78,42 +79,41 @@ pub trait CpuFacade {
     fn mem_map(&self) -> &CpuMemMap;
 }
 
-struct DefaultCpuFacade {
+#[enum_dispatch]
+pub trait BusDebugger {
+    fn debugger(&mut self) -> Option<&mut DebuggerFrontend>;
+}
+
+
+struct DefaultBus {
     cpu: Cpu,
     mem_map: CpuMemMap,
 }
 
-impl DefaultCpuFacade {
-    pub fn new(cpu: Cpu, mem_map: CpuMemMap) -> DefaultCpuFacade {
-        DefaultCpuFacade {
+impl DefaultBus {
+    pub fn new(cpu: Cpu, mem_map: CpuMemMap) -> DefaultBus {
+        DefaultBus {
             cpu,
             mem_map,
         }
     }
 }
 
-impl Default for DefaultCpuFacade {
-    fn default() -> DefaultCpuFacade {
+impl Default for DefaultBus {
+    fn default() -> DefaultBus {
         let dummy_cpu: Cpu = Cpu::default();
         let dummy_mem_map: CpuMemMap = CpuMemMap::default();
 
-        DefaultCpuFacade {
+        DefaultBus {
             cpu: dummy_cpu,
             mem_map: dummy_mem_map,
         }
     }
 }
 
-impl CpuFacade for DefaultCpuFacade {
-    fn consume(self: Box<Self>) -> (Cpu, CpuMemMap) {
-        let this = *self;
-
-        (this.cpu, this.mem_map)
-    }
-
-    // This is the real cpu, not a debugger
-    fn debugger(&mut self) -> Option<&mut dyn Debugger> {
-        None
+impl BusOps for DefaultBus {
+    fn consume(self) -> (Cpu, CpuMemMap) {
+        (self.cpu, self.mem_map)
     }
 
     fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
@@ -160,11 +160,20 @@ impl CpuFacade for DefaultCpuFacade {
     fn mem_map(&self) -> &CpuMemMap { &self.mem_map }
 }
 
+impl BusDebugger for DefaultBus {
+    fn debugger(&mut self) -> Option<&mut DebuggerFrontend> { None }
+}
+
+#[enum_dispatch(BusOps, BusDebugger)]
+enum Bus {
+    DefaultBus,
+    DebuggerFrontend,
+}
+
 // 2A03 (NTSC) and 2A07 (PAL) emulation
 // contains CPU (nearly identical to MOS 6502) part and APU part
 pub struct Core {
-    // cpu_facade: DefaultCpuFacade, //Box<dyn CpuFacade>,
-    cpu_facade: Box<dyn CpuFacade>,
+    bus: Bus,
     is_debugger_attached: bool,
     is_running: bool,
 }
@@ -175,10 +184,10 @@ impl Core {
         let mut mem_map = CpuMemMap::new(rom);
 
         let cpu = Cpu::new(&mut mem_map);
-        let cpu_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<dyn CpuFacade>;
+        let bus = DefaultBus::new(cpu, mem_map);
 
         let core = Core {
-            cpu_facade,
+            bus: Bus::from(bus),
             is_debugger_attached: false,
             is_running: false,
         };
@@ -226,7 +235,7 @@ impl Core {
         tracer.set_enabled(enable_tracing);
 
         if let Some(entry_point) = entry_point {
-            self.cpu_facade.cpu().reg_pc = entry_point;
+            self.bus.cpu().reg_pc = entry_point;
         }
 
         let start_time = Instant::now();
@@ -271,7 +280,7 @@ impl Core {
 
 
                 // Run emulation until PPU frame ready
-                while !self.cpu_facade.ppu().is_frame_ready() {
+                while !self.bus.ppu().is_frame_ready() {
                     self.step(&mut tracer, &keys)
                 }
 
@@ -279,11 +288,11 @@ impl Core {
                 self.render_frame(&mut renderer, &texture_creator);
 
                 // Audio
-                while !self.cpu_facade.apu().is_output_ready() {
+                while !self.bus.apu().is_output_ready() {
                     // Keep running (if necessary) until we have audio enough samples for this frame
                     self.step(&mut tracer, &keys);
                 }
-                let samples = self.cpu_facade.apu().get_out_samples();
+                let samples = self.bus.apu().get_out_samples();
                 audio_queue.queue_audio(&samples).unwrap();
 
                 // Sleep
@@ -309,10 +318,10 @@ impl Core {
 
         let cur_time = Instant::now();
         let seconds = cur_time.duration_since(start_time).as_millis() as f64 / 1000.0;
-        println!("Cycles: {}", self.cpu_facade.cpu().cycle_count);
+        println!("Cycles: {}", self.bus.cpu().cycle_count);
         println!("Seconds: {}", seconds);
         if seconds > 0.0 {
-            println!("Cycles per second: {}", (self.cpu_facade.cpu().cycle_count as f64 / seconds).floor());
+            println!("Cycles per second: {}", (self.bus.cpu().cycle_count as f64 / seconds).floor());
         }
     }
 
@@ -324,39 +333,33 @@ impl Core {
         self.is_running = false;
     }
 
-    pub fn attach_debugger(&mut self) -> &mut dyn Debugger {
+    pub fn attach_debugger(&mut self) -> &mut DebuggerFrontend {
         if !self.is_debugger_attached {
             let dummy_facade = self.get_dummy_facade();
-            let (cpu, mem_map) = mem::replace(&mut self.cpu_facade, dummy_facade).consume();
-            let new_facade = Box::new(TerminalDebugger::new(cpu, mem_map)) as Box<dyn CpuFacade>;
+            let (cpu, mem_map) = mem::replace(&mut self.bus, dummy_facade).consume();
+            let new_bus = DebuggerFrontend::from(TerminalDebugger::new(cpu, mem_map));
 
-            self.cpu_facade = new_facade;
+            self.bus = new_bus.into();
             self.is_debugger_attached = true;
         }
 
-        self.debugger().unwrap()
+        self.bus.debugger().unwrap()
     }
 
     pub fn detach_debugger(&mut self) {
         if self.is_debugger_attached {
-            let dummy_facade = self.get_dummy_facade();
-            let (cpu, mem_map) = mem::replace(&mut self.cpu_facade, dummy_facade).consume();
-            let new_facade = Box::new(DefaultCpuFacade::new(cpu, mem_map)) as Box<dyn CpuFacade>;
+            let dummy_bus = self.get_dummy_facade();
+            let (cpu, mem_map) = mem::replace(&mut self.bus, dummy_bus).consume();
+            let new_bus = DefaultBus::new(cpu, mem_map);
 
-            self.cpu_facade = new_facade;
+            self.bus = new_bus.into();
             self.is_debugger_attached = false;
         }
     }
 
-    pub fn debugger(&mut self) -> Option<&mut dyn Debugger> {
-        self.cpu_facade.debugger()
-    }
-
-    fn get_dummy_facade(&mut self) -> Box<dyn CpuFacade> {
-        let dummy_device = DefaultCpuFacade::default();
-        let dummy_facade = Box::new(dummy_device) as Box<dyn CpuFacade>;
-
-        dummy_facade
+    fn get_dummy_facade(&mut self) -> Bus {
+        let dummy_device = DefaultBus::default();
+        dummy_device.into()
     }
 
     fn set_controllers_state<'a, I>(&mut self, state: I) where I: Iterator<Item=&'a Keycode> {
@@ -381,55 +384,55 @@ impl Core {
             }
         }
 
-        self.cpu_facade.controllers()[0].set_button_state(&controller_1_state);
+        self.bus.controllers()[0].set_button_state(&controller_1_state);
     }
 
     fn step(&mut self, tracer: &mut Tracer, keys: &Vec<Keycode>) {
         tracer.start_new_trace();
 
         self.set_controllers_state(keys.iter());
-        let current_cycle_count = self.cpu_facade.cpu().cycle_count;
+        let current_cycle_count = self.bus.cpu().cycle_count;
 
-        let nmi = self.cpu_facade.step_ppu(current_cycle_count, tracer);
+        let nmi = self.bus.step_ppu(current_cycle_count, tracer);
         if nmi {
-            self.cpu_facade.ppu().clear_nmi();
-            self.cpu_facade.nmi();
+            self.bus.ppu().clear_nmi();
+            self.bus.nmi();
         }
 
-        let irq = self.cpu_facade.step_apu(current_cycle_count);
+        let irq = self.bus.step_apu(current_cycle_count);
         if irq && !nmi {
-            self.cpu_facade.irq();
+            self.bus.irq();
         }
 
-        let dma = self.cpu_facade.dma().is_dma_active();
+        let dma = self.bus.dma().is_dma_active();
         if dma {
-            self.cpu_facade.step_dma();
-            self.cpu_facade.cpu().dma();
+            self.bus.step_dma();
+            self.bus.cpu().dma();
         }
 
-        if let Some(debugger) = self.cpu_facade.debugger() {
+        if let Some(debugger) = self.bus.debugger() {
             if debugger.is_listening() {
                 debugger.break_into();
             }
         }
 
-        let result = self.cpu_facade.step_cpu(tracer);
+        let result = self.bus.step_cpu(tracer);
 
         match result {
             Ok(_) => {
-                if self.cpu_facade.ppu().should_suppress_nmi() {
-                    self.cpu_facade.cpu().suppress_interrupt();
-                } else if self.cpu_facade.ppu().nmi_pending {
+                if self.bus.ppu().should_suppress_nmi() {
+                    self.bus.cpu().suppress_interrupt();
+                } else if self.bus.ppu().nmi_pending {
                     // Needs PPU to track it's own cycles in order to be more accurate
-                    self.cpu_facade.ppu().clear_nmi();
-                    self.cpu_facade.nmi();
+                    self.bus.ppu().clear_nmi();
+                    self.bus.nmi();
                 }
             }
             Err(error) => match error {
                 EmulationError::DebuggerBreakpoint(_addr) |
                 EmulationError::DebuggerWatchpoint(_addr) => {
                     if self.is_debugger_attached {
-                        self.debugger().unwrap().start_listening();
+                        self.bus.debugger().unwrap().start_listening();
                     }
                 }
                 e @ _ => println!("{}", e),
@@ -438,7 +441,7 @@ impl Core {
     }
 
     fn render_frame<T>(&mut self, renderer: &mut WindowCanvas, texture_creator: &TextureCreator<T>) {
-        let frame = self.cpu_facade.ppu().get_frame();
+        let frame = self.bus.ppu().get_frame();
         unsafe {
 
 

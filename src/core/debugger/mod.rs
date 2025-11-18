@@ -1,16 +1,27 @@
+use enum_dispatch::enum_dispatch;
+use crate::core::{BusOps, BusDebugger};
+use crate::core::debugger::frontends::terminal::TerminalDebugger;
+
 mod command;
 pub mod disassembler;
 pub mod frontends;
 
-
-use crate::core::CpuFacade;
-
-
-pub trait Debugger: CpuFacade {
+#[enum_dispatch]
+pub trait Debugger: BusOps {
     fn break_into(&mut self);
 
     fn start_listening(&mut self);
     fn stop_listening(&mut self);
 
     fn is_listening(&self) -> bool;
+}
+
+#[enum_dispatch(Debugger)]
+#[enum_dispatch(BusOps)]
+pub enum DebuggerFrontend {
+    TerminalDebugger,
+}
+
+impl BusDebugger for DebuggerFrontend {
+    fn debugger(&mut self) -> Option<&mut DebuggerFrontend> { Some(self) }
 }
