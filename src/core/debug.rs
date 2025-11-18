@@ -1,11 +1,11 @@
+use crate::core::cpu::Cpu;
+use crate::core::debugger::disassembler::disassemble;
+use crate::core::instructions::Instruction;
+use crate::core::memory::MemMapped;
+use crate::core::ppu::Ppu;
 use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::path::Path;
-use crate::core::cpu::Cpu;
-use crate::core::instructions::Instruction;
-use crate::core::debugger::disassembler::disassemble;
-use crate::core::memory::MemMapped;
-use crate::core::ppu::Ppu;
 
 #[derive(Default)]
 pub struct Trace {
@@ -39,8 +39,6 @@ pub struct Tracer {
 
     current_trace: Option<Trace>,
     traces: Vec<String>,
-
-
 }
 
 impl Tracer {
@@ -58,9 +56,14 @@ impl Tracer {
 
             let trace_line = match instruction {
                 Ok(mut instr) => {
-                    format!("{}\t{}", disassemble(instr.address, &mut instr, cpu_state, mem_map).unwrap_or("INVALID".to_string()), cpu_state)
+                    format!(
+                        "{}\t{}",
+                        disassemble(instr.address, &mut instr, cpu_state, mem_map)
+                            .unwrap_or("INVALID".to_string()),
+                        cpu_state
+                    )
                 }
-                Err(e) => e.to_string()
+                Err(e) => e.to_string(),
             };
             current_trace.cpu_trace = Some(trace_line);
             mem_map.set_is_mutating_read(true);

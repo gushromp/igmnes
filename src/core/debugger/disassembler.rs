@@ -1,11 +1,15 @@
-use std::ops::Range;
-use crate::core::instructions::Instruction;
-use crate::core::memory::MemMapped;
 use crate::core::cpu::Cpu;
 use crate::core::errors::EmulationError;
+use crate::core::instructions::Instruction;
+use crate::core::memory::MemMapped;
+use std::ops::Range;
 
-pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut impl MemMapped)
-                         -> Result<Vec<String>, EmulationError> {
+pub fn disassemble_range(
+    addr: u16,
+    range: &Range<u16>,
+    cpu: &Cpu,
+    mem_map: &mut impl MemMapped,
+) -> Result<Vec<String>, EmulationError> {
     let mut result = Vec::new();
     let mut current_addr = addr;
 
@@ -18,7 +22,7 @@ pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut
             Ok(ref mut ins) => {
                 result.push(disassemble(current_addr, ins, cpu, mem_map)?);
                 current_addr += ins.addressing_mode.byte_count();
-            },
+            }
             Err(e) => {
                 result.push(format!("${:04X}: {}", current_addr, e));
                 current_addr += 1;
@@ -29,8 +33,12 @@ pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut
     Ok(result)
 }
 
-pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map: &mut impl MemMapped)
-                   -> Result<String, EmulationError> {
+pub fn disassemble(
+    addr: u16,
+    instruction: &mut Instruction,
+    cpu: &Cpu,
+    mem_map: &mut impl MemMapped,
+) -> Result<String, EmulationError> {
     use crate::core::instructions::AddressingMode::*;
 
     mem_map.set_is_mutating_read(false);
@@ -42,22 +50,30 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
     let addressing_mode = &instruction.addressing_mode;
 
     let (args, detail) = match *addressing_mode {
-        ZeroPageIndexedX(arg) => {
-            (format!("${:02X}, X", arg),
-             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_x), resolved))
-        },
-        ZeroPageIndexedY(arg) => {
-            (format!("${:02X}, Y", arg),
-             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_y), resolved))
-        },
-        AbsoluteIndexedX(arg) => {
-            (format!("${:04X}, X", arg),
-             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_x as u16), resolved))
-        },
-        AbsoluteIndexedY(arg) => {
-            (format!("${:04X}, Y", arg),
-             format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_y as u16), resolved))
-        },
+        ZeroPageIndexedX(arg) => (
+            format!("${:02X}, X", arg),
+            format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_x), resolved),
+        ),
+        ZeroPageIndexedY(arg) => (
+            format!("${:02X}, Y", arg),
+            format!("[${:04X}: ${:02X}]", arg.wrapping_add(cpu.reg_y), resolved),
+        ),
+        AbsoluteIndexedX(arg) => (
+            format!("${:04X}, X", arg),
+            format!(
+                "[${:04X}: ${:02X}]",
+                arg.wrapping_add(cpu.reg_x as u16),
+                resolved
+            ),
+        ),
+        AbsoluteIndexedY(arg) => (
+            format!("${:04X}, Y", arg),
+            format!(
+                "[${:04X}: ${:02X}]",
+                arg.wrapping_add(cpu.reg_y as u16),
+                resolved
+            ),
+        ),
         IndexedIndirectX(arg) => {
             let arg = arg.wrapping_add(cpu.reg_x);
             let addr_low = mem_map.read(arg as u16)?;
@@ -66,26 +82,33 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
             // See comment in the read_resolved function
             let addr = ((addr_high as u16) << 8) | addr_low as u16;
 
-            (format!("(${:02X}, X)", arg),
-             format!("[${:04X}: ${:02X}]", addr, resolved))
-        },
+            (
+                format!("(${:02X}, X)", arg),
+                format!("[${:04X}: ${:02X}]", addr, resolved),
+            )
+        }
         IndirectIndexedY(arg) => {
             let arg_resolved = mem_map.read_word(arg as u16)?;
             let addr = arg_resolved.wrapping_add(cpu.reg_y as u16);
 
-            (format!("(${:02X}), Y", arg),
-             format!("[${:04X}: ${:02X}]", addr, resolved))
-        },
+            (
+                format!("(${:02X}), Y", arg),
+                format!("[${:04X}: ${:02X}]", addr, resolved),
+            )
+        }
 
         Implicit => (format!(""), format!("")),
         Immediate(arg) => (format!("#${:02X}", arg), format!("")),
         Accumulator => (format!("A"), format!("[A: {:02X}]", cpu.reg_a)),
-        ZeroPage(arg) => (format!("${:02X}", arg), format!("[${:02X}: ${:02X}]", arg, resolved)),
+        ZeroPage(arg) => (
+            format!("${:02X}", arg),
+            format!("[${:02X}: ${:02X}]", arg, resolved),
+        ),
         Absolute(arg) => (format!("${:04X}", arg), format!("[${:X}]", resolved)),
-        Relative(arg) => {
-            (format!("${:02X}", arg),
-             format!("[PC -> ${:04X}]", (cpu.reg_pc as i32 + arg as i32) + 2))
-        }
+        Relative(arg) => (
+            format!("${:02X}", arg),
+            format!("[PC -> ${:04X}]", (cpu.reg_pc as i32 + arg as i32) + 2),
+        ),
         Indirect(arg) => {
             let addr_high = arg >> 8;
             let addr_low_1 = (arg & 0xFF) as u8;
@@ -99,11 +122,10 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
 
             let target_addr = ((target_addr_high as u16) << 8) | target_addr_low as u16;
 
-            (format!("(${:04X})", arg),
-             format!("[${:04X}]", target_addr))
-        },
+            (format!("(${:04X})", arg), format!("[${:04X}]", target_addr))
+        }
 
-        Invalid => ("".to_string(), "".to_string())
+        Invalid => ("".to_string(), "".to_string()),
     };
 
     let detail = {
@@ -114,10 +136,12 @@ pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map:
         }
     };
 
-
     mem_map.set_is_mutating_read(true);
 
-    let disassembly = format!("${:04X}(${:02X}): {:<2} {:<10} {:<20}", addr, op_code, token, args, detail);
+    let disassembly = format!(
+        "${:04X}(${:02X}): {:<2} {:<10} {:<20}",
+        addr, op_code, token, args, detail
+    );
     if addr == cpu.reg_pc {
         Ok(format!("{}\t{}", &disassembly, &cpu))
     } else {

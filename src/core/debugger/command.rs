@@ -1,7 +1,7 @@
-use std::str::{self, FromStr};
-use std::ops::Range;
-use nom::{IResult, line_ending, space, digit, alphanumeric, eol};
 use nom::IResult::*;
+use nom::{alphanumeric, digit, eol, line_ending, space, IResult};
+use std::ops::Range;
+use std::str::{self, FromStr};
 
 #[derive(Debug)]
 pub enum Command {
@@ -35,7 +35,7 @@ impl Command {
         match parse_command(input.as_bytes()) {
             IResult::Done(_i, command) => Ok(command),
             IResult::Error(err) => Err(format!("Error while parsing command: {:?}", err)),
-            _ => Err(format!("Incomplete parsing error"))
+            _ => Err(format!("Incomplete parsing error")),
         }
     }
 }
@@ -57,60 +57,49 @@ macro_rules! opt_default (
 
 named!(
     parse_command<Command>,
-    complete!(
-        alt!(
-            parse_show_usage |
-            terminated!(
-                parse_command_non_terminated
-                , eol
-            )
-        )
-    )
+    complete!(alt!(
+        parse_show_usage | terminated!(parse_command_non_terminated, eol)
+    ))
 );
 
-named!(parse_command_non_terminated<Command>,
-    alt_complete! (
-        parse_print_state           |
-        parse_print_memory          |
-        parse_print_breakpoints     |
-        parse_print_watchpoints     |
-        parse_print_labels          |
-        parse_set_breakpoint        |
-        parse_remove_breakpoint     |
-        parse_set_breakpoint_cycles |
-        parse_set_watchpoint        |
-        parse_remove_watchpoint     |
-        parse_set_label             |
-        parse_remove_label          |
-        parse_clear_breakpoints     |
-        parse_clear_watchpoints     |
-        parse_clear_labels          |
-        parse_disassemble           |
-        parse_goto                  |
-        parse_step                  |
-        parse_continue              |
-        parse_reset                 |
-        parse_trace                 |
-        parse_repeat_command
+named!(
+    parse_command_non_terminated<Command>,
+    alt_complete!(
+        parse_print_state
+            | parse_print_memory
+            | parse_print_breakpoints
+            | parse_print_watchpoints
+            | parse_print_labels
+            | parse_set_breakpoint
+            | parse_remove_breakpoint
+            | parse_set_breakpoint_cycles
+            | parse_set_watchpoint
+            | parse_remove_watchpoint
+            | parse_set_label
+            | parse_remove_label
+            | parse_clear_breakpoints
+            | parse_clear_watchpoints
+            | parse_clear_labels
+            | parse_disassemble
+            | parse_goto
+            | parse_step
+            | parse_continue
+            | parse_reset
+            | parse_trace
+            | parse_repeat_command
     )
 );
 
 named!(
     parse_show_usage<Command>,
-    map!(
-        line_ending
-        , |_| Command::ShowUsage
-    )
+    map!(line_ending, |_| Command::ShowUsage)
 );
 
 named!(
     parse_print_state<Command>,
     map!(
-        alt_complete! (
-            tag_no_case!("printstate") |
-            tag_no_case!("ps")
-        )
-        , |_| Command::PrintState
+        alt_complete!(tag_no_case!("printstate") | tag_no_case!("ps")),
+        |_| Command::PrintState
     )
 );
 
@@ -138,33 +127,24 @@ named!(
 named!(
     parse_print_breakpoints<Command>,
     map!(
-        alt_complete! (
-            tag_no_case!("printbreakpoints") |
-            tag_no_case!("pb")
-        )
-        , |_| Command::PrintBreakpoints
+        alt_complete!(tag_no_case!("printbreakpoints") | tag_no_case!("pb")),
+        |_| Command::PrintBreakpoints
     )
 );
 
 named!(
     parse_print_watchpoints<Command>,
     map!(
-        alt_complete! (
-            tag_no_case!("printwatchpoints") |
-            tag_no_case!("pw")
-        )
-        , |_| Command::PrintWatchpoints
+        alt_complete!(tag_no_case!("printwatchpoints") | tag_no_case!("pw")),
+        |_| Command::PrintWatchpoints
     )
 );
 
 named!(
     parse_print_labels<Command>,
     map!(
-        alt_complete! (
-            tag_no_case!("printlabels") |
-            tag_no_case!("pl")
-        )
-        , |_| Command::PrintLabels
+        alt_complete!(tag_no_case!("printlabels") | tag_no_case!("pl")),
+        |_| Command::PrintLabels
     )
 );
 
@@ -249,33 +229,24 @@ named!(
 named!(
     parse_clear_breakpoints<Command>,
     map!(
-        alt_complete! (
-            tag_no_case!("clearbreakpoints") |
-            tag_no_case!("cb")
-        )
-        , |_| Command::ClearBreakpoints
+        alt_complete!(tag_no_case!("clearbreakpoints") | tag_no_case!("cb")),
+        |_| Command::ClearBreakpoints
     )
 );
 
 named!(
     parse_clear_watchpoints<Command>,
     map!(
-        alt_complete! (
-            tag_no_case!("clearwatchpoints") |
-            tag_no_case!("cw")
-        )
-        , |_| Command::ClearWatchpoints
+        alt_complete!(tag_no_case!("clearwatchpoints") | tag_no_case!("cw")),
+        |_| Command::ClearWatchpoints
     )
 );
 
 named!(
     parse_clear_labels<Command>,
     map!(
-        alt_complete! (
-            tag_no_case!("clearlabels") |
-            tag_no_case!("cl")
-        )
-        , |_| Command::ClearLabels
+        alt_complete!(tag_no_case!("clearlabels") | tag_no_case!("cl")),
+        |_| Command::ClearLabels
     )
 );
 
@@ -313,40 +284,22 @@ named!(
 
 named!(
     parse_step<Command>,
-    do_parse! (
-        alt_complete! (
-            tag_no_case!("step") |
-            tag_no_case!("s"))      >>
-        ( Command::Step )
-    )
+    do_parse!(alt_complete!(tag_no_case!("step") | tag_no_case!("s")) >> (Command::Step))
 );
 
 named!(
     parse_continue<Command>,
-    do_parse! (
-        alt_complete! (
-            tag_no_case!("continue") |
-            tag_no_case!("c"))      >>
-        ( Command::Continue )
-    )
+    do_parse!(alt_complete!(tag_no_case!("continue") | tag_no_case!("c")) >> (Command::Continue))
 );
 
 named!(
     parse_reset<Command>,
-    do_parse! (
-        alt_complete! (
-            tag_no_case!("reset")) >>
-        ( Command::Reset )
-    )
+    do_parse!(alt_complete!(tag_no_case!("reset")) >> (Command::Reset))
 );
 
 named!(
     parse_trace<Command>,
-    do_parse! (
-        alt_complete! (
-            tag_no_case!("trace")) >>
-        ( Command::Trace )
-    )
+    do_parse!(alt_complete!(tag_no_case!("trace")) >> (Command::Trace))
 );
 
 named!(
@@ -381,31 +334,19 @@ named!(
 named!(
     parse_string<String>,
     map_res!(
-        map_res!(
-            preceded!(space, alphanumeric)
-            , str::from_utf8
-        )
-        , FromStr::from_str
+        map_res!(preceded!(space, alphanumeric), str::from_utf8),
+        FromStr::from_str
     )
 );
 
 named!(
     parse_literal_u16<u16>,
-    alt_complete!(
-            parse_hex_literal_u16 |
-            parse_decimal_literal_u16
-    )
+    alt_complete!(parse_hex_literal_u16 | parse_decimal_literal_u16)
 );
 
 named!(
     parse_decimal_literal_u64<u64>,
-    map_res!(
-        map_res!(
-            digit,
-            str::from_utf8
-        )
-        , FromStr::from_str
-    )
+    map_res!(map_res!(digit, str::from_utf8), FromStr::from_str)
 );
 
 named!(
@@ -415,24 +356,12 @@ named!(
 
 named!(
     parse_decimal_literal_u16<u16>,
-    map_res!(
-        map_res!(
-            digit,
-            str::from_utf8
-        )
-        , FromStr::from_str
-    )
+    map_res!(map_res!(digit, str::from_utf8), FromStr::from_str)
 );
 
 named!(
     parse_literal_i16<i16>,
-    map_res!(
-        map_res!(
-            parse_integer,
-            str::from_utf8
-        )
-        , FromStr::from_str
-    )
+    map_res!(map_res!(parse_integer, str::from_utf8), FromStr::from_str)
 );
 
 named!(

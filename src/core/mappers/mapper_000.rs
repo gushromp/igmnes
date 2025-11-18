@@ -1,8 +1,8 @@
-use std::ops::Range;
+use crate::core::errors::EmulationError::{self, MemoryAccess};
 use crate::core::mappers::{CpuMapper, PpuMapper};
 use crate::core::memory::{MemMapped, Ram};
 use crate::core::rom::{MirroringMode, Rom};
-use crate::core::errors::EmulationError::{self, MemoryAccess};
+use std::ops::Range;
 
 #[derive(Clone)]
 pub struct NRom {
@@ -10,7 +10,7 @@ pub struct NRom {
     prg_rom_bytes: Vec<u8>,
     chr_rom_bytes: Vec<u8>,
     prg_ram_bytes: Vec<u8>,
-    mirroring_mode: MirroringMode
+    mirroring_mode: MirroringMode,
 }
 
 impl NRom {
@@ -26,7 +26,7 @@ impl NRom {
             prg_rom_bytes,
             chr_rom_bytes,
             prg_ram_bytes,
-            mirroring_mode: rom.header.mirroring_mode
+            mirroring_mode: rom.header.mirroring_mode,
         }
     }
 
@@ -37,8 +37,7 @@ impl NRom {
         let index = index - 0x8000;
         if index > 0x3FFF && self.prg_rom_bytes.len() < 0x8000 {
             (index - 0x4000) as usize
-        }
-        else {
+        } else {
             index as usize
         }
     }
@@ -48,7 +47,6 @@ impl NRom {
         // NROM starts mapping RAM at 0x6000, so there's nothing mapped between 0x4020 and 0x6000
         (index - 0x6000) as usize
     }
-
 }
 
 impl CpuMapper for NRom {
@@ -62,7 +60,7 @@ impl CpuMapper for NRom {
         Ok(self.prg_ram_bytes[index])
     }
 
-    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>{
+    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         let index: usize = self.get_prg_ram_index(index);
         self.prg_ram_bytes[index] = byte;
         Ok(())
@@ -88,22 +86,31 @@ impl PpuMapper for NRom {
     }
 
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {
-        Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index)))
+        Err(MemoryAccess(format!(
+            "Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}",
+            index
+        )))
     }
 
     fn read_chr_ram_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}", range)))
+        Err(MemoryAccess(format!(
+            "Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}",
+            range
+        )))
     }
 
     fn write_chr_ram(&mut self, index: u16, _byte: u8) -> Result<(), EmulationError> {
-        Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}", index)))
+        Err(MemoryAccess(format!(
+            "Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}",
+            index
+        )))
     }
 
     fn get_mirrored_index(&self, index: u16) -> u16 {
         let index = index - 0x2000;
         match self.mirroring_mode {
             MirroringMode::Horizontal => ((index / 0x800) * 0x400) + (index % 0x400),
-            MirroringMode::Vertical => index % 0x800
+            MirroringMode::Vertical => index % 0x800,
         }
     }
 }
@@ -121,7 +128,6 @@ impl MemMapped for NRom {
             _ => {
                 println!("Attempted read from unmapped address: 0x{:X}", index);
                 Ok(0)
-
             }
         }
     }
@@ -133,16 +139,14 @@ impl MemMapped for NRom {
                 self.vram.write(index, byte)
             }
             0x6000..=0x7FFF => self.write_prg_ram(index, byte),
-            _ => {
-                Ok(())
-            }
+            _ => Ok(()),
         }
     }
 
     fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
         match range.start {
             0..=0x1FFF => self.read_chr_rom_range(range),
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }

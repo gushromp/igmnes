@@ -1,7 +1,7 @@
-use std::collections::VecDeque;
-use enum_dispatch::enum_dispatch;
-use crate::core::memory::MemMapped;
 use crate::core::errors::EmulationError;
+use crate::core::memory::MemMapped;
+use enum_dispatch::enum_dispatch;
+use std::collections::VecDeque;
 
 const OUTPUT_SAMPLE_RATE: usize = 44_100;
 const SAMPLES_PER_OUTPUT_SAMPLE: usize = 41;
@@ -16,28 +16,28 @@ const DMC: usize = 4;
 
 // Length counter lookup table
 const LC_LOOKUP_TABLE: [u8; 32] = [
-    10, 254, 20, 2, 40, 4, 80, 6,
-    160, 8, 60, 10, 14, 12, 26, 14,
-    12, 16, 24, 18, 48, 20, 96, 22,
-    192, 24, 72, 26, 16, 28, 32, 30];
+    10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22,
+    192, 24, 72, 26, 16, 28, 32, 30,
+];
 
 // Pulse waveform table
 const PULSE_DUTY: [[u8; 8]; 4] = [
     [0, 1, 0, 0, 0, 0, 0, 0],
     [0, 1, 1, 0, 0, 0, 0, 0],
     [0, 1, 1, 1, 1, 0, 0, 0],
-    [1, 0, 0, 1, 1, 1, 1, 1]];
-
+    [1, 0, 0, 1, 1, 1, 1, 1],
+];
 
 // Triangle waveform table
 const TRIANGLE_WAVEFORM: [u8; 32] = [
-    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    13, 14, 15,
+];
 
 // Noise period table
 const NOISE_PERIOD_CYCLES: [u16; 16] = [
-    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
-
+    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
+];
 
 const DELAY_CYCLES_PER_IRQ_WRITE: u64 = 29835;
 
@@ -135,7 +135,6 @@ impl Sweep {
 
         self.new_timer = result;
         self.should_mute = timer < 8 || self.new_timer > 0x7FF;
-
     }
 }
 
@@ -261,7 +260,9 @@ impl ApuChannel for Pulse {
     }
 
     fn clock_length_counter(&mut self) {
-        if !self.enabled { return }
+        if !self.enabled {
+            return;
+        }
         if self.length_counter > 0 && !self.lc_halt_env_loop {
             self.length_counter -= 1;
         }
@@ -319,7 +320,7 @@ struct Triangle {
 
     length_counter: u8,
 
-    is_muted: bool
+    is_muted: bool,
 }
 
 impl Triangle {
@@ -358,7 +359,7 @@ impl ApuChannel for Triangle {
             1 => self.write_uuuuuuuu(byte),
             2 => self.write_tttttttt(byte),
             3 => self.write_lllllttt(byte),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -393,7 +394,9 @@ impl ApuChannel for Triangle {
     }
 
     fn clock_length_counter(&mut self) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         if self.should_load_linear_counter {
             self.linear_counter = self.linear_counter_load;
             if !self.lengthc_halt_linearc_control {
@@ -445,7 +448,7 @@ struct NoiseShiftRegister {
 impl Default for NoiseShiftRegister {
     fn default() -> Self {
         NoiseShiftRegister {
-            shift_register: 0b1
+            shift_register: 0b1,
         }
     }
 }
@@ -515,7 +518,7 @@ impl ApuChannel for Noise {
             1 => self.write_uuuuuuuu(byte),
             2 => self.write_luuupppp(byte),
             3 => self.write_llllluuu(byte),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -532,7 +535,10 @@ impl ApuChannel for Noise {
     }
 
     fn is_audible(&self) -> bool {
-        self.enabled && self.length_counter > 0 && (self.shift_register.shift_register & 0b1) as u8 == 0 && !self.is_muted
+        self.enabled
+            && self.length_counter > 0
+            && (self.shift_register.shift_register & 0b1) as u8 == 0
+            && !self.is_muted
     }
 
     fn clock_timer(&mut self) {
@@ -545,14 +551,18 @@ impl ApuChannel for Noise {
     }
 
     fn clock_length_counter(&mut self) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         if self.length_counter > 0 && !self.lc_halt_env_loop {
             self.length_counter -= 1;
         }
     }
 
     fn clock_envelope(&mut self) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         self.envelope.clock(self.volume, self.lc_halt_env_loop);
     }
 
@@ -622,7 +632,7 @@ impl ApuChannel for DMC {
             1 => self.write_udddddddd(byte),
             2 => self.write_aaaaaaaa(byte),
             3 => self.write_llllllll(byte),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -729,15 +739,13 @@ impl FrameCounter {
     }
 
     fn half_frame(&self) -> bool {
-        self.cycles == self.cycle_table[1]
-            || self.cycles == self.cycle_table[3]
+        self.cycles == self.cycle_table[1] || self.cycles == self.cycle_table[3]
     }
 
     fn irq(&self) -> bool {
-        self.mode == FrameCounterMode::Mode4Step &&
-            self.cycles == self.cycle_table[3] ||
-            self.cycles == self.cycle_table[3] - 1 ||
-            self.cycles == 0
+        self.mode == FrameCounterMode::Mode4Step && self.cycles == self.cycle_table[3]
+            || self.cycles == self.cycle_table[3] - 1
+            || self.cycles == 0
     }
 }
 
@@ -795,7 +803,7 @@ impl Default for Apu {
             next_irq_cycles: 0,
 
             nes_samples: Vec::new(),
-            out_samples: VecDeque::with_capacity(OUTPUT_SAMPLE_RATE / 60)
+            out_samples: VecDeque::with_capacity(OUTPUT_SAMPLE_RATE / 60),
         }
     }
 }
@@ -888,7 +896,7 @@ impl Apu {
         let frame_counter_mode = match frame_counter_mode {
             0 => FrameCounterMode::Mode4Step,
             1 => FrameCounterMode::Mode5Step,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         let irq_inhibit = (byte >> 6) & 0b1 != 0;
@@ -906,13 +914,13 @@ impl Apu {
     fn clock_channel_output(&mut self) {
         // We add outputs of pulse1 and pulse 2 channels
         // and use that value as an index into the pulse output lookup table
-        let pulse_output_index: usize
-            = self.channels[PULSE_1].output() as usize + self.channels[PULSE_2].output() as usize;
+        let pulse_output_index: usize =
+            self.channels[PULSE_1].output() as usize + self.channels[PULSE_2].output() as usize;
 
         // We use outputs of triangle, noise and DMC channels
         // as an index into the tnd output lookup table
-        let tnd_output_index: usize
-            = 3 * self.channels[TRIANGLE].output() as usize + 2 * self.channels[NOISE].output() as usize
+        let tnd_output_index: usize = 3 * self.channels[TRIANGLE].output() as usize
+            + 2 * self.channels[NOISE].output() as usize
             + self.channels[DMC].output() as usize;
 
         let pulse_output = self.pulse_table[pulse_output_index];
@@ -924,7 +932,9 @@ impl Apu {
     }
 
     fn generate_output_samples(&mut self) {
-        if self.nes_samples.len() < SAMPLES_PER_OUTPUT_SAMPLE * 16 { return }
+        if self.nes_samples.len() < SAMPLES_PER_OUTPUT_SAMPLE * 16 {
+            return;
+        }
 
         // Resampling + low pass filter
         for samples in self.nes_samples.chunks(SAMPLES_PER_OUTPUT_SAMPLE) {
@@ -940,6 +950,7 @@ impl Apu {
         self.nes_samples.clear();
     }
 
+    #[inline]
     fn clock_frame_counter(&mut self) {
         let cycles_per_frame = *self.frame_counter.cycle_table.last().unwrap();
 
@@ -954,6 +965,7 @@ impl Apu {
         }
     }
 
+    #[inline]
     fn clock_length_counters(&mut self, forced: bool) {
         for channel in self.channels.iter_mut() {
             if self.frame_counter.quarter_frame() || forced {
@@ -970,6 +982,7 @@ impl Apu {
         }
     }
 
+    #[inline]
     fn clock_timers(&mut self) {
         // Triangle's timer is clocked on every CPU clock, the rest of the channels' timers
         // are clocked on every other CPU clock
@@ -990,11 +1003,7 @@ impl Apu {
 
         // Delayed reset of the frame counter after a write occurs to $4017
         if self.frame_counter.delayed_reset {
-            self.frame_counter.reset_after_cycles = if even_cycle {
-                3
-            } else {
-                4
-            };
+            self.frame_counter.reset_after_cycles = if even_cycle { 3 } else { 4 };
             self.frame_counter.delayed_reset = false;
         }
 
@@ -1180,7 +1189,7 @@ impl MemMapped for Apu {
                 Ok(())
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }

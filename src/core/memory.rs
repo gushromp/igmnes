@@ -1,15 +1,15 @@
+use crate::core::apu::Apu;
+use crate::core::controller::Controller;
+use crate::core::dma::{Dma, DmaType};
+use crate::core::errors::EmulationError;
+use crate::core::mappers::{self, MapperImpl};
+use crate::core::ppu::{memory::PpuMemMap, Ppu};
+use crate::core::rom::Rom;
+use enum_dispatch::enum_dispatch;
 use std::cell::RefCell;
 use std::default::Default;
 use std::ops::Range;
 use std::rc::Rc;
-use enum_dispatch::enum_dispatch;
-use crate::core::rom::Rom;
-use crate::core::apu::Apu;
-use crate::core::controller::Controller;
-use crate::core::dma::{Dma, DmaType};
-use crate::core::mappers::{self, MapperImpl};
-use crate::core::errors::EmulationError;
-use crate::core::ppu::{Ppu, memory::PpuMemMap};
 
 const RAM_SIZE: usize = 0x800;
 
@@ -17,7 +17,7 @@ const RAM_SIZE: usize = 0x800;
 pub trait MemMapped {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError>;
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
-    
+
     fn read_word(&mut self, index: u16) -> Result<u16, EmulationError> {
         // little-endian!
         let nibble_low = self.read(index)?;
@@ -31,14 +31,16 @@ pub trait MemMapped {
     fn read_range(&self, _range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
         Ok(vec![])
     }
-    
+
     fn read_range_ref(&self, _range: Range<u16>) -> Result<&[u8], EmulationError> {
         Ok(&[])
     }
 
-    fn is_mutating_read(&self) -> bool { true }
+    fn is_mutating_read(&self) -> bool {
+        true
+    }
 
-    fn set_is_mutating_read(&mut self, _: bool) { }
+    fn set_is_mutating_read(&mut self, _: bool) {}
 }
 
 #[derive(Copy, Clone)]
@@ -68,7 +70,7 @@ impl Default for Ram {
 impl Ram {
     pub fn new() -> Ram {
         Ram {
-            ram: [0xFF; RAM_SIZE]
+            ram: [0xFF; RAM_SIZE],
         }
     }
 }
@@ -84,7 +86,7 @@ impl MemMapped for Ram {
     }
 
     fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
-        Ok(&self.ram[range.start as usize .. range.end as usize])
+        Ok(&self.ram[range.start as usize..range.end as usize])
     }
 }
 
@@ -96,7 +98,6 @@ pub struct CpuMemMap {
     pub controllers: [Controller; 2],
     mapper: Rc<RefCell<MapperImpl>>,
 }
-
 
 impl Default for CpuMemMap {
     fn default() -> CpuMemMap {
@@ -158,29 +159,19 @@ impl MemMapped for CpuMemMap {
                 self.ppu.read(index)
             }
             // APU
-            0x4000..=0x4013 | 0x4015 => {
-                self.apu.read(index)
-            }
+            0x4000..=0x4013 | 0x4015 => self.apu.read(index),
             // OAM DMA register (write-only)
-            0x4014 => {
-                Ok(0)
-            }
+            0x4014 => Ok(0),
             // I/O
-            0x4016 => {
-                self.controllers[0].read(index)
-            }
+            0x4016 => self.controllers[0].read(index),
             // I/O, Apu: This address is shared by both the APU and I/O so we can from read either one
-            0x4017 => {
-                self.controllers[1].read(index)
-            }
+            0x4017 => self.controllers[1].read(index),
             0x4018..=0x401f => {
                 let _index = index % 0x4018;
                 //println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
                 Ok(0)
             }
-            0x4020..=0xFFFF => {
-                self.mapper.borrow_mut().read(index)
-            }
+            0x4020..=0xFFFF => self.mapper.borrow_mut().read(index),
         }
     }
 
@@ -198,9 +189,7 @@ impl MemMapped for CpuMemMap {
                 self.ppu.write(index, byte)
             }
             // APU
-            0x4000..=0x4013 | 0x4015 => {
-                self.apu.write(index, byte)
-            }
+            0x4000..=0x4013 | 0x4015 => self.apu.write(index, byte),
             // OAM DMA register
             0x4014 => {
                 self.dma.start_dma(DmaType::OAM, byte);
@@ -224,12 +213,13 @@ impl MemMapped for CpuMemMap {
             }
             0x4018..=0x401F => {
                 let index = index % 0x4018;
-                println!("Attempted unimplemented write to CPU Test Register: 0x{:X}", index);
+                println!(
+                    "Attempted unimplemented write to CPU Test Register: 0x{:X}",
+                    index
+                );
                 Ok(())
             }
-            0x4020..=0xFFFF => {
-                self.mapper.borrow_mut().write(index, byte)
-            }
+            0x4020..=0xFFFF => self.mapper.borrow_mut().write(index, byte),
         }
     }
 
@@ -245,6 +235,3 @@ impl MemMapped for CpuMemMap {
         }
     }
 }
-
-
-

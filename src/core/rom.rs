@@ -1,7 +1,7 @@
-use std::path::Path;
+use nom::*;
 use std::fs::File;
 use std::io::prelude::*;
-use nom::*;
+use std::path::Path;
 use thiserror::Error;
 
 const PRG_ROM_BYTES_PER_CHUNK: usize = 16384;
@@ -97,7 +97,10 @@ impl Rom {
         if rom.header.tv_system != TVSystem::PAL {
             Ok(rom)
         } else {
-            Err(RomError::ParseError(format!("Unsupported system type: {:?}", rom.header.tv_system)))
+            Err(RomError::ParseError(format!(
+                "Unsupported system type: {:?}",
+                rom.header.tv_system
+            )))
         }
     }
 }

@@ -1,11 +1,11 @@
+use crate::core::errors::EmulationError;
+use crate::core::memory::MemMapped;
 use std::array;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::ops::Index;
 use std::path::Path;
-use crate::core::errors::EmulationError;
-use crate::core::memory::MemMapped;
 
 const DEFAULT_PALETTE_SUBPATH: &str = "palette/DigitalPrime.pal";
 
@@ -16,7 +16,7 @@ const PALETTE_COLOR_BYTE_LEN: usize = 3;
 pub struct PpuPaletteColor {
     pub red: u8,
     pub green: u8,
-    pub blue: u8
+    pub blue: u8,
 }
 
 impl Index<usize> for PpuPaletteColor {
@@ -27,7 +27,7 @@ impl Index<usize> for PpuPaletteColor {
             0 => &self.red,
             1 => &self.green,
             2 => &self.blue,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -37,7 +37,7 @@ impl From<&[u8]> for PpuPaletteColor {
         PpuPaletteColor {
             red: triplet[0],
             green: triplet[1],
-            blue: triplet[2]
+            blue: triplet[2],
         }
     }
 }
@@ -58,9 +58,11 @@ impl TryFrom<&[u8]> for PpuPalette {
     type Error = std::io::Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self, std::io::Error> {
-
         if bytes.len() < 64 * PALETTE_COLOR_BYTE_LEN {
-            Err(std::io::Error::new(ErrorKind::UnexpectedEof,"PpuPalette needs at least 64 color triplets (192 bytes)"))
+            Err(std::io::Error::new(
+                ErrorKind::UnexpectedEof,
+                "PpuPalette needs at least 64 color triplets (192 bytes)",
+            ))
         } else {
             let colors: [PpuPaletteColor; 64] = array::from_fn(|index| {
                 PpuPaletteColor::from(&bytes[index * 3..(index * 3) + PALETTE_COLOR_BYTE_LEN])
@@ -68,7 +70,7 @@ impl TryFrom<&[u8]> for PpuPalette {
 
             Ok(PpuPalette {
                 colors: Box::new(colors),
-                mapping: [0; 32]
+                mapping: [0; 32],
             })
         }
     }
@@ -83,12 +85,12 @@ impl PpuPalette {
     }
 
     pub fn load_default() -> Result<PpuPalette, std::io::Error> {
-        let mut default_palette_path = std::env::current_dir()?
-            .to_path_buf();
+        let mut default_palette_path = std::env::current_dir()?.to_path_buf();
         default_palette_path.push(DEFAULT_PALETTE_SUBPATH);
         Self::load(&default_palette_path)
     }
 
+    #[inline]
     pub fn get_background_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor {
         if color_index == 0 {
             self.get_transparent_color()
@@ -98,7 +100,7 @@ impl PpuPalette {
                 1 => 0x5,
                 2 => 0x9,
                 3 => 0xD,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
             let mapping_index = base_mapping_index + color_index as usize - 1;
             let color_index = self.mapping[mapping_index];
@@ -115,7 +117,7 @@ impl PpuPalette {
                 1 => 0x15,
                 2 => 0x19,
                 3 => 0x1D,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
             let mapping_index = base_mapping_index + color_index as usize - 1;
             let color_index = self.mapping[mapping_index];
@@ -134,7 +136,6 @@ impl PpuPalette {
 
 impl MemMapped for PpuPalette {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
-
         Ok(self.mapping[index as usize] as u8)
     }
 

@@ -1,18 +1,16 @@
-
-mod debugger;
-mod mappers;
-mod rom;
 mod apu;
-mod cpu;
-mod memory;
-mod instructions;
-mod errors;
-mod debug;
-mod ppu;
-mod dma;
 mod controller;
+mod cpu;
+mod debug;
+mod debugger;
+mod dma;
+mod errors;
+mod instructions;
+mod mappers;
+mod memory;
+mod ppu;
+mod rom;
 
-use crate::core::debugger::DebuggerFrontend;
 use self::apu::Apu;
 use self::cpu::Cpu;
 use self::debugger::frontends::terminal::TerminalDebugger;
@@ -23,7 +21,10 @@ use self::ppu::Ppu;
 use self::rom::Rom;
 use crate::core::controller::Controller;
 use crate::core::debug::Tracer;
+use crate::core::debugger::DebuggerFrontend;
 use crate::core::dma::Dma;
+use crate::core::rom::RomError;
+use enum_dispatch::enum_dispatch;
 use sdl2::audio::AudioSpecDesired;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -33,9 +34,7 @@ use sdl2::video::FullscreenType;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{mem, ptr};
-use enum_dispatch::enum_dispatch;
 use thiserror::Error;
-use crate::core::rom::RomError;
 
 pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32;
 // 21.477272 MHz
@@ -43,7 +42,8 @@ pub const CPU_CLOCK_DIVISOR_NTSC: f32 = 12.0;
 
 pub const CPU_CLOCK_RATIO_NTSC: f32 = MASTER_CLOCK_NTSC / CPU_CLOCK_DIVISOR_NTSC;
 pub const PPU_CLOCK_DIVISOR_NTSC: f32 = 4.0;
-pub const PPU_STEPS_PER_CPU_STEP_NTSC: usize = (CPU_CLOCK_DIVISOR_NTSC / PPU_CLOCK_DIVISOR_NTSC) as usize;
+pub const PPU_STEPS_PER_CPU_STEP_NTSC: usize =
+    (CPU_CLOCK_DIVISOR_NTSC / PPU_CLOCK_DIVISOR_NTSC) as usize;
 
 const MASTER_CLOCK_PAL: f32 = 26.601712_E6_f32;
 // 26.601712 MHz
@@ -82,7 +82,6 @@ pub trait BusDebugger {
     fn debugger(&mut self) -> Option<&mut DebuggerFrontend>;
 }
 
-
 struct DefaultBus {
     cpu: Cpu,
     mem_map: CpuMemMap,
@@ -90,10 +89,7 @@ struct DefaultBus {
 
 impl DefaultBus {
     pub fn new(cpu: Cpu, mem_map: CpuMemMap) -> DefaultBus {
-        DefaultBus {
-            cpu,
-            mem_map,
-        }
+        DefaultBus { cpu, mem_map }
     }
 }
 
@@ -114,15 +110,25 @@ impl BusOps for DefaultBus {
         (self.cpu, self.mem_map)
     }
 
-    fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
+    fn cpu(&mut self) -> &mut Cpu {
+        &mut self.cpu
+    }
 
-    fn ppu(&mut self) -> &mut Ppu { &mut self.mem_map.ppu }
+    fn ppu(&mut self) -> &mut Ppu {
+        &mut self.mem_map.ppu
+    }
 
-    fn apu(&mut self) -> &mut Apu { &mut self.mem_map.apu }
+    fn apu(&mut self) -> &mut Apu {
+        &mut self.mem_map.apu
+    }
 
-    fn dma(&mut self) -> &mut Dma { &mut self.mem_map.dma }
+    fn dma(&mut self) -> &mut Dma {
+        &mut self.mem_map.dma
+    }
 
-    fn controllers(&mut self) -> &mut [Controller; 2] { &mut self.mem_map.controllers }
+    fn controllers(&mut self) -> &mut [Controller; 2] {
+        &mut self.mem_map.controllers
+    }
 
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map, tracer)
@@ -157,7 +163,9 @@ impl BusOps for DefaultBus {
 }
 
 impl BusDebugger for DefaultBus {
-    fn debugger(&mut self) -> Option<&mut DebuggerFrontend> { None }
+    fn debugger(&mut self) -> Option<&mut DebuggerFrontend> {
+        None
+    }
 }
 
 #[enum_dispatch(BusOps, BusDebugger)]
@@ -210,18 +218,19 @@ impl Core {
             samples: Some(1),
         };
 
-
-        let audio_queue = audio_subsystem.open_queue::<f32, _>(None, &audio_spec_desired).unwrap();
+        let audio_queue = audio_subsystem
+            .open_queue::<f32, _>(None, &audio_spec_desired)
+            .unwrap();
         audio_queue.resume();
 
         let mut events = sdl_context.event_pump().unwrap();
 
-        let window = video_subsystem.window("IGMNes", 256 * WINDOW_SCALING, 240 * WINDOW_SCALING)
+        let window = video_subsystem
+            .window("IGMNes", 256 * WINDOW_SCALING, 240 * WINDOW_SCALING)
             .resizable()
             .position_centered()
             .build()
             .unwrap();
-
 
         let mut renderer = window.into_canvas().build().unwrap();
         renderer.set_logical_size(256, 232).unwrap();
@@ -249,13 +258,22 @@ impl Core {
                 let mut did_change_fullscreen_state = false;
                 // Events
                 for event in events.poll_iter() {
-
                     match event {
-                        Event::Quit { .. } |
-                        Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
-                        Event::KeyDown { keycode: Some(Keycode::F9), .. } => {
-                            if did_change_fullscreen_state { break }
-                            let new_state = if renderer.window().fullscreen_state() == FullscreenType::Desktop {
+                        Event::Quit { .. }
+                        | Event::KeyDown {
+                            keycode: Some(Keycode::Escape),
+                            ..
+                        } => break 'running,
+                        Event::KeyDown {
+                            keycode: Some(Keycode::F9),
+                            ..
+                        } => {
+                            if did_change_fullscreen_state {
+                                break;
+                            }
+                            let new_state = if renderer.window().fullscreen_state()
+                                == FullscreenType::Desktop
+                            {
                                 FullscreenType::Off
                             } else {
                                 FullscreenType::Desktop
@@ -263,7 +281,10 @@ impl Core {
                             renderer.window_mut().set_fullscreen(new_state).unwrap();
                             did_change_fullscreen_state = true;
                         }
-                            Event::KeyDown { keycode: Some(Keycode::F12), .. } => {
+                        Event::KeyDown {
+                            keycode: Some(Keycode::F12),
+                            ..
+                        } => {
                             let debugger = self.attach_debugger();
 
                             if !debugger.is_listening() {
@@ -278,8 +299,8 @@ impl Core {
                 let keyboard_state = events.keyboard_state();
                 let pressed_scancodes = keyboard_state.pressed_scancodes();
                 let keys: Vec<Keycode> = pressed_scancodes
-                    .filter_map(Keycode::from_scancode).collect();
-
+                    .filter_map(Keycode::from_scancode)
+                    .collect();
 
                 // Run emulation until PPU frame ready
                 while !self.bus.ppu().is_frame_ready() {
@@ -307,11 +328,9 @@ impl Core {
 
                     let duration_to_sleep = Duration::from_millis(ms_to_sleep);
                     std::thread::sleep(duration_to_sleep);
-                        while Instant::now().duration_since(frame_start).as_nanos() < NANOS_PER_FRAME { }
+                    while Instant::now().duration_since(frame_start).as_nanos() < NANOS_PER_FRAME {}
                 }
-
             }
-
         }
 
         if tracer.has_traces() {
@@ -323,7 +342,10 @@ impl Core {
         println!("Cycles: {}", self.bus.cpu().cycle_count);
         println!("Seconds: {}", seconds);
         if seconds > 0.0 {
-            println!("Cycles per second: {}", (self.bus.cpu().cycle_count as f64 / seconds).floor());
+            println!(
+                "Cycles per second: {}",
+                (self.bus.cpu().cycle_count as f64 / seconds).floor()
+            );
         }
     }
 
@@ -364,7 +386,10 @@ impl Core {
         dummy_device.into()
     }
 
-    fn set_controllers_state<'a, I>(&mut self, state: I) where I: Iterator<Item=&'a Keycode> {
+    fn set_controllers_state<'a, I>(&mut self, state: I)
+    where
+        I: Iterator<Item = &'a Keycode>,
+    {
         use crate::core::controller::ControllerButton;
         let mut controller_1_state: Vec<ControllerButton> = vec![];
 
@@ -378,7 +403,7 @@ impl Core {
                 Keycode::Down => Some(ControllerButton::DOWN),
                 Keycode::Left => Some(ControllerButton::LEFT),
                 Keycode::Right => Some(ControllerButton::RIGHT),
-                _ => None
+                _ => None,
             };
 
             if let Some(button_state) = button_state {
@@ -431,33 +456,41 @@ impl Core {
                 }
             }
             Err(error) => match error {
-                EmulationError::DebuggerBreakpoint(_addr) |
-                EmulationError::DebuggerWatchpoint(_addr) => {
+                EmulationError::DebuggerBreakpoint(_addr)
+                | EmulationError::DebuggerWatchpoint(_addr) => {
                     if self.is_debugger_attached {
                         self.bus.debugger().unwrap().start_listening();
                     }
                 }
                 e @ _ => println!("{}", e),
-            }
+            },
         }
     }
 
-    fn render_frame<T>(&mut self, renderer: &mut WindowCanvas, texture_creator: &TextureCreator<T>) {
+    fn render_frame<T>(
+        &mut self,
+        renderer: &mut WindowCanvas,
+        texture_creator: &TextureCreator<T>,
+    ) {
         let frame = self.bus.ppu().get_frame();
         unsafe {
-
-
             let pointer = ptr::addr_of!(**frame);
             let pointer_arr = pointer as *mut [u8; BYTES_PER_SCANLINE * SCANLINES];
             let mut data = *pointer_arr;
 
             let offset = BYTES_PER_SCANLINE * SCANLINES_OFFSET;
             let data_slice = &mut data[offset..];
-            let surface = sdl2::surface::Surface::from_data(data_slice, 256, 240 - (SCANLINES_OFFSET as u32 * 2), BYTES_PER_SCANLINE as u32, PixelFormatEnum::RGB24).unwrap();
+            let surface = sdl2::surface::Surface::from_data(
+                data_slice,
+                256,
+                240 - (SCANLINES_OFFSET as u32 * 2),
+                BYTES_PER_SCANLINE as u32,
+                PixelFormatEnum::RGB24,
+            )
+            .unwrap();
             let tex = surface.as_texture(texture_creator).unwrap();
             renderer.copy(&tex, None, None).unwrap();
             renderer.present();
         }
     }
 }
-

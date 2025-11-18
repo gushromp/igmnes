@@ -2,20 +2,19 @@ mod mapper_000;
 mod mapper_002;
 mod mapper_003;
 
-use std::cell::RefCell;
-use std::ops::Range;
-use std::rc::Rc;
-use enum_dispatch::enum_dispatch;
 use self::mapper_000::NRom;
-use crate::core::memory::MemMapped;
-use crate::core::rom::Rom;
 use crate::core::errors::EmulationError;
 use crate::core::mappers::mapper_002::UxROM;
 use crate::core::mappers::mapper_003::CNROM;
+use crate::core::memory::MemMapped;
+use crate::core::rom::Rom;
+use enum_dispatch::enum_dispatch;
+use std::cell::RefCell;
+use std::ops::Range;
+use std::rc::Rc;
 
 #[enum_dispatch]
 pub trait CpuMapper: MemMapped {
-
     // Reads from PRG ROM
     fn read_prg_rom(&self, index: u16) -> Result<u8, EmulationError>;
     // Reads/Writes to PRG RAM

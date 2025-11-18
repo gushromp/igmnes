@@ -25,7 +25,7 @@ pub struct Controller {
     pub is_polling: bool,
     read_index: u8,
 
-    mem_map_config: MemMapConfig
+    mem_map_config: MemMapConfig,
 }
 
 impl Controller {

@@ -3,7 +3,10 @@ roms
 Cargo.lock
 .idea
 .vscode
+.zed
 
 *.log
 *.svg
 *.txt
+profile.*
+*.log

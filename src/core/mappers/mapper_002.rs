@@ -1,9 +1,9 @@
-use std::ops::Range;
 use crate::core::errors::EmulationError;
 use crate::core::errors::EmulationError::MemoryAccess;
 use crate::core::mappers::{CpuMapper, PpuMapper};
 use crate::core::memory::{MemMapped, Ram};
 use crate::core::rom::{MirroringMode, Rom};
+use std::ops::Range;
 
 const BANK_SIZE_BYTES: usize = 16_384;
 const CHR_RAM_SIZE: usize = 8_192;
@@ -27,7 +27,7 @@ impl UxROM {
             prg_rom_bytes,
             chr_ram_bytes,
             mirroring_mode: rom.header.mirroring_mode,
-            bank_index: 0
+            bank_index: 0,
         }
     }
 
@@ -43,8 +43,8 @@ impl UxROM {
             0xC000..=0xFFFF => {
                 let byte_index = (index as usize) - 0xC000;
                 (self.prg_rom_bytes.len() - BANK_SIZE_BYTES) + byte_index
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -70,11 +70,17 @@ impl CpuMapper for UxROM {
 
 impl PpuMapper for UxROM {
     fn read_chr_rom(&self, index: u16) -> Result<u8, EmulationError> {
-        Err(MemoryAccess(format!("Attempted read from non-existent CHR ROM index (untranslated): 0x{:X}", index)))
+        Err(MemoryAccess(format!(
+            "Attempted read from non-existent CHR ROM index (untranslated): 0x{:X}",
+            index
+        )))
     }
 
     fn read_chr_rom_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        Err(MemoryAccess(format!("Attempted read from non-existent CHR ROM range (untranslated): 0x{:?}", range)))
+        Err(MemoryAccess(format!(
+            "Attempted read from non-existent CHR ROM range (untranslated): 0x{:?}",
+            range
+        )))
     }
 
     fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {
@@ -94,7 +100,7 @@ impl PpuMapper for UxROM {
         let index = index - 0x2000;
         match self.mirroring_mode {
             MirroringMode::Horizontal => ((index / 0x800) * 0x400) + (index % 0x400),
-            MirroringMode::Vertical => index % 0x800
+            MirroringMode::Vertical => index % 0x800,
         }
     }
 }
@@ -111,7 +117,6 @@ impl MemMapped for UxROM {
             _ => {
                 println!("Attempted read from unmapped address: 0x{:X}", index);
                 Ok(0)
-
             }
         }
     }
@@ -122,18 +127,16 @@ impl MemMapped for UxROM {
             0x2000..=0x2FFF => {
                 let index = self.get_mirrored_index(index);
                 self.vram.write(index, byte)
-            },
-            0x8000..=0xFFFF => Ok(self.select_bank(byte)),
-            _ => {
-                Ok(())
             }
+            0x8000..=0xFFFF => Ok(self.select_bank(byte)),
+            _ => Ok(()),
         }
     }
 
     fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
         match range.start {
             0..=0x1FFF => self.read_chr_ram_range(range),
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }

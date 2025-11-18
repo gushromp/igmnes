@@ -1,13 +1,13 @@
 #[macro_use]
 extern crate nom;
-extern crate sdl2;
 extern crate rfd;
+extern crate sdl2;
 
 mod core;
 
 use core::Core;
-use std::path::PathBuf;
 use rfd::FileDialog;
+use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

@@ -1,15 +1,15 @@
 // PpuMemMap
 
-use std::array;
-use std::cell::RefCell;
-use std::ops::Range;
-use std::rc::Rc;
 use crate::core::errors::EmulationError;
 use crate::core::mappers;
 use crate::core::mappers::MapperImpl;
 use crate::core::memory::MemMapped;
-use crate::core::ppu::OamTable;
 use crate::core::ppu::palette::PpuPalette;
+use crate::core::ppu::OamTable;
+use std::array;
+use std::cell::RefCell;
+use std::ops::Range;
+use std::rc::Rc;
 
 pub struct PpuMemMap {
     pub oam_table: OamTable,
@@ -45,11 +45,17 @@ impl PpuMemMap {
 
     pub fn fetch_attribute_table_entry(&mut self, reg_v: u16) -> Result<u8, EmulationError> {
         // attribute address =                 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
-        let attribute_table_entry_addr  = 0x23C0 | (reg_v & 0x0C00) | ((reg_v >> 4) & 0x38) | ((reg_v >> 2) & 0x07);
+        let attribute_table_entry_addr =
+            0x23C0 | (reg_v & 0x0C00) | ((reg_v >> 4) & 0x38) | ((reg_v >> 2) & 0x07);
         self.read(attribute_table_entry_addr)
     }
 
-    pub fn fetch_pattern_table_entry(&mut self, pattern_table_index: u8, name_table_entry: u8, pixel_y: u16) -> Result<[u8; 2], EmulationError> {
+    pub fn fetch_pattern_table_entry(
+        &mut self,
+        pattern_table_index: u8,
+        name_table_entry: u8,
+        pixel_y: u16,
+    ) -> Result<[u8; 2], EmulationError> {
         // PPU addresses within the pattern tables can be decoded as follows:
         // DCBA98 76543210
         // ---------------
@@ -61,22 +67,21 @@ impl PpuMemMap {
         // +--------------- 0: Pattern table is at $0000-$1FFF
 
         let pattern_table_addr_low: u16 =
-            (pattern_table_index as u16) << 12
-                | (name_table_entry as u16) << 4
-                | pixel_y;
+            (pattern_table_index as u16) << 12 | (name_table_entry as u16) << 4 | pixel_y;
 
         let pattern_table_addr_high: u16 =
-            (pattern_table_index as u16) << 12
-                | (name_table_entry as u16) << 4
-                | 1 << 3
-                | pixel_y;
+            (pattern_table_index as u16) << 12 | (name_table_entry as u16) << 4 | 1 << 3 | pixel_y;
 
         let pattern_table_byte_low = self.read(pattern_table_addr_low).unwrap();
         let pattern_table_byte_high = self.read(pattern_table_addr_high).unwrap();
         Ok([pattern_table_byte_low, pattern_table_byte_high])
     }
 
-    pub fn fetch_sprite_pattern(&mut self, pattern_table_index: u8, pattern_entry_index: u8) -> Result<[u8; 16], EmulationError> {
+    pub fn fetch_sprite_pattern(
+        &mut self,
+        pattern_table_index: u8,
+        pattern_entry_index: u8,
+    ) -> Result<[u8; 16], EmulationError> {
         let base_addr = (pattern_table_index as u16) << 12;
         let pattern_entry_addr = base_addr + (pattern_entry_index as u16 * 16);
 
@@ -84,9 +89,7 @@ impl PpuMemMap {
         let result: [u8; 16] = if byte_slice.len() == 0 {
             [0; 16]
         } else {
-            array::from_fn(|index| {
-                byte_slice[index]
-            })
+            array::from_fn(|index| byte_slice[index])
         };
         Ok(result)
     }
@@ -123,7 +126,7 @@ impl MemMapped for PpuMemMap {
                 let index = (index - 0x3F00) % 20;
                 self.palette.read(index)
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -147,7 +150,7 @@ impl MemMapped for PpuMemMap {
                 let index = (index - 0x3F00) % 32;
                 self.palette.write(index, byte)
             }
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 

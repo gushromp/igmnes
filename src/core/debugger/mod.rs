@@ -1,6 +1,6 @@
-use enum_dispatch::enum_dispatch;
-use crate::core::{BusOps, BusDebugger};
 use crate::core::debugger::frontends::terminal::TerminalDebugger;
+use crate::core::{BusDebugger, BusOps};
+use enum_dispatch::enum_dispatch;
 
 mod command;
 pub mod disassembler;
@@ -23,5 +23,7 @@ pub enum DebuggerFrontend {
 }
 
 impl BusDebugger for DebuggerFrontend {
-    fn debugger(&mut self) -> Option<&mut DebuggerFrontend> { Some(self) }
+    fn debugger(&mut self) -> Option<&mut DebuggerFrontend> {
+        Some(self)
+    }
 }

@@ -6,12 +6,12 @@ pub struct Dma {
     page_index: u8,
     dma_cycle_count: usize,
 
-    pub dma_type: Option<DmaType>
+    pub dma_type: Option<DmaType>,
 }
 
 pub enum DmaType {
     OAM,
-    DMC
+    DMC,
 }
 
 impl Dma {
@@ -26,7 +26,7 @@ impl Dma {
 
     pub fn step(&mut self, mem_map: &mut CpuMemMap) -> Result<(), EmulationError> {
         if self.dma_type.is_none() {
-            return Ok(())
+            return Ok(());
         }
 
         if self.dma_cycle_count == 0 {

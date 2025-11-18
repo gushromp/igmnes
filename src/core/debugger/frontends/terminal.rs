@@ -4,7 +4,6 @@ use std::io;
 use std::io::prelude::*;
 use std::ops::Range;
 
-
 use crate::core::apu::Apu;
 use crate::core::controller::Controller;
 use crate::core::cpu::Cpu;
@@ -107,14 +106,20 @@ impl TerminalDebugger {
         println!("PrintBreakpoints                  pb          shows all set breakpoints");
         println!("PrintWatchpoints                  pw          shows all set watchpoints");
         println!("PrintLabels                       pl          shows all set labels");
-        println!("SetBreakpoint addr                sb          sets a CPU breakpoint at target address");
+        println!(
+            "SetBreakpoint addr                sb          sets a CPU breakpoint at target address"
+        );
         println!("RemoveBreakpoint addr             rb          removes a CPU breakpoint at target address");
         println!("ClearBreakpoints                  cb          clears all breakpoints");
         println!("SetWatchpoint addr                sw          sets a memory watchpoint at target address");
         println!("RemoveWatchpoint addr             rw          removes a memory watchpoint at target address");
         println!("ClearWatchpoints                  cw          clears all watchpoints");
-        println!("SetLabel addr                     sl          sets a text label at target address");
-        println!("RemoveLabel addr                  rl          removes a text label at target address");
+        println!(
+            "SetLabel addr                     sl          sets a text label at target address"
+        );
+        println!(
+            "RemoveLabel addr                  rl          removes a text label at target address"
+        );
         println!("ClearLabels                       cl          clears all text labels");
         println!("Disassemble [range]               d           disassembles CPU instructions for the given range \
             (optional, defaults to 5 instructions)");
@@ -195,7 +200,10 @@ impl TerminalDebugger {
         self.breakpoint_set.insert(addr);
 
         println!();
-        println!("Successfully set breakpoint for program counter address: 0x{:X}", addr);
+        println!(
+            "Successfully set breakpoint for program counter address: 0x{:X}",
+            addr
+        );
         println!();
     }
 
@@ -204,9 +212,15 @@ impl TerminalDebugger {
 
         println!();
         if result {
-            println!("Successfully removed breakpoint for program counter address: 0x{:X}", addr);
+            println!(
+                "Successfully removed breakpoint for program counter address: 0x{:X}",
+                addr
+            );
         } else {
-            println!("No breakpoint present for program counter address: 0x{:X}", addr);
+            println!(
+                "No breakpoint present for program counter address: 0x{:X}",
+                addr
+            );
         }
         println!();
     }
@@ -215,7 +229,10 @@ impl TerminalDebugger {
         self.breakpoint_cycles_set.insert(cycles);
 
         println!();
-        println!("Successfully set breakpoint for CPU cycles count: {}", cycles);
+        println!(
+            "Successfully set breakpoint for CPU cycles count: {}",
+            cycles
+        );
         println!();
     }
 
@@ -231,7 +248,10 @@ impl TerminalDebugger {
         self.watchpoint_set.insert(addr);
 
         println!();
-        println!("Successfully set watchpoint for memory address: 0x{:X}", addr);
+        println!(
+            "Successfully set watchpoint for memory address: 0x{:X}",
+            addr
+        );
         println!();
     }
 
@@ -240,7 +260,10 @@ impl TerminalDebugger {
 
         println!();
         if result {
-            println!("Successfully removed watchpoint for memory address: 0x{:X}", addr);
+            println!(
+                "Successfully removed watchpoint for memory address: 0x{:X}",
+                addr
+            );
         } else {
             println!("No watchpoint present for memory address: 0x{:X}", addr);
         }
@@ -262,7 +285,10 @@ impl TerminalDebugger {
             let label = e.get();
 
             println!();
-            println!("Successfully set label \"{}\" for memory address: 0x{:X}", label, addr);
+            println!(
+                "Successfully set label \"{}\" for memory address: 0x{:X}",
+                label, addr
+            );
             println!();
         }
     }
@@ -272,7 +298,10 @@ impl TerminalDebugger {
 
         println!();
         if let Some(_) = result {
-            println!("Successfully removed label for memory address: 0x{:X}", addr);
+            println!(
+                "Successfully removed label for memory address: 0x{:X}",
+                addr
+            );
         } else {
             println!("No label present for memory address: 0x{:X}", addr);
         }
@@ -297,7 +326,8 @@ impl TerminalDebugger {
 
     fn disassemble(&mut self, range: &Range<u16>) {
         let addr = self.cpu.reg_pc;
-        let disassembly = disassembler::disassemble_range(addr, range, &self.cpu, &mut self.mem_map).unwrap();
+        let disassembly =
+            disassembler::disassemble_range(addr, range, &self.cpu, &mut self.mem_map).unwrap();
 
         println!();
         println!("Disassembly:");
@@ -372,12 +402,11 @@ impl Debugger for TerminalDebugger {
                         }
                         ref command @ _ => self.execute_command(command),
                     };
-                },
+                }
                 Err(err) => println!("{:#?}", err),
             }
         }
     }
-
 
     fn start_listening(&mut self) {
         self.is_listening = true;
@@ -389,21 +418,27 @@ impl Debugger for TerminalDebugger {
     fn is_listening(&self) -> bool {
         self.is_listening
     }
-
 }
 impl BusOps for TerminalDebugger {
-
     fn consume(self) -> (Cpu, CpuMemMap) {
         (self.cpu, self.mem_map)
     }
 
-    fn cpu(&mut self) -> &mut Cpu { &mut self.cpu }
+    fn cpu(&mut self) -> &mut Cpu {
+        &mut self.cpu
+    }
 
-    fn ppu(&mut self) -> &mut Ppu { &mut self.mem_map.ppu }
+    fn ppu(&mut self) -> &mut Ppu {
+        &mut self.mem_map.ppu
+    }
 
-    fn apu(&mut self) -> &mut Apu { &mut self.mem_map.apu }
+    fn apu(&mut self) -> &mut Apu {
+        &mut self.mem_map.apu
+    }
 
-    fn dma(&mut self) -> &mut Dma { &mut self.mem_map.dma }
+    fn dma(&mut self) -> &mut Dma {
+        &mut self.mem_map.dma
+    }
 
     fn controllers(&mut self) -> &mut [Controller; 2] {
         &mut self.mem_map.controllers
@@ -457,8 +492,8 @@ impl BusOps for TerminalDebugger {
 
                     Err(EmulationError::DebuggerWatchpoint(addr))
                 }
-            },
-            res @ _ => res
+            }
+            res @ _ => res,
         }
     }
 
@@ -493,14 +528,14 @@ impl<'a> MemMapped for MemMapShim<'a> {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match self.watchpoint_set.contains(&index) {
             true => Err(EmulationError::DebuggerWatchpoint(index)),
-            false => self.mem_map.read(index)
+            false => self.mem_map.read(index),
         }
     }
 
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match self.watchpoint_set.contains(&index) {
             true => Err(EmulationError::DebuggerWatchpoint(index)),
-            false => self.mem_map.write(index, byte)
+            false => self.mem_map.write(index, byte),
         }
     }
 }
