@@ -1,9 +1,9 @@
 use std::ops::Range;
-use core::errors::EmulationError;
-use core::errors::EmulationError::MemoryAccess;
-use core::mappers::{CpuMapper, Mapper, PpuMapper};
-use core::memory::{MemMapped, Ram};
-use core::rom::{MirroringMode, Rom};
+use crate::core::errors::EmulationError;
+use crate::core::errors::EmulationError::MemoryAccess;
+use crate::core::mappers::{CpuMapper, Mapper, PpuMapper};
+use crate::core::memory::{MemMapped, Ram};
+use crate::core::rom::{MirroringMode, Rom};
 
 const BANK_SIZE_BYTES: usize = 16_384;
 const CHR_RAM_SIZE: usize = 8_192;
@@ -59,11 +59,11 @@ impl CpuMapper for UxROM {
         Ok(self.prg_rom_bytes[index])
     }
 
-    fn read_prg_ram(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read_prg_ram(&self, _index: u16) -> Result<u8, EmulationError> {
         Ok(0)
     }
 
-    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write_prg_ram(&mut self, _index: u16, _byte: u8) -> Result<(), EmulationError> {
         Ok(())
     }
 }

@@ -3,7 +3,7 @@ pub mod disassembler;
 pub mod frontends;
 
 
-use core::CpuFacade;
+use crate::core::CpuFacade;
 
 
 pub trait Debugger: CpuFacade {

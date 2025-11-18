@@ -1,7 +1,7 @@
 
 use std::fmt;
-use core::memory::MemMapped;
-use core::errors::EmulationError;
+use crate::core::memory::MemMapped;
+use crate::core::errors::EmulationError;
 
 #[derive(Debug, Clone)]
 pub enum AddressingMode {

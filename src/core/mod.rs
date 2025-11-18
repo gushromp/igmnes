@@ -13,30 +13,27 @@ mod ppu;
 mod dma;
 mod controller;
 
+use self::apu::Apu;
+use self::cpu::Cpu;
+use self::debugger::frontends::terminal::TerminalDebugger;
+use self::debugger::Debugger;
+use self::errors::EmulationError;
+use self::memory::*;
+use self::ppu::Ppu;
+use self::rom::Rom;
+use crate::core::controller::Controller;
+use crate::core::debug::Tracer;
+use crate::core::dma::Dma;
+use sdl2::audio::AudioSpecDesired;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::pixels::PixelFormatEnum;
+use sdl2::render::{TextureCreator, WindowCanvas};
+use sdl2::video::FullscreenType;
 use std::error::Error;
 use std::path::Path;
-use std::{mem, ptr, slice};
-use std::cmp::max;
-use std::collections::HashMap;
-use std::ops::Deref;
-use sdl2::event::Event;
-use sdl2::keyboard::{Keycode, Scancode};
-use sdl2::pixels::PixelFormatEnum;
-use sdl2::audio::AudioSpecDesired;
-use core::controller::Controller;
-use core::debug::Tracer;
-use core::dma::Dma;
 use std::time::{Duration, Instant};
-use sdl2::render::{TextureCreator, WindowCanvas};
-use sdl2::video::{FlashOperation, FullscreenType};
-use self::memory::*;
-use self::cpu::Cpu;
-use self::ppu::Ppu;
-use self::apu::Apu;
-use self::rom::Rom;
-use self::debugger::Debugger;
-use self::debugger::frontends::terminal::TerminalDebugger;
-use self::errors::EmulationError;
+use std::{mem, ptr};
 
 pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32;
 // 21.477272 MHz
@@ -75,7 +72,7 @@ pub trait CpuFacade {
     fn step_apu(&mut self, cpu_cycles: u64) -> bool;
     fn step_dma(&mut self) -> bool;
 
-    fn nmi(&mut self, is_immediate: bool);
+    fn nmi(&mut self);
     fn irq(&mut self);
 
     fn mem_map(&self) -> &CpuMemMap;
@@ -152,8 +149,8 @@ impl CpuFacade for DefaultCpuFacade {
         result
     }
 
-    fn nmi(&mut self, is_immediate: bool) {
-        self.cpu.nmi(&mut self.mem_map, is_immediate).unwrap()
+    fn nmi(&mut self) {
+        self.cpu.nmi(&mut self.mem_map).unwrap()
     }
 
     fn irq(&mut self) {
@@ -363,11 +360,11 @@ impl Core {
     }
 
     fn set_controllers_state<'a, I>(&mut self, state: I) where I: Iterator<Item=&'a Keycode> {
-        use core::controller::ControllerButton;
+        use crate::core::controller::ControllerButton;
         let mut controller_1_state: Vec<ControllerButton> = vec![];
 
         for key_state in state {
-            let button_state = match key_state {
+            let button_state = match *key_state {
                 Keycode::X => Some(ControllerButton::A),
                 Keycode::Z => Some(ControllerButton::B),
                 Keycode::RShift => Some(ControllerButton::SELECT),
@@ -396,7 +393,7 @@ impl Core {
         let nmi = self.cpu_facade.step_ppu(current_cycle_count, tracer);
         if nmi {
             self.cpu_facade.ppu().clear_nmi();
-            self.cpu_facade.nmi(false);
+            self.cpu_facade.nmi();
         }
 
         let irq = self.cpu_facade.step_apu(current_cycle_count);
@@ -425,7 +422,7 @@ impl Core {
                 } else if self.cpu_facade.ppu().nmi_pending {
                     // Needs PPU to track it's own cycles in order to be more accurate
                     self.cpu_facade.ppu().clear_nmi();
-                    self.cpu_facade.nmi(true);
+                    self.cpu_facade.nmi();
                 }
             }
             Err(error) => match error {

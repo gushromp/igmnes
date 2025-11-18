@@ -2,21 +2,19 @@ pub mod memory;
 pub mod palette;
 
 use std::convert::TryFrom;
-use std::{array, fmt, mem};
 use std::fmt::{Binary, Display, Formatter};
+use std::{array, fmt};
 
-use core::debug::Tracer;
-use core::errors::EmulationError;
-use core::errors::EmulationError::MemoryAccess;
+use crate::core::debug::Tracer;
+use crate::core::errors::EmulationError;
+use crate::core::errors::EmulationError::MemoryAccess;
 
-use core::memory::{MemMapConfig, MemMapped};
-use core::ppu::memory::PpuMemMap;
-use core::ppu::palette::{PpuPalette, PpuPaletteColor};
+use crate::core::memory::{MemMapConfig, MemMapped};
+use crate::core::ppu::memory::PpuMemMap;
+use crate::core::ppu::palette::PpuPaletteColor;
 
 const BIT_MASK: u8 = 0b0000_0001;
 const BIT_MASK_2: u8 = 0b0000_0011;
-
-type Bit = u8;
 
 // We use a whole byte for now, to avoid bit-packing, this type is merely for clarification
 trait BitOps {
@@ -197,7 +195,7 @@ struct OamTileIndex {
     //
     // For 8x16 sprites (bit 5 of PPUCTRL set), the PPU ignores the pattern table selection and selects a pattern table from bit 0 of this number.
     tile_index: u8,
-    bank_index: Bit, // Bank ($0000 or $1000) of tiles
+    bank_index: u8, // Bank ($0000 or $1000) of tiles
 }
 
 #[derive(Copy, Clone)]
@@ -214,7 +212,7 @@ impl Default for OamAttributePriority {
 
 impl From<u8> for OamAttributePriority {
     fn from(value: u8) -> Self {
-        use core::ppu::OamAttributePriority::{BACK, FRONT};
+        use crate::core::ppu::OamAttributePriority::{BACK, FRONT};
         match value {
             0 => FRONT,
             1 => BACK,
@@ -225,7 +223,7 @@ impl From<u8> for OamAttributePriority {
 
 impl Into<u8> for OamAttributePriority {
     fn into(self) -> u8 {
-        use core::ppu::OamAttributePriority::{BACK, FRONT};
+        use crate::core::ppu::OamAttributePriority::{BACK, FRONT};
         match self {
             FRONT => 0,
             BACK => 1
@@ -841,7 +839,7 @@ impl Ppu {
     }
 
     #[inline]
-    fn get_background_pixel(&mut self, pixel_x: usize, pixel_y: usize) -> BackgroundPixel {
+    fn get_background_pixel(&mut self, pixel_x: usize, _pixel_y: usize) -> BackgroundPixel {
         if pixel_x < 8 && !self.reg_mask.is_show_background_enabled_leftmost {
             let color = self
                 .ppu_mem_map
@@ -918,7 +916,7 @@ impl Ppu {
         SpritePixel { color, priority, sprite_index, is_transparent }
     }
 
-    #[inline]
+    #[inline(always)]
     fn evaluate_sprites(&mut self) {
         self.secondary_oam = [None; 8];
 
@@ -947,7 +945,7 @@ impl Ppu {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn prepare_sprite_units(&mut self) {
         self.sprite_output_units.units = [None; 8];
 

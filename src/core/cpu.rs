@@ -1,13 +1,13 @@
 // 6502
 
-use core::instructions::*;
-use core::memory::MemMapped;
+use crate::core::instructions::*;
+use crate::core::memory::MemMapped;
 use std::default::Default;
 use std::fmt::{self, Display};
 
-use core::errors::EmulationError;
+use crate::core::errors::EmulationError;
 
-use core::debug::{Tracer};
+use crate::core::debug::{Tracer};
 
 const RESET_PC_VEC: u16 = 0xFFFC;
 const NMI_PC_VEC: u16 = 0xFFFA;
@@ -126,7 +126,6 @@ impl StatusReg {
 struct CpuInterrupt {
     is_hardware: bool,
     is_nmi: bool,
-    is_immediate: bool
 }
 
 #[derive(Default, Copy, Clone)]
@@ -216,13 +215,13 @@ impl Cpu {
 
     #[inline]
     pub fn irq(&mut self, mem_map: &mut impl MemMapped) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: false, is_immediate: false};
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: false };
         self.interrupt(mem_map, interrupt)
     }
 
     #[inline]
-    pub fn nmi(&mut self, mem_map: &mut impl MemMapped, is_immediate: bool) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: true, is_immediate};
+    pub fn nmi(&mut self, mem_map: &mut impl MemMapped) -> Result<(), EmulationError> {
+        let interrupt = CpuInterrupt { is_hardware: true, is_nmi: true };
         self.interrupt(mem_map, interrupt)
     }
 
@@ -320,7 +319,7 @@ impl Cpu {
         instruction: &mut Instruction,
         mem_map: &mut impl MemMapped,
     ) -> Result<u8, EmulationError> {
-        use core::instructions::InstructionToken::*;
+        use crate::core::instructions::InstructionToken::*;
 
         let result = match instruction.token {
             NOP => self.instr_nop(instruction, mem_map),
@@ -438,7 +437,7 @@ impl Cpu {
         instruction: &mut Instruction,
         mem_map: &mut impl MemMapped,
     ) -> Result<(), EmulationError> {
-        use core::instructions::AddressingMode::*;
+        use crate::core::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
 
@@ -482,7 +481,7 @@ impl Cpu {
         instruction: &mut Instruction,
         mem_map: &mut impl MemMapped,
     ) -> Result<(), EmulationError> {
-        use core::instructions::AddressingMode::*;
+        use crate::core::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
 
@@ -507,7 +506,7 @@ impl Cpu {
 //
     #[inline]
     fn instr_brk(&mut self, mem_map: &mut impl MemMapped) -> Result<(), EmulationError> {
-        let interrupt = CpuInterrupt { is_hardware: false, is_nmi: false, is_immediate: false };
+        let interrupt = CpuInterrupt { is_hardware: false, is_nmi: false };
         self.perform_irq(mem_map, &interrupt)?;
 
         Ok(())
@@ -1223,7 +1222,7 @@ impl Cpu {
         instruction: &mut Instruction,
         mem_map: &mut impl MemMapped,
     ) -> Result<u8, EmulationError> {
-        use core::instructions::AddressingMode::*;
+        use crate::core::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
 
@@ -1297,7 +1296,7 @@ impl Cpu {
         mem_map: &mut impl MemMapped,
         byte: u8,
     ) -> Result<(), EmulationError> {
-        use core::instructions::AddressingMode::*;
+        use crate::core::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
         match *addressing_mode {
@@ -1389,7 +1388,7 @@ impl Cpu {
 
     // branch is taken
     fn branch(&mut self, instruction: &mut Instruction) {
-        use core::instructions::AddressingMode::*;
+        use crate::core::instructions::AddressingMode::*;
 
         // increase cycle count by 1
         instruction.cycle_count += 1;

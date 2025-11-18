@@ -436,7 +436,7 @@ named!(
 );
 
 named!(
-    parse_integer<&[u8]>,
+    parse_integer<&'a [u8]>,
     recognize!(preceded!(opt!(tag!("-")), digit))
 );
 

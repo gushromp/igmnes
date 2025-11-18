@@ -2,13 +2,13 @@ use std::cell::RefCell;
 use std::default::Default;
 use std::ops::Range;
 use std::rc::Rc;
-use core::rom::Rom;
-use core::apu::Apu;
-use core::controller::Controller;
-use core::dma::{Dma, DmaType};
-use core::mappers::{self, Mapper};
-use core::errors::EmulationError;
-use core::ppu::{Ppu, memory::PpuMemMap};
+use crate::core::rom::Rom;
+use crate::core::apu::Apu;
+use crate::core::controller::Controller;
+use crate::core::dma::{Dma, DmaType};
+use crate::core::mappers::{self, Mapper};
+use crate::core::errors::EmulationError;
+use crate::core::ppu::{Ppu, memory::PpuMemMap};
 
 const RAM_SIZE: usize = 0x800;
 
@@ -26,11 +26,11 @@ pub trait MemMapped {
         Ok(word)
     }
 
-    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+    fn read_range(&self, _range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
         Ok(vec![])
     }
     
-    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
+    fn read_range_ref(&self, _range: Range<u16>) -> Result<&[u8], EmulationError> {
         Ok(&[])
     }
 
@@ -182,7 +182,6 @@ impl MemMapped for CpuMemMap {
             0x4020..=0xFFFF => {
                 self.mapper.borrow_mut().read(index)
             }
-            _ => unreachable!()
         }
     }
 
@@ -232,7 +231,6 @@ impl MemMapped for CpuMemMap {
             0x4020..=0xFFFF => {
                 self.mapper.borrow_mut().write(index, byte)
             }
-            _ => unreachable!()
         }
     }
 

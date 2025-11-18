@@ -1,10 +1,11 @@
 [package]
 name = "igmnes"
 version = "0.1.0"
-authors = ["Ivan Đorđević <i.djordjevic@itsinbox.com>"]
+edition = "2018"
+authors = ["Ivan Đorđević <blashyrk92@gmail.com>"]
 
 [dependencies]
-sdl2 = { version = "0.36", features = ["bundled"] }
+sdl2 = { version = "0.38.0", features = ["bundled"] }
 rfd = "0.14.0"
 
 [dependencies.nom]

@@ -6,18 +6,18 @@ use std::collections::hash_map::Entry;
 use std::ops::Range;
 
 
-use core::CpuFacade;
-use core::cpu::Cpu;
-use core::apu::Apu;
-use core::controller::Controller;
-use core::debug::Tracer;
-use core::memory::{CpuMemMap, MemMapped};
-use core::debugger::Debugger;
-use core::debugger::command::Command;
-use core::debugger::disassembler;
-use core::dma::Dma;
-use core::errors::EmulationError;
-use core::ppu::Ppu;
+use crate::core::CpuFacade;
+use crate::core::cpu::Cpu;
+use crate::core::apu::Apu;
+use crate::core::controller::Controller;
+use crate::core::debug::Tracer;
+use crate::core::memory::{CpuMemMap, MemMapped};
+use crate::core::debugger::Debugger;
+use crate::core::debugger::command::Command;
+use crate::core::debugger::disassembler;
+use crate::core::dma::Dma;
+use crate::core::errors::EmulationError;
+use crate::core::ppu::Ppu;
 
 struct MemMapShim<'a> {
     mem_map: &'a mut CpuMemMap,
@@ -69,7 +69,7 @@ impl TerminalDebugger {
     }
 
     fn execute_command(&mut self, command: &Command) {
-        use core::debugger::command::Command::*;
+        use crate::core::debugger::command::Command::*;
 
         match *command {
             ShowUsage => TerminalDebugger::show_usage(),
@@ -343,7 +343,7 @@ impl TerminalDebugger {
 
 impl Debugger for TerminalDebugger {
     fn break_into(&mut self) {
-        use core::debugger::command::Command::*;
+        use crate::core::debugger::command::Command::*;
 
         let mut stdout = io::stdout();
 
@@ -486,8 +486,8 @@ impl CpuFacade for TerminalDebugger {
         true
     }
 
-    fn nmi(&mut self, is_immediate: bool) {
-        self.cpu.nmi(&mut self.mem_map, is_immediate).unwrap()
+    fn nmi(&mut self) {
+        self.cpu.nmi(&mut self.mem_map).unwrap()
     }
 
     fn irq(&mut self) {

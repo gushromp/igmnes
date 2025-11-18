@@ -1,8 +1,8 @@
 use std::ops::Range;
-use core::mappers::{CpuMapper, Mapper, PpuMapper};
-use core::memory::{MemMapped, Ram};
-use core::rom::{MirroringMode, Rom};
-use core::errors::EmulationError::{self, MemoryAccess};
+use crate::core::mappers::{CpuMapper, Mapper, PpuMapper};
+use crate::core::memory::{MemMapped, Ram};
+use crate::core::rom::{MirroringMode, Rom};
+use crate::core::errors::EmulationError::{self, MemoryAccess};
 
 #[derive(Clone)]
 pub struct NRom {

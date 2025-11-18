@@ -4,8 +4,8 @@ use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::ops::Index;
 use std::path::Path;
-use core::errors::EmulationError;
-use core::memory::MemMapped;
+use crate::core::errors::EmulationError;
+use crate::core::memory::MemMapped;
 
 const DEFAULT_PALETTE_SUBPATH: &str = "palette/DigitalPrime.pal";
 

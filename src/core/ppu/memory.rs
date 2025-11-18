@@ -2,15 +2,14 @@
 
 use std::array;
 use std::cell::RefCell;
-use std::cmp::max;
 use std::ops::Range;
 use std::rc::Rc;
-use core::errors::EmulationError;
-use core::mappers;
-use core::mappers::Mapper;
-use core::memory::MemMapped;
-use core::ppu::OamTable;
-use core::ppu::palette::PpuPalette;
+use crate::core::errors::EmulationError;
+use crate::core::mappers;
+use crate::core::mappers::Mapper;
+use crate::core::memory::MemMapped;
+use crate::core::ppu::OamTable;
+use crate::core::ppu::palette::PpuPalette;
 
 pub struct PpuMemMap {
     pub oam_table: OamTable,
@@ -107,9 +106,11 @@ impl MemMapped for PpuMemMap {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
         match index {
             0x0000..=0x1FFF => {
+                // CHR ROM/RAM
                 self.mapper.borrow_mut().read(index)
             }
             0x2000..=0x2FFF => {
+                // VRAM
                 self.mapper.borrow_mut().read(index)
             }
             0x3000..=0x3EFF => {
@@ -118,6 +119,7 @@ impl MemMapped for PpuMemMap {
                 self.mapper.borrow_mut().read(index)
             }
             0x3F00..=0x3FFF => {
+                // PPU Palette RAM
                 let index = (index - 0x3F00) % 20;
                 self.palette.read(index)
             }
@@ -125,16 +127,14 @@ impl MemMapped for PpuMemMap {
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        self.mapper.borrow_mut().read_range(range)
-    }
-
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
         match index {
             0x0000..=0x1FFF => {
+                // CHR ROM/RAM
                 self.mapper.borrow_mut().write(index, byte)
             }
             0x2000..=0x2FFF => {
+                // VRAM
                 self.mapper.borrow_mut().write(index, byte)
             }
             0x3000..=0x3EFF => {
@@ -143,10 +143,15 @@ impl MemMapped for PpuMemMap {
                 self.mapper.borrow_mut().write(index, byte)
             }
             0x3F00..=0x3FFF => {
+                // PPU Palette RAM
                 let index = (index - 0x3F00) % 32;
                 self.palette.write(index, byte)
             }
             _ => Ok(())
         }
+    }
+
+    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+        self.mapper.borrow_mut().read_range(range)
     }
 }

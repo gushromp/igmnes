@@ -1,9 +1,9 @@
 use std::ops::Range;
-use core::errors::EmulationError;
-use core::errors::EmulationError::MemoryAccess;
-use core::mappers::{CpuMapper, Mapper, PpuMapper};
-use core::memory::{MemMapped, Ram};
-use core::rom::{MirroringMode, Rom};
+use crate::core::errors::EmulationError;
+use crate::core::errors::EmulationError::MemoryAccess;
+use crate::core::mappers::{CpuMapper, Mapper, PpuMapper};
+use crate::core::memory::{MemMapped, Ram};
+use crate::core::rom::{MirroringMode, Rom};
 
 const BANK_SIZE_BYTES: usize = 8_192;
 
@@ -58,11 +58,11 @@ impl CpuMapper for CNROM {
         Ok(self.prg_rom_bytes[index])
     }
 
-    fn read_prg_ram(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read_prg_ram(&self, _index: u16) -> Result<u8, EmulationError> {
         Ok(0)
     }
 
-    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> { Ok(()) }
+    fn write_prg_ram(&mut self, _index: u16, _byte: u8) -> Result<(), EmulationError> { Ok(()) }
 }
 
 impl PpuMapper for CNROM {
@@ -85,7 +85,7 @@ impl PpuMapper for CNROM {
         Err(MemoryAccess(format!("Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}", range)))
     }
 
-    fn write_chr_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write_chr_ram(&mut self, _index: u16, _byte: u8) -> Result<(), EmulationError> {
         Ok(())
     }
 

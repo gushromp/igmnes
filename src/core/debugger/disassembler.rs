@@ -1,8 +1,8 @@
 use std::ops::Range;
-use core::instructions::Instruction;
-use core::memory::MemMapped;
-use core::cpu::Cpu;
-use core::errors::EmulationError;
+use crate::core::instructions::Instruction;
+use crate::core::memory::MemMapped;
+use crate::core::cpu::Cpu;
+use crate::core::errors::EmulationError;
 
 pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut impl MemMapped)
                          -> Result<Vec<String>, EmulationError> {
@@ -31,7 +31,7 @@ pub fn disassemble_range(addr: u16, range: &Range<u16>, cpu: &Cpu, mem_map: &mut
 
 pub fn disassemble(addr: u16, instruction: &mut Instruction, cpu: &Cpu, mem_map: &mut impl MemMapped)
                    -> Result<String, EmulationError> {
-    use core::instructions::AddressingMode::*;
+    use crate::core::instructions::AddressingMode::*;
 
     mem_map.set_is_mutating_read(false);
 

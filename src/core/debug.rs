@@ -1,11 +1,11 @@
 use std::fmt::{Debug, Formatter};
 use std::fs;
-use core::cpu::Cpu;
-use core::instructions::Instruction;
-use core::debugger::disassembler::disassemble;
 use std::path::Path;
-use core::memory::MemMapped;
-use core::ppu::Ppu;
+use crate::core::cpu::Cpu;
+use crate::core::instructions::Instruction;
+use crate::core::debugger::disassembler::disassemble;
+use crate::core::memory::MemMapped;
+use crate::core::ppu::Ppu;
 
 #[derive(Default)]
 pub struct Trace {

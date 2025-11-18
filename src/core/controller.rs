@@ -1,5 +1,5 @@
-use core::errors::EmulationError;
-use core::memory::{MemMapConfig, MemMapped};
+use crate::core::errors::EmulationError;
+use crate::core::memory::{MemMapConfig, MemMapped};
 
 #[derive(Clone, Copy)]
 pub enum ControllerButton {
@@ -74,7 +74,7 @@ impl MemMapped for Controller {
         }
     }
 
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, _index: u16, _byte: u8) -> Result<(), EmulationError> {
         Ok(())
     }
 

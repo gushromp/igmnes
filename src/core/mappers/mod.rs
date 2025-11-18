@@ -2,15 +2,15 @@ mod mapper_000;
 mod mapper_002;
 mod mapper_003;
 
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 use self::mapper_000::NRom;
-use core::memory::MemMapped;
-use core::rom::Rom;
-use core::errors::EmulationError;
-use core::mappers::mapper_002::UxROM;
-use core::mappers::mapper_003::CNROM;
+use crate::core::memory::MemMapped;
+use crate::core::rom::Rom;
+use crate::core::errors::EmulationError;
+use crate::core::mappers::mapper_002::UxROM;
+use crate::core::mappers::mapper_003::CNROM;
 
 pub trait CpuMapper : MemMapped {
 

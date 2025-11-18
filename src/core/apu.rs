@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
-use core::memory::MemMapped;
-use core::errors::EmulationError;
+use crate::core::memory::MemMapped;
+use crate::core::errors::EmulationError;
 
 const OUTPUT_SAMPLE_RATE: usize = 44_100;
 const SAMPLES_PER_OUTPUT_SAMPLE: usize = 41;
@@ -158,7 +158,6 @@ struct Pulse {
     timer: u16,
     timer_counter: u16,
     // Length counter is 5-bit (bits 5-7 are disregarded)
-    should_toggle_halt_lc: bool,
     lc_halt_env_loop: bool,
     length_counter: u8,
 
@@ -681,7 +680,6 @@ struct FrameCounter {
     cycles: u64,
     delayed_reset: bool,
     reset_after_cycles: u64,
-    odd_frame: bool,
 
     clock_envelope: bool,
     clock_sweep: bool,
