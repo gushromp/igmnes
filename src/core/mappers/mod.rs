@@ -41,9 +41,9 @@ pub trait PpuMapper: MemMapped {
 
 #[enum_dispatch(CpuMapper, PpuMapper, MemMapped)]
 pub enum MapperImpl {
-    NRom,
-    UxROM,
-    CNROM,
+    Mapper000(NRom),
+    Mapper002(UxROM),
+    Mapper003(CNROM),
 }
 
 pub fn load_mapper_for_rom(rom: &Rom) -> Result<Rc<RefCell<MapperImpl>>, String> {

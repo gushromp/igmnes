@@ -173,29 +173,12 @@ struct PpuScrollReg {
 }
 
 impl PpuScrollReg {
-    fn write(&mut self, byte: u8, is_addr_latch_on: bool) {
-        if is_addr_latch_on {
-            self.y = byte;
-        } else {
-            self.x = byte;
-        }
-    }
-
     fn hard_reset(&mut self) {
         self.x = 0;
         self.y = 0;
     }
 
     fn soft_reset(&mut self) {}
-}
-
-#[derive(Default, Copy, Clone)]
-struct OamTileIndex {
-    //For 8x8 sprites, this is the tile number of this sprite within the pattern table selected in bit 3 of PPUCTRL ($2000).
-    //
-    // For 8x16 sprites (bit 5 of PPUCTRL set), the PPU ignores the pattern table selection and selects a pattern table from bit 0 of this number.
-    tile_index: u8,
-    bank_index: u8, // Bank ($0000 or $1000) of tiles
 }
 
 #[derive(Copy, Clone)]

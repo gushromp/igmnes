@@ -487,8 +487,6 @@ impl BusOps for TerminalDebugger {
     fn irq(&mut self) {
         self.cpu.irq(&mut self.mem_map).unwrap();
     }
-
-    fn mem_map(&self) -> &CpuMemMap { &self.mem_map }
 }
 
 impl<'a> MemMapped for MemMapShim<'a> {

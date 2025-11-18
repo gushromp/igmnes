@@ -75,8 +75,6 @@ pub trait BusOps {
 
     fn nmi(&mut self);
     fn irq(&mut self);
-
-    fn mem_map(&self) -> &CpuMemMap;
 }
 
 #[enum_dispatch]
@@ -156,8 +154,6 @@ impl BusOps for DefaultBus {
     fn irq(&mut self) {
         self.cpu.irq(&mut self.mem_map).unwrap();
     }
-
-    fn mem_map(&self) -> &CpuMemMap { &self.mem_map }
 }
 
 impl BusDebugger for DefaultBus {

@@ -89,7 +89,6 @@ impl MemMapped for Ram {
 }
 
 pub struct CpuMemMap {
-    rom: Rom,
     pub ram: Ram,
     pub apu: Apu,
     pub ppu: Ppu,
@@ -104,7 +103,6 @@ impl Default for CpuMemMap {
         let def_mapper = mappers::default_mapper();
 
         CpuMemMap {
-            rom: Rom::default(),
             ram: Ram::default(),
             apu: Apu::default(),
             ppu: Ppu::default(),
@@ -121,7 +119,6 @@ impl CpuMemMap {
 
         let ppu_mem_map = PpuMemMap::new(mapper.clone());
         let mem_map = CpuMemMap {
-            rom,
             ram: Ram::new(),
             apu: Apu::new(),
             ppu: Ppu::new(ppu_mem_map),
