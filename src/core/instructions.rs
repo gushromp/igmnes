@@ -182,7 +182,7 @@ impl Instruction {
 }
 
 impl Instruction {
-    pub fn decode(mem_map: &mut dyn MemMapped, addr: u16) -> Result<Instruction, EmulationError> {
+    pub fn decode(mem_map: &mut impl MemMapped, addr: u16) -> Result<Instruction, EmulationError> {
         use self::InstructionToken::*;
         use self::AddressingMode::*;
 

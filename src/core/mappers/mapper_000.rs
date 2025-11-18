@@ -1,5 +1,5 @@
 use std::ops::Range;
-use crate::core::mappers::{CpuMapper, Mapper, PpuMapper};
+use crate::core::mappers::{CpuMapper, PpuMapper};
 use crate::core::memory::{MemMapped, Ram};
 use crate::core::rom::{MirroringMode, Rom};
 use crate::core::errors::EmulationError::{self, MemoryAccess};
@@ -107,8 +107,6 @@ impl PpuMapper for NRom {
         }
     }
 }
-
-impl Mapper for NRom { }
 
 impl MemMapped for NRom {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {

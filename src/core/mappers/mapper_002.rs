@@ -1,7 +1,7 @@
 use std::ops::Range;
 use crate::core::errors::EmulationError;
 use crate::core::errors::EmulationError::MemoryAccess;
-use crate::core::mappers::{CpuMapper, Mapper, PpuMapper};
+use crate::core::mappers::{CpuMapper, PpuMapper};
 use crate::core::memory::{MemMapped, Ram};
 use crate::core::rom::{MirroringMode, Rom};
 
@@ -98,8 +98,6 @@ impl PpuMapper for UxROM {
         }
     }
 }
-
-impl Mapper for UxROM { }
 
 impl MemMapped for UxROM {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError> {

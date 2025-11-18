@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use enum_dispatch::enum_dispatch;
 use crate::core::memory::MemMapped;
 use crate::core::errors::EmulationError;
 
@@ -40,6 +41,7 @@ const NOISE_PERIOD_CYCLES: [u16; 16] = [
 
 const DELAY_CYCLES_PER_IRQ_WRITE: u64 = 29835;
 
+#[enum_dispatch]
 trait ApuChannel {
     fn write_reg(&mut self, reg_index: usize, byte: u8);
 
@@ -657,6 +659,14 @@ impl ApuChannel for DMC {
     }
 }
 
+#[enum_dispatch(ApuChannel)]
+enum ApuChannelImpl {
+    Pulse(Pulse),
+    Triangle(Triangle),
+    Noise(Noise),
+    DMC(DMC),
+}
+
 //
 // APU and Frame Counter implementation
 //
@@ -733,7 +743,7 @@ impl FrameCounter {
 
 pub struct Apu {
     // Waveform/Sample generators
-    channels: [Box<dyn ApuChannel>; 5],
+    channels: [ApuChannelImpl; 5],
 
     // Mixer
     pulse_table: [f32; 31],
@@ -760,12 +770,12 @@ pub struct Apu {
 
 impl Default for Apu {
     fn default() -> Apu {
-        let channels = [
-            Box::new(Pulse::new(false)) as Box<dyn ApuChannel>,
-            Box::new(Pulse::new(true)) as Box<dyn ApuChannel>,
-            Box::new(Triangle::default()) as Box<dyn ApuChannel>,
-            Box::new(Noise::default()) as Box<dyn ApuChannel>,
-            Box::new(DMC::default()) as Box<dyn ApuChannel>
+        let channels: [ApuChannelImpl; 5] = [
+            Pulse::new(false).into(),
+            Pulse::new(true).into(),
+            Triangle::default().into(),
+            Noise::default().into(),
+            DMC::default().into(),
         ];
 
         Apu {

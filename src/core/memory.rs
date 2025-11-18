@@ -2,16 +2,18 @@ use std::cell::RefCell;
 use std::default::Default;
 use std::ops::Range;
 use std::rc::Rc;
+use enum_dispatch::enum_dispatch;
 use crate::core::rom::Rom;
 use crate::core::apu::Apu;
 use crate::core::controller::Controller;
 use crate::core::dma::{Dma, DmaType};
-use crate::core::mappers::{self, Mapper};
+use crate::core::mappers::{self, MapperImpl};
 use crate::core::errors::EmulationError;
 use crate::core::ppu::{Ppu, memory::PpuMemMap};
 
 const RAM_SIZE: usize = 0x800;
 
+#[enum_dispatch]
 pub trait MemMapped {
     fn read(&mut self, index: u16) -> Result<u8, EmulationError>;
     fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
@@ -93,7 +95,7 @@ pub struct CpuMemMap {
     pub ppu: Ppu,
     pub dma: Dma,
     pub controllers: [Controller; 2],
-    mapper: Rc<RefCell<dyn Mapper>>,
+    mapper: Rc<RefCell<MapperImpl>>,
 }
 
 

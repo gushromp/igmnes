@@ -8,6 +8,7 @@ authors = ["Ivan Đorđević <blashyrk92@gmail.com>"]
 sdl2 = { version = "0.38.0", features = ["bundled"] }
 rfd = "0.14.0"
 enum_dispatch = "0.3.13"
+thiserror = "2.0.17"
 
 [dependencies.nom]
 version = "^2.0"

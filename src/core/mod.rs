@@ -1,4 +1,3 @@
-extern crate sdl2;
 
 mod debugger;
 mod mappers;
@@ -31,11 +30,12 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::render::{TextureCreator, WindowCanvas};
 use sdl2::video::FullscreenType;
-use std::error::Error;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{mem, ptr};
 use enum_dispatch::enum_dispatch;
+use thiserror::Error;
+use crate::core::rom::RomError;
 
 pub const MASTER_CLOCK_NTSC: f32 = 21.477272_E6_f32;
 // 21.477272 MHz
@@ -178,8 +178,14 @@ pub struct Core {
     is_running: bool,
 }
 
+#[derive(Error, Debug)]
+pub enum CoreError {
+    #[error("Error loading ROM: {0:?}")]
+    RomError(#[from] RomError),
+}
+
 impl Core {
-    pub fn load_rom(file_path: &Path) -> Result<Core, Box<dyn Error>> {
+    pub fn load_rom(file_path: &Path) -> Result<Core, CoreError> {
         let rom = Rom::load_rom(file_path)?;
         let mut mem_map = CpuMemMap::new(rom);
 

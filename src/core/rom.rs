@@ -1,8 +1,8 @@
 use std::path::Path;
-use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
 use nom::*;
+use thiserror::Error;
 
 const PRG_ROM_BYTES_PER_CHUNK: usize = 16384;
 const CHR_ROM_BYTES_PER_CHUNK: usize = 8192;
@@ -76,8 +76,17 @@ pub struct Rom {
     pub chr_rom_bytes: Vec<u8>,
 }
 
+#[derive(Error, Debug)]
+pub enum RomError {
+    #[error("Error while parsing ROM: {0:?}")]
+    ParseError(String),
+
+    #[error("IO error: {0}")]
+    IOError(#[from] std::io::Error),
+}
+
 impl Rom {
-    pub fn load_rom(file_path: &Path) -> Result<Rom, Box<dyn Error>> {
+    pub fn load_rom(file_path: &Path) -> Result<Rom, RomError> {
         let mut file = File::open(file_path)?;
         let mut bytes = Vec::new();
 
@@ -88,7 +97,7 @@ impl Rom {
         if rom.header.tv_system != TVSystem::PAL {
             Ok(rom)
         } else {
-            Err(Box::from(format!("Unsupported system type: {:?}", rom.header.tv_system)))
+            Err(RomError::ParseError(format!("Unsupported system type: {:?}", rom.header.tv_system)))
         }
     }
 }

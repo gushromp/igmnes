@@ -6,7 +6,7 @@ use std::ops::Range;
 use std::rc::Rc;
 use crate::core::errors::EmulationError;
 use crate::core::mappers;
-use crate::core::mappers::Mapper;
+use crate::core::mappers::MapperImpl;
 use crate::core::memory::MemMapped;
 use crate::core::ppu::OamTable;
 use crate::core::ppu::palette::PpuPalette;
@@ -14,7 +14,7 @@ use crate::core::ppu::palette::PpuPalette;
 pub struct PpuMemMap {
     pub oam_table: OamTable,
     pub palette: PpuPalette,
-    mapper: Rc<RefCell<dyn Mapper>>,
+    mapper: Rc<RefCell<MapperImpl>>,
 }
 
 impl Default for PpuMemMap {
@@ -30,7 +30,7 @@ impl Default for PpuMemMap {
 }
 
 impl PpuMemMap {
-    pub fn new(mapper: Rc<RefCell<dyn Mapper>>) -> PpuMemMap {
+    pub fn new(mapper: Rc<RefCell<MapperImpl>>) -> PpuMemMap {
         PpuMemMap {
             oam_table: OamTable::default(),
             palette: PpuPalette::default(),
