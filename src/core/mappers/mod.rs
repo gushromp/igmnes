@@ -1,11 +1,13 @@
 mod mapper_000;
 mod mapper_002;
 mod mapper_003;
+mod mapper_007;
 
 use self::mapper_000::NRom;
 use crate::core::errors::EmulationError;
 use crate::core::mappers::mapper_002::UxROM;
 use crate::core::mappers::mapper_003::CNROM;
+use crate::core::mappers::mapper_007::AxROM;
 use crate::core::memory::MemMapped;
 use crate::core::rom::Rom;
 use enum_dispatch::enum_dispatch;
@@ -43,6 +45,7 @@ pub enum MapperImpl {
     Mapper000(NRom),
     Mapper002(UxROM),
     Mapper003(CNROM),
+    Mapper007(AxROM),
 }
 
 pub fn load_mapper_for_rom(rom: &Rom) -> Result<Rc<RefCell<MapperImpl>>, String> {
@@ -50,6 +53,7 @@ pub fn load_mapper_for_rom(rom: &Rom) -> Result<Rc<RefCell<MapperImpl>>, String>
         0 => NRom::new(rom).into(),
         2 => UxROM::new(rom).into(),
         3 => CNROM::new(rom).into(),
+        7 => AxROM::new(rom).into(),
         mapper_num @ _ => return Err(format!("Unsupported mapper number: {}", mapper_num)),
     };
     Ok(Rc::new(RefCell::new(mapper)))
@@ -57,6 +61,5 @@ pub fn load_mapper_for_rom(rom: &Rom) -> Result<Rc<RefCell<MapperImpl>>, String>
 
 pub fn default_mapper() -> Rc<RefCell<MapperImpl>> {
     let def_rom = Rom::default();
-
     Rc::new(RefCell::new(NRom::new(&def_rom).into()))
 }
