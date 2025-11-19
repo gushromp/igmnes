@@ -38,12 +38,12 @@ impl PpuMemMap {
         }
     }
 
-    pub fn fetch_name_table_entry(&mut self, reg_v: u16) -> Result<u8, EmulationError> {
+    pub fn fetch_name_table_entry(&mut self, reg_v: u16) -> u8 {
         let name_table_entry_addr = 0x2000 | (reg_v & 0x0FFF);
         self.read(name_table_entry_addr)
     }
 
-    pub fn fetch_attribute_table_entry(&mut self, reg_v: u16) -> Result<u8, EmulationError> {
+    pub fn fetch_attribute_table_entry(&mut self, reg_v: u16) -> u8 {
         // attribute address =                 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
         let attribute_table_entry_addr =
             0x23C0 | (reg_v & 0x0C00) | ((reg_v >> 4) & 0x38) | ((reg_v >> 2) & 0x07);
@@ -72,8 +72,8 @@ impl PpuMemMap {
         let pattern_table_addr_high: u16 =
             (pattern_table_index as u16) << 12 | (name_table_entry as u16) << 4 | 1 << 3 | pixel_y;
 
-        let pattern_table_byte_low = self.read(pattern_table_addr_low).unwrap();
-        let pattern_table_byte_high = self.read(pattern_table_addr_high).unwrap();
+        let pattern_table_byte_low = self.read(pattern_table_addr_low);
+        let pattern_table_byte_high = self.read(pattern_table_addr_high);
         Ok([pattern_table_byte_low, pattern_table_byte_high])
     }
 
@@ -85,7 +85,7 @@ impl PpuMemMap {
         let base_addr = (pattern_table_index as u16) << 12;
         let pattern_entry_addr = base_addr + (pattern_entry_index as u16 * 16);
 
-        let byte_slice = self.read_range(pattern_entry_addr..pattern_entry_addr + 16)?;
+        let byte_slice = self.read_range(pattern_entry_addr..pattern_entry_addr + 16);
         let result: [u8; 16] = if byte_slice.len() == 0 {
             [0; 16]
         } else {
@@ -106,7 +106,7 @@ impl MemMapped for PpuMemMap {
     //      $3000-$3EFF 	$0F00 	Mirrors of $2000-$2EFF
     //      $3F00-$3F1F 	$0020 	Palette RAM indexes
     //      $3F20-$3FFF 	$00E0 	Mirrors of $3F00-$3F1F
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> u8 {
         match index {
             0x0000..=0x1FFF => {
                 // CHR ROM/RAM
@@ -130,7 +130,7 @@ impl MemMapped for PpuMemMap {
         }
     }
 
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, index: u16, byte: u8) {
         match index {
             0x0000..=0x1FFF => {
                 // CHR ROM/RAM
@@ -150,11 +150,11 @@ impl MemMapped for PpuMemMap {
                 let index = (index - 0x3F00) % 32;
                 self.palette.write(index, byte)
             }
-            _ => Ok(()),
+            _ => (),
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+    fn read_range(&self, range: Range<u16>) -> Vec<u8> {
         self.mapper.borrow_mut().read_range(range)
     }
 }

@@ -154,11 +154,11 @@ impl BusOps for DefaultBus {
     }
 
     fn nmi(&mut self) {
-        self.cpu.nmi(&mut self.mem_map).unwrap()
+        self.cpu.nmi(&mut self.mem_map)
     }
 
     fn irq(&mut self) {
-        self.cpu.irq(&mut self.mem_map).unwrap();
+        self.cpu.irq(&mut self.mem_map);
     }
 }
 

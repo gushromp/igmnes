@@ -1,4 +1,3 @@
-use crate::core::errors::EmulationError;
 use crate::core::memory::MemMapped;
 use enum_dispatch::enum_dispatch;
 use std::collections::VecDeque;
@@ -1039,7 +1038,7 @@ impl Apu {
 }
 
 impl MemMapped for Apu {
-    fn read(&mut self, addr: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, addr: u16) -> u8 {
         match addr {
             // Status register
             0x4015 => {
@@ -1049,126 +1048,106 @@ impl MemMapped for Apu {
                 // if self.frame_counter.cycles_since_interrupt > 0 {
                 self.frame_irq = false;
                 // }
-                Ok(status)
+                status
             }
             // The rest of the registers cannot be read from
             _ => {
                 //println!("Attempted invalid read from APU register: 0x{:04X}", addr);
-                Ok(0)
+                0
             }
         }
     }
 
-    fn write(&mut self, addr: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, addr: u16, byte: u8) {
         match addr {
             // Pulse 1
             // Duty (DD), Envelope loop/Length counter Halt (LC), constant volume (C), volume/envelope (VVVV)
             0x4000 => {
                 self.channels[PULSE_1].write_reg(0, byte);
-                Ok(())
             }
             // Sweep unit: enabled (E), period (P), negate (N), shift (S)
             0x4001 => {
                 self.channels[PULSE_1].write_reg(1, byte);
-                Ok(())
             }
             // Timer low  (T)
             0x4002 => {
                 self.channels[PULSE_1].write_reg(2, byte);
-                Ok(())
             }
             // Length counter load (L), timer high (T)
             0x4003 => {
                 self.channels[PULSE_1].write_reg(3, byte);
-                Ok(())
             }
 
             // Pulse2
             // Duty (DD), Envelope loop/Length counter Halt (LC), constant volume (C), volume/envelope (VVVV)
             0x4004 => {
                 self.channels[PULSE_2].write_reg(0, byte);
-                Ok(())
             }
             // Sweep unit: enabled (E), period (P), negate (N), shift (S)
             0x4005 => {
                 self.channels[PULSE_2].write_reg(1, byte);
-                Ok(())
             }
             // Timer low  (T)
             0x4006 => {
                 self.channels[PULSE_2].write_reg(2, byte);
-                Ok(())
             }
             // Length counter load (L), timer high (T)
             0x4007 => {
                 self.channels[PULSE_2].write_reg(3, byte);
-                Ok(())
             }
 
             // Triangle
             // Length counter halt / linear counter control (C), linear counter load (R)
             0x4008 => {
                 self.channels[TRIANGLE].write_reg(0, byte);
-                Ok(())
             }
             // Unused (U), but can still be written to and read from
             0x4009 => {
                 self.channels[TRIANGLE].write_reg(1, byte);
-                Ok(())
             }
             // Timer low (T)
             0x400A => {
                 self.channels[TRIANGLE].write_reg(2, byte);
-                Ok(())
             }
             // Length counter load (L), timer high (T), linear counter reload flag
             0x400B => {
                 self.channels[TRIANGLE].write_reg(3, byte);
-                Ok(())
             }
 
             // Noise
             // Unused (U), Envelope loop / length counter halt (L), constant volume (C), volume/envelope (V)
             0x400C => {
                 self.channels[NOISE].write_reg(0, byte);
-                Ok(())
             }
             // Unused (U), but can still be written to
             0x400D => {
                 self.channels[NOISE].write_reg(1, byte);
-                Ok(())
             }
             // Loop noise (L), unused (U), noise period (P)
             0x400E => {
                 self.channels[NOISE].write_reg(2, byte);
-                Ok(())
             }
             // Length counter load (L), unused (U)
             0x400F => {
                 self.channels[NOISE].write_reg(3, byte);
-                Ok(())
             }
 
             // DMC
             // IRQ enable (I), loop (L), unused (U), frequency (R)
             0x4010 => {
                 self.channels[DMC].write_reg(0, byte);
-                Ok(())
             }
             // Unused (U), load counter (D)
             0x4011 => {
                 self.channels[DMC].write_reg(1, byte);
-                Ok(())
             }
             // Sample address (A)
             0x4012 => {
                 self.channels[DMC].write_reg(2, byte);
-                Ok(())
             }
             // Sample length (L)
             0x4013 => {
                 self.channels[DMC].write_reg(3, byte);
-                Ok(())
             }
             //
             // 0x4014 is skipped, it's not part of the APU,
@@ -1178,7 +1157,6 @@ impl MemMapped for Apu {
             // Status register
             0x4015 => {
                 self.write_status(byte);
-                Ok(())
             }
 
             // Frame counter
@@ -1186,7 +1164,6 @@ impl MemMapped for Apu {
             // The APU only uses bits 6 and 7
             0x4017 => {
                 self.write_frame_counter(byte);
-                Ok(())
             }
 
             _ => unreachable!(),

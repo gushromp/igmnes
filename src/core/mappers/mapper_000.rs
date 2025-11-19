@@ -1,4 +1,3 @@
-use crate::core::errors::EmulationError::{self, MemoryAccess};
 use crate::core::mappers::{CpuMapper, PpuMapper};
 use crate::core::memory::{MemMapped, Ram};
 use crate::core::rom::{MirroringMode, Rom};
@@ -50,60 +49,59 @@ impl NRom {
 }
 
 impl CpuMapper for NRom {
-    fn read_prg_rom(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read_prg_rom(&self, index: u16) -> u8 {
         let index: usize = self.get_prg_rom_index(index);
-        Ok(self.prg_rom_bytes[index])
+        self.prg_rom_bytes[index]
     }
 
-    fn read_prg_ram(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read_prg_ram(&self, index: u16) -> u8 {
         let index: usize = self.get_prg_ram_index(index);
-        Ok(self.prg_ram_bytes[index])
+        self.prg_ram_bytes[index]
     }
 
-    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write_prg_ram(&mut self, index: u16, byte: u8) {
         let index: usize = self.get_prg_ram_index(index);
         self.prg_ram_bytes[index] = byte;
-        Ok(())
     }
 }
 
 impl PpuMapper for NRom {
-    fn read_chr_rom(&self, index: u16) -> Result<u8, EmulationError> {
+    fn read_chr_rom(&self, index: u16) -> u8 {
         if self.chr_rom_bytes.is_empty() {
-            Ok(0)
+            0
         } else {
-            Ok(self.chr_rom_bytes[index as usize])
+            self.chr_rom_bytes[index as usize]
         }
     }
 
-    fn read_chr_rom_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+    fn read_chr_rom_range(&self, range: Range<u16>) -> Vec<u8> {
         if self.chr_rom_bytes.len() == 0 {
             // Mainly for test roms that don't contain CHR
-            Ok(vec![])
+            vec![]
         } else {
-            Ok(self.chr_rom_bytes[range.start as usize..range.end as usize].to_vec())
+            self.chr_rom_bytes[range.start as usize..range.end as usize].to_vec()
         }
     }
 
-    fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError> {
-        Err(MemoryAccess(format!(
+    fn read_chr_ram(&self, index: u16) -> u8 {
+        panic!(format!(
             "Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}",
             index
-        )))
+        ))
     }
 
-    fn read_chr_ram_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        Err(MemoryAccess(format!(
+    fn read_chr_ram_range(&self, range: Range<u16>) -> Vec<u8> {
+        panic!(format!(
             "Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}",
             range
-        )))
+        ));
     }
 
-    fn write_chr_ram(&mut self, index: u16, _byte: u8) -> Result<(), EmulationError> {
-        Err(MemoryAccess(format!(
+    fn write_chr_ram(&mut self, index: u16, _byte: u8) {
+        panic!(format!(
             "Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}",
             index
-        )))
+        ))
     }
 
     fn get_mirrored_index(&self, index: u16) -> u16 {
@@ -116,7 +114,7 @@ impl PpuMapper for NRom {
 }
 
 impl MemMapped for NRom {
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> u8 {
         match index {
             0..=0x1FFF => self.read_chr_rom(index),
             0x2000..=0x2FFF => {
@@ -127,23 +125,23 @@ impl MemMapped for NRom {
             0x8000..=0xFFFF => self.read_prg_rom(index),
             _ => {
                 println!("Attempted read from unmapped address: 0x{:X}", index);
-                Ok(0)
+                0
             }
         }
     }
 
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, index: u16, byte: u8) {
         match index {
             0x2000..=0x2FFF => {
                 let index = self.get_mirrored_index(index);
                 self.vram.write(index, byte)
             }
             0x6000..=0x7FFF => self.write_prg_ram(index, byte),
-            _ => Ok(()),
+            _ => return,
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
+    fn read_range(&self, range: Range<u16>) -> Vec<u8> {
         match range.start {
             0..=0x1FFF => self.read_chr_rom_range(range),
             _ => unimplemented!(),

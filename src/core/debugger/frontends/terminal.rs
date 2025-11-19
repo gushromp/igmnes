@@ -153,7 +153,7 @@ impl TerminalDebugger {
         for _i in 0..rows {
             print!("0x{:04X} | ", cursor);
             for j in 0..columns {
-                let byte = self.mem_map.read(cursor).unwrap();
+                let byte = self.mem_map.read(cursor);
                 print!("{:02X}", byte);
 
                 cursor += 1;
@@ -516,25 +516,25 @@ impl BusOps for TerminalDebugger {
     }
 
     fn nmi(&mut self) {
-        self.cpu.nmi(&mut self.mem_map).unwrap()
+        self.cpu.nmi(&mut self.mem_map)
     }
 
     fn irq(&mut self) {
-        self.cpu.irq(&mut self.mem_map).unwrap();
+        self.cpu.irq(&mut self.mem_map);
     }
 }
 
 impl<'a> MemMapped for MemMapShim<'a> {
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> u8 {
         match self.watchpoint_set.contains(&index) {
-            true => Err(EmulationError::DebuggerWatchpoint(index)),
+            true => todo!("Reimplement watchpoints after moving to infallible functions"), //Err(EmulationError::DebuggerWatchpoint(index)),
             false => self.mem_map.read(index),
         }
     }
 
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, index: u16, byte: u8) {
         match self.watchpoint_set.contains(&index) {
-            true => Err(EmulationError::DebuggerWatchpoint(index)),
+            true => todo!("Reimplement watchpoints after moving to infallible functions"), // Err(EmulationError::DebuggerWatchpoint(index)),
             false => self.mem_map.write(index, byte),
         }
     }

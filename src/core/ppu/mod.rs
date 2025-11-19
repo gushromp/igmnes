@@ -271,24 +271,21 @@ struct OamEntry {
     sprite_x: u8,
 }
 
-impl TryFrom<&[u8]> for OamEntry {
-    type Error = EmulationError;
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+impl From<&[u8]> for OamEntry {
+    fn from(value: &[u8]) -> Self {
         if value.len() != 4 {
-            Err(MemoryAccess(
-                "OAM Entry size must be exactly 4 bytes".into(),
-            ))
+            panic!("OAM Entry size must be exactly 4 bytes")
         } else {
             let sprite_y = value[0];
             let tile_bank_index = value[1];
             let attributes = OamSpriteAttributes::from(value[2]);
             let sprite_x = value[3];
-            Ok(OamEntry {
+            OamEntry {
                 sprite_y,
                 tile_bank_index,
                 attributes,
                 sprite_x,
-            })
+            }
         }
     }
 }
@@ -328,18 +325,17 @@ impl Default for OamTable {
 }
 
 impl OamTable {
-    pub fn write(&mut self, cpu_mem: &[u8]) -> Result<(), EmulationError> {
+    pub fn write(&mut self, cpu_mem: &[u8]) {
         if cpu_mem.len() != 0x100 {
-            Err(MemoryAccess(format!(
+            panic!(format!(
                 "Attempted OAM DMA write with size {:2X}, expected size {:2X}",
                 cpu_mem.len(),
                 0x100
-            )))
+            ))
         } else {
             for (index, chunk) in cpu_mem.chunks(4).enumerate() {
-                self.oam_entries[index] = OamEntry::try_from(chunk)?;
+                self.oam_entries[index] = OamEntry::from(chunk);
             }
-            Ok(())
         }
     }
 
@@ -349,10 +345,10 @@ impl OamTable {
 
         Ok(self.oam_entries[oam_entry_index].write_u8(oam_byte_index, byte))
     }
-    pub fn read(&self, index: u8) -> Result<u8, EmulationError> {
+    pub fn read(&self, index: u8) -> u8 {
         let oam_entry_index = (index / 4) as usize;
         let oam_byte_index = (index % 4) as usize;
-        Ok(self.oam_entries[oam_entry_index].read(oam_byte_index))
+        self.oam_entries[oam_entry_index].read(oam_byte_index)
     }
 }
 
@@ -648,8 +644,8 @@ impl Ppu {
     #[inline]
     fn fetch_tile(&mut self) -> PpuTile {
         let addr = self.reg_v;
-        let name_table_entry = self.ppu_mem_map.fetch_name_table_entry(addr).unwrap();
-        let attribute_table_entry = self.ppu_mem_map.fetch_attribute_table_entry(addr).unwrap();
+        let name_table_entry = self.ppu_mem_map.fetch_name_table_entry(addr);
+        let attribute_table_entry = self.ppu_mem_map.fetch_attribute_table_entry(addr);
         let pixel_y = (self.reg_v & 0x7000) >> 12;
         let pattern_table_entry = self
             .ppu_mem_map
@@ -1121,9 +1117,9 @@ impl Ppu {
 //
 
 impl MemMapped for Ppu {
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> u8 {
         match index {
-            0 | 1 | 3 | 5 | 6 => Ok(0), // Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
+            0 | 1 | 3 | 5 | 6 => 0, // Err(MemoryAccess(format!("Attempted read from write-only PPU register with index {}.", index))),
             2 => {
                 // PPUSTATUS
                 let value = self.reg_status.read();
@@ -1153,34 +1149,34 @@ impl MemMapped for Ppu {
                     self.reset_vblank_status();
                 }
 
-                Ok(value)
+                value
             }
             4 => {
                 // OAMDATA
                 if self.is_mutating_read() {
-                    self.reg_oam_data = self.ppu_mem_map.oam_table.read(self.reg_oam_addr)?;
+                    self.reg_oam_data = self.ppu_mem_map.oam_table.read(self.reg_oam_addr);
                 }
-                Ok(self.reg_oam_data)
+                self.reg_oam_data
             }
             7 => {
                 // PPUDATA
                 let data = if (0x3F00..=0x3FFF).contains(&self.reg_v) {
                     // Reads from palette RAM are not buffered
-                    self.ppu_mem_map.read(self.reg_v)?
+                    self.ppu_mem_map.read(self.reg_v)
                 } else {
                     self.read_buffer
                 };
                 if self.is_mutating_read() {
-                    self.read_buffer = self.ppu_mem_map.read(self.reg_v)?;
+                    self.read_buffer = self.ppu_mem_map.read(self.reg_v);
                     self.increment_addr_read();
                 }
-                Ok(data)
+                data
             }
             _ => unreachable!(),
         }
     }
 
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, index: u16, byte: u8) {
         match index {
             0 => {
                 // TODO: For better accuracy, replace old_is_nmi_enabled check with PPU cycle count
@@ -1201,21 +1197,16 @@ impl MemMapped for Ppu {
                 let name_table_index = ((byte & BIT_MASK_2) as u16) << 10;
                 let mask: u16 = 0b0000_1100_0000_0000;
                 self.reg_t = (self.reg_t & !mask) | (name_table_index & mask);
-                Ok(())
             }
-            1 => Ok(self.reg_mask.write(byte)),
+            1 => self.reg_mask.write(byte),
             3 => {
                 self.reg_oam_addr = byte;
-                Ok(())
             }
             4 => {
-                self.ppu_mem_map
-                    .oam_table
-                    .write_u8(self.reg_oam_addr, byte)?;
+                self.ppu_mem_map.oam_table.write_u8(self.reg_oam_addr, byte);
                 self.reg_oam_addr = self.reg_oam_addr.wrapping_add(1);
-                Ok(())
             }
-            2 => Ok(()),
+            2 => (),
             5 => {
                 if !self.is_address_latch_on {
                     // First write
@@ -1241,7 +1232,6 @@ impl MemMapped for Ppu {
                     self.reg_t = (self.reg_t & !mask) | acc;
                     self.reset_address_latch();
                 }
-                Ok(())
             }
             6 => {
                 if !self.is_address_latch_on {
@@ -1265,7 +1255,6 @@ impl MemMapped for Ppu {
                     self.reg_v = self.reg_t;
                     self.reset_address_latch();
                 }
-                Ok(())
             }
             7 => {
                 let result = self.ppu_mem_map.write(self.reg_v, byte);

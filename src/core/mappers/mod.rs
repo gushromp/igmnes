@@ -4,7 +4,6 @@ mod mapper_003;
 mod mapper_007;
 
 use self::mapper_000::NRom;
-use crate::core::errors::EmulationError;
 use crate::core::mappers::mapper_002::UxROM;
 use crate::core::mappers::mapper_003::CNROM;
 use crate::core::mappers::mapper_007::AxROM;
@@ -18,22 +17,22 @@ use std::rc::Rc;
 #[enum_dispatch]
 pub trait CpuMapper: MemMapped {
     // Reads from PRG ROM
-    fn read_prg_rom(&self, index: u16) -> Result<u8, EmulationError>;
+    fn read_prg_rom(&self, index: u16) -> u8;
     // Reads/Writes to PRG RAM
-    fn read_prg_ram(&self, index: u16) -> Result<u8, EmulationError>;
-    fn write_prg_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
+    fn read_prg_ram(&self, index: u16) -> u8;
+    fn write_prg_ram(&mut self, index: u16, byte: u8);
 }
 
 #[enum_dispatch]
 pub trait PpuMapper: MemMapped {
     // Reads from CHR ROM
-    fn read_chr_rom(&self, index: u16) -> Result<u8, EmulationError>;
-    fn read_chr_rom_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError>;
+    fn read_chr_rom(&self, index: u16) -> u8;
+    fn read_chr_rom_range(&self, range: Range<u16>) -> Vec<u8>;
 
     // Reads/Writes to CHR RAM
-    fn read_chr_ram(&self, index: u16) -> Result<u8, EmulationError>;
-    fn read_chr_ram_range(&self, range: Range<u16>) -> Result<Vec<u8>, EmulationError>;
-    fn write_chr_ram(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
+    fn read_chr_ram(&self, index: u16) -> u8;
+    fn read_chr_ram_range(&self, range: Range<u16>) -> Vec<u8>;
+    fn write_chr_ram(&mut self, index: u16, byte: u8);
 
     fn get_mirrored_index(&self, index: u16) -> u16;
 }

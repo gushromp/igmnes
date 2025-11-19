@@ -32,8 +32,8 @@ impl Dma {
         if self.dma_cycle_count == 0 {
             let range_start = self.page_index as u16 * 0x100;
             let range_end = range_start + 0x100;
-            let cpu_mem = mem_map.ram.read_range_ref(range_start..range_end)?;
-            mem_map.ppu.ppu_mem_map.oam_table.write(cpu_mem)?;
+            let cpu_mem = mem_map.ram.read_range_ref(range_start..range_end);
+            mem_map.ppu.ppu_mem_map.oam_table.write(cpu_mem);
         }
         self.dma_cycle_count += 2;
 

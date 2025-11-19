@@ -1,4 +1,3 @@
-use crate::core::errors::EmulationError;
 use crate::core::memory::{MemMapConfig, MemMapped};
 
 #[derive(Clone, Copy)]
@@ -55,28 +54,26 @@ impl Controller {
 }
 
 impl MemMapped for Controller {
-    fn read(&mut self, _index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, _index: u16) -> u8 {
         if self.is_polling {
-            Ok(self.button_state & 0b1)
+            self.button_state & 0b1
         } else {
             // After 8 bits are read, all subsequent bits will report 1 on a standard NES controller,
             // but third party and other controllers may report other values here.
             if self.read_index == 8 {
                 self.button_state = 0;
-                Ok(self.button_state)
+                self.button_state
             } else {
                 let result = (self.button_state >> self.read_index) & 0b1;
                 if self.is_mutating_read() {
                     self.read_index += 1;
                 }
-                Ok(result)
+                result
             }
         }
     }
 
-    fn write(&mut self, _index: u16, _byte: u8) -> Result<(), EmulationError> {
-        Ok(())
-    }
+    fn write(&mut self, _index: u16, _byte: u8) {}
 
     fn is_mutating_read(&self) -> bool {
         self.mem_map_config.is_mutating_read

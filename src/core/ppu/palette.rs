@@ -1,4 +1,3 @@
-use crate::core::errors::EmulationError;
 use crate::core::memory::MemMapped;
 use std::array;
 use std::convert::TryFrom;
@@ -135,11 +134,11 @@ impl PpuPalette {
 }
 
 impl MemMapped for PpuPalette {
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
-        Ok(self.mapping[index as usize] as u8)
+    fn read(&mut self, index: u16) -> u8 {
+        self.mapping[index as usize] as u8
     }
 
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, index: u16, byte: u8) {
         let value = byte as usize;
         if index == 0x0 || index == 0x10 {
             self.mapping[0x0] = value;
@@ -156,6 +155,5 @@ impl MemMapped for PpuPalette {
         } else {
             self.mapping[index as usize] = value;
         }
-        Ok(())
     }
 }

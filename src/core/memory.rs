@@ -1,7 +1,6 @@
 use crate::core::apu::Apu;
 use crate::core::controller::Controller;
 use crate::core::dma::{Dma, DmaType};
-use crate::core::errors::EmulationError;
 use crate::core::mappers::{self, MapperImpl};
 use crate::core::ppu::{memory::PpuMemMap, Ppu};
 use crate::core::rom::Rom;
@@ -15,25 +14,25 @@ const RAM_SIZE: usize = 0x800;
 
 #[enum_dispatch]
 pub trait MemMapped {
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError>;
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError>;
+    fn read(&mut self, index: u16) -> u8;
+    fn write(&mut self, index: u16, byte: u8);
 
-    fn read_word(&mut self, index: u16) -> Result<u16, EmulationError> {
+    fn read_word(&mut self, index: u16) -> u16 {
         // little-endian!
-        let nibble_low = self.read(index)?;
-        let nibble_high = self.read(index + 1)?;
+        let nibble_low = self.read(index);
+        let nibble_high = self.read(index + 1);
 
         let word: u16 = ((nibble_high as u16) << 8) | nibble_low as u16;
 
-        Ok(word)
+        word
     }
 
-    fn read_range(&self, _range: Range<u16>) -> Result<Vec<u8>, EmulationError> {
-        Ok(vec![])
+    fn read_range(&self, _range: Range<u16>) -> Vec<u8> {
+        vec![]
     }
 
-    fn read_range_ref(&self, _range: Range<u16>) -> Result<&[u8], EmulationError> {
-        Ok(&[])
+    fn read_range_ref(&self, _range: Range<u16>) -> &[u8] {
+        &[]
     }
 
     fn is_mutating_read(&self) -> bool {
@@ -76,17 +75,16 @@ impl Ram {
 }
 
 impl MemMapped for Ram {
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
-        Ok(self.ram[index as usize])
+    fn read(&mut self, index: u16) -> u8 {
+        self.ram[index as usize]
     }
 
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, index: u16, byte: u8) {
         self.ram[index as usize] = byte;
-        Ok(())
     }
 
-    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
-        Ok(&self.ram[range.start as usize..range.end as usize])
+    fn read_range_ref(&self, range: Range<u16>) -> &[u8] {
+        &self.ram[range.start as usize..range.end as usize]
     }
 }
 
@@ -146,7 +144,7 @@ impl MemMapped for CpuMemMap {
     //        $4018-$401F	$0008	APU and I/O functionality that is normally disabled. See CPU Test Mode.
     //        $4020-$FFFF	$BFE0	Cartridge space: PRG ROM, PRG RAM, and mapper registers (See Note)
     #[inline]
-    fn read(&mut self, index: u16) -> Result<u8, EmulationError> {
+    fn read(&mut self, index: u16) -> u8 {
         match index {
             // RAM
             0..=0x1FFF => {
@@ -161,22 +159,22 @@ impl MemMapped for CpuMemMap {
             // APU
             0x4000..=0x4013 | 0x4015 => self.apu.read(index),
             // OAM DMA register (write-only)
-            0x4014 => Ok(0),
+            0x4014 => 0,
             // I/O
             0x4016 => self.controllers[0].read(index),
             // I/O, Apu: This address is shared by both the APU and I/O so we can from read either one
             0x4017 => self.controllers[1].read(index),
             0x4018..=0x401f => {
-                let _index = index % 0x4018;
+                // let _index = index % 0x4018;
                 //println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
-                Ok(0)
+                0
             }
             0x4020..=0xFFFF => self.mapper.borrow_mut().read(index),
         }
     }
 
     #[inline]
-    fn write(&mut self, index: u16, byte: u8) -> Result<(), EmulationError> {
+    fn write(&mut self, index: u16, byte: u8) {
         match index {
             // RAM
             0..=0x1FFF => {
@@ -193,7 +191,6 @@ impl MemMapped for CpuMemMap {
             // OAM DMA register
             0x4014 => {
                 self.dma.start_dma(DmaType::OAM, byte);
-                Ok(())
             }
             // I/O
             0x4016 => {
@@ -204,7 +201,6 @@ impl MemMapped for CpuMemMap {
                     self.controllers[0].stop_polling();
                     self.controllers[1].stop_polling();
                 }
-                Ok(())
             }
             // This address is shared by both APU and I/O so we need to write the value to both
             0x4017 => {
@@ -217,14 +213,13 @@ impl MemMapped for CpuMemMap {
                     "Attempted unimplemented write to CPU Test Register: 0x{:X}",
                     index
                 );
-                Ok(())
             }
             0x4020..=0xFFFF => self.mapper.borrow_mut().write(index, byte),
         }
     }
 
     #[inline]
-    fn read_range_ref(&self, range: Range<u16>) -> Result<&[u8], EmulationError> {
+    fn read_range_ref(&self, range: Range<u16>) -> &[u8] {
         self.ram.read_range_ref(range)
     }
 
