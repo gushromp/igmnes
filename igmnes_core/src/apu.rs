@@ -1,4 +1,4 @@
-use crate::core::memory::MemMapped;
+use crate::memory::MemMapped;
 use enum_dispatch::enum_dispatch;
 use std::collections::VecDeque;
 

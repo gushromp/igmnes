@@ -1,5 +1,5 @@
-use crate::core::debugger::frontends::terminal::TerminalDebugger;
-use crate::core::{BusDebugger, BusOps};
+use crate::debugger::frontends::terminal::TerminalDebugger;
+use crate::{BusDebugger, BusOps};
 use enum_dispatch::enum_dispatch;
 
 mod command;

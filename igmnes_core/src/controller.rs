@@ -1,4 +1,10 @@
-use crate::core::memory::{MemMapConfig, MemMapped};
+use crate::memory::{MemMapConfig, MemMapped};
+
+#[derive(Clone, Copy)]
+pub enum ControllerIndex {
+    First = 0,
+    Second = 1,
+}
 
 #[derive(Clone, Copy)]
 pub enum ControllerButton {
@@ -38,17 +44,14 @@ impl Controller {
 
     pub fn stop_polling(&mut self) {
         self.is_polling = false;
+        self.read_index = 0;
     }
 
     pub fn set_button_state(&mut self, state: ControllerButtonState) {
-        if !self.is_polling {
-            return;
-        }
         let mut byte: u8 = 0;
         for button_state in state {
             byte |= 0b1 << *button_state as u8
         }
-        self.read_index = 0;
         self.button_state = byte;
     }
 }
@@ -61,8 +64,7 @@ impl MemMapped for Controller {
             // After 8 bits are read, all subsequent bits will report 1 on a standard NES controller,
             // but third party and other controllers may report other values here.
             if self.read_index == 8 {
-                self.button_state = 0;
-                self.button_state
+                0x1
             } else {
                 let result = (self.button_state >> self.read_index) & 0b1;
                 if self.is_mutating_read() {

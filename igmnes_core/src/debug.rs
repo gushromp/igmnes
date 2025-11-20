@@ -1,8 +1,8 @@
-use crate::core::cpu::Cpu;
-use crate::core::debugger::disassembler::disassemble;
-use crate::core::instructions::Instruction;
-use crate::core::memory::MemMapped;
-use crate::core::ppu::Ppu;
+use crate::cpu::Cpu;
+use crate::debugger::disassembler::disassemble;
+use crate::instructions::Instruction;
+use crate::memory::MemMapped;
+use crate::ppu::Ppu;
 use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::path::Path;

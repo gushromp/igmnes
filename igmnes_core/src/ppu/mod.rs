@@ -5,16 +5,16 @@ use std::convert::TryFrom;
 use std::fmt::{Binary, Display, Formatter};
 use std::{array, fmt};
 
-use crate::core::debug::Tracer;
-use crate::core::errors::EmulationError;
-use crate::core::errors::EmulationError::MemoryAccess;
+use crate::debug::Tracer;
 
-use crate::core::memory::{MemMapConfig, MemMapped};
-use crate::core::ppu::memory::PpuMemMap;
-use crate::core::ppu::palette::PpuPaletteColor;
+use crate::memory::{MemMapConfig, MemMapped};
+use crate::ppu::memory::PpuMemMap;
+use crate::ppu::palette::PpuPaletteColor;
 
 const BIT_MASK: u8 = 0b0000_0001;
 const BIT_MASK_2: u8 = 0b0000_0011;
+
+pub type PpuFrame<'a> = &'a Box<[[PpuPaletteColor; 256]; 240]>;
 
 // We use a whole byte for now, to avoid bit-packing, this type is merely for clarification
 trait BitOps {
@@ -195,7 +195,7 @@ impl Default for OamAttributePriority {
 
 impl From<u8> for OamAttributePriority {
     fn from(value: u8) -> Self {
-        use crate::core::ppu::OamAttributePriority::{BACK, FRONT};
+        use crate::ppu::OamAttributePriority::{BACK, FRONT};
         match value {
             0 => FRONT,
             1 => BACK,
@@ -206,7 +206,7 @@ impl From<u8> for OamAttributePriority {
 
 impl Into<u8> for OamAttributePriority {
     fn into(self) -> u8 {
-        use crate::core::ppu::OamAttributePriority::{BACK, FRONT};
+        use crate::ppu::OamAttributePriority::{BACK, FRONT};
         match self {
             FRONT => 0,
             BACK => 1,
@@ -327,11 +327,11 @@ impl Default for OamTable {
 impl OamTable {
     pub fn write(&mut self, cpu_mem: &[u8]) {
         if cpu_mem.len() != 0x100 {
-            panic!(format!(
+            panic!(
                 "Attempted OAM DMA write with size {:2X}, expected size {:2X}",
                 cpu_mem.len(),
                 0x100
-            ))
+            )
         } else {
             for (index, chunk) in cpu_mem.chunks(4).enumerate() {
                 self.oam_entries[index] = OamEntry::from(chunk);
@@ -339,11 +339,11 @@ impl OamTable {
         }
     }
 
-    pub fn write_u8(&mut self, index: u8, byte: u8) -> Result<(), EmulationError> {
+    pub fn write_u8(&mut self, index: u8, byte: u8) {
         let oam_entry_index = (index / 4) as usize;
         let oam_byte_index = (index % 4) as usize;
 
-        Ok(self.oam_entries[oam_entry_index].write_u8(oam_byte_index, byte))
+        self.oam_entries[oam_entry_index].write_u8(oam_byte_index, byte)
     }
     pub fn read(&self, index: u8) -> u8 {
         let oam_entry_index = (index / 4) as usize;
@@ -1104,7 +1104,7 @@ impl Ppu {
         self.is_frame_ready
     }
 
-    pub fn get_frame(&mut self) -> &Box<[[PpuPaletteColor; 256]; 240]> {
+    pub fn get_frame(&mut self) -> PpuFrame<'_> {
         self.is_frame_ready = false;
         if let Some(output) = &self.output {
             &output.data

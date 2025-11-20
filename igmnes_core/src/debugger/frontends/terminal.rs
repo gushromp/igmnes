@@ -4,18 +4,18 @@ use std::io;
 use std::io::prelude::*;
 use std::ops::Range;
 
-use crate::core::apu::Apu;
-use crate::core::controller::Controller;
-use crate::core::cpu::Cpu;
-use crate::core::debug::Tracer;
-use crate::core::debugger::command::Command;
-use crate::core::debugger::disassembler;
-use crate::core::debugger::Debugger;
-use crate::core::dma::Dma;
-use crate::core::errors::EmulationError;
-use crate::core::memory::{CpuMemMap, MemMapped};
-use crate::core::ppu::Ppu;
-use crate::core::BusOps;
+use crate::apu::Apu;
+use crate::controller::Controller;
+use crate::cpu::Cpu;
+use crate::debug::Tracer;
+use crate::debugger::command::Command;
+use crate::debugger::disassembler;
+use crate::debugger::Debugger;
+use crate::dma::Dma;
+use crate::errors::EmulationError;
+use crate::memory::{CpuMemMap, MemMapped};
+use crate::ppu::Ppu;
+use crate::BusOps;
 
 struct MemMapShim<'a> {
     mem_map: &'a mut CpuMemMap,
@@ -67,7 +67,7 @@ impl TerminalDebugger {
     }
 
     fn execute_command(&mut self, command: &Command) {
-        use crate::core::debugger::command::Command::*;
+        use crate::debugger::command::Command::*;
 
         match *command {
             ShowUsage => TerminalDebugger::show_usage(),
@@ -372,7 +372,7 @@ impl TerminalDebugger {
 
 impl Debugger for TerminalDebugger {
     fn break_into(&mut self) {
-        use crate::core::debugger::command::Command::*;
+        use crate::debugger::command::Command::*;
 
         let mut stdout = io::stdout();
 

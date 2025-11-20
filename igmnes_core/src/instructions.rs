@@ -1,5 +1,5 @@
-use crate::core::errors::EmulationError;
-use crate::core::memory::MemMapped;
+use crate::errors::EmulationError;
+use crate::memory::MemMapped;
 use std::fmt;
 
 #[derive(Debug, Clone)]

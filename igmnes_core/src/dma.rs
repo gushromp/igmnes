@@ -1,5 +1,5 @@
-use crate::core::errors::EmulationError;
-use crate::core::memory::{CpuMemMap, MemMapped};
+use crate::errors::EmulationError;
+use crate::memory::{CpuMemMap, MemMapped};
 
 #[derive(Default)]
 pub struct Dma {

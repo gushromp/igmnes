@@ -1,0 +1,23 @@
+[package]
+name = "igmnes_core"
+version = "0.1.0"
+edition = "2018"
+authors = ["Ivan Đorđević <blashyrk92@gmail.com>"]
+
+[dependencies]
+enum_dispatch = "0.3.13"
+thiserror = "2.0.17"
+
+[dependencies.nom]
+version = "^2.0"
+features = ["verbose-errors"]
+
+[dev-dependencies]
+criterion = { version = "0.7.0", features = ["html_reports"] }
+
+[[bench]]
+name = "bench_igmnes"
+harness = false
+
+[profile.release]
+debug = true

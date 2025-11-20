@@ -1,4 +1,4 @@
-use crate::core::memory::MemMapped;
+use crate::memory::MemMapped;
 use std::array;
 use std::convert::TryFrom;
 use std::fs::File;
@@ -6,9 +6,11 @@ use std::io::{ErrorKind, Read};
 use std::ops::Index;
 use std::path::Path;
 
-const DEFAULT_PALETTE_SUBPATH: &str = "palette/DigitalPrime.pal";
-
 const PALETTE_COLOR_BYTE_LEN: usize = 3;
+const DEFAULT_PALETTE: &'static [u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../palette/DigitalPrime.pal"
+));
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 #[repr(C)]
@@ -84,9 +86,7 @@ impl PpuPalette {
     }
 
     pub fn load_default() -> Result<PpuPalette, std::io::Error> {
-        let mut default_palette_path = std::env::current_dir()?.to_path_buf();
-        default_palette_path.push(DEFAULT_PALETTE_SUBPATH);
-        Self::load(&default_palette_path)
+        Ok(PpuPalette::try_from(DEFAULT_PALETTE).unwrap())
     }
 
     #[inline]

@@ -1,13 +1,13 @@
 // 6502
 
-use crate::core::instructions::*;
-use crate::core::memory::MemMapped;
+use crate::instructions::*;
+use crate::memory::MemMapped;
 use std::default::Default;
 use std::fmt::{self, Display};
 
-use crate::core::errors::EmulationError;
+use crate::errors::EmulationError;
 
-use crate::core::debug::Tracer;
+use crate::debug::Tracer;
 
 const RESET_PC_VEC: u16 = 0xFFFC;
 const NMI_PC_VEC: u16 = 0xFFFA;
@@ -329,7 +329,7 @@ impl Cpu {
         instruction: &mut Instruction,
         mem_map: &mut impl MemMapped,
     ) -> u8 {
-        use crate::core::instructions::InstructionToken::*;
+        use crate::instructions::InstructionToken::*;
 
         match instruction.token {
             NOP => self.instr_nop(instruction, mem_map),
@@ -428,7 +428,7 @@ impl Cpu {
     //
     #[inline]
     fn instr_jmp(&mut self, instruction: &mut Instruction, mem_map: &mut impl MemMapped) {
-        use crate::core::instructions::AddressingMode::*;
+        use crate::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
 
@@ -466,7 +466,7 @@ impl Cpu {
 
     #[inline]
     fn instr_jsr(&mut self, instruction: &mut Instruction, mem_map: &mut impl MemMapped) {
-        use crate::core::instructions::AddressingMode::*;
+        use crate::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
 
@@ -1013,7 +1013,7 @@ impl Cpu {
 
     #[inline]
     pub fn read_resolved(&self, instruction: &mut Instruction, mem_map: &mut impl MemMapped) -> u8 {
-        use crate::core::instructions::AddressingMode::*;
+        use crate::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
 
@@ -1087,7 +1087,7 @@ impl Cpu {
         mem_map: &mut impl MemMapped,
         byte: u8,
     ) {
-        use crate::core::instructions::AddressingMode::*;
+        use crate::instructions::AddressingMode::*;
 
         let addressing_mode = &instruction.addressing_mode;
         match *addressing_mode {
@@ -1167,7 +1167,7 @@ impl Cpu {
 
     // branch is taken
     fn branch(&mut self, instruction: &mut Instruction) {
-        use crate::core::instructions::AddressingMode::*;
+        use crate::instructions::AddressingMode::*;
 
         // increase cycle count by 1
         instruction.cycle_count += 1;

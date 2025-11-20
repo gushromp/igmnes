@@ -1,11 +1,11 @@
 // PpuMemMap
 
-use crate::core::errors::EmulationError;
-use crate::core::mappers;
-use crate::core::mappers::MapperImpl;
-use crate::core::memory::MemMapped;
-use crate::core::ppu::palette::PpuPalette;
-use crate::core::ppu::OamTable;
+use crate::errors::EmulationError;
+use crate::mappers;
+use crate::mappers::MapperImpl;
+use crate::memory::MemMapped;
+use crate::ppu::palette::PpuPalette;
+use crate::ppu::OamTable;
 use std::array;
 use std::cell::RefCell;
 use std::ops::Range;

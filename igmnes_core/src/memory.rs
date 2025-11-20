@@ -1,9 +1,9 @@
-use crate::core::apu::Apu;
-use crate::core::controller::Controller;
-use crate::core::dma::{Dma, DmaType};
-use crate::core::mappers::{self, MapperImpl};
-use crate::core::ppu::{memory::PpuMemMap, Ppu};
-use crate::core::rom::Rom;
+use crate::apu::Apu;
+use crate::controller::Controller;
+use crate::dma::{Dma, DmaType};
+use crate::mappers::{self, MapperImpl};
+use crate::ppu::{memory::PpuMemMap, Ppu};
+use crate::rom::Rom;
 use enum_dispatch::enum_dispatch;
 use std::cell::RefCell;
 use std::default::Default;

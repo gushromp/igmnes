@@ -4,11 +4,11 @@ mod mapper_003;
 mod mapper_007;
 
 use self::mapper_000::NRom;
-use crate::core::mappers::mapper_002::UxROM;
-use crate::core::mappers::mapper_003::CNROM;
-use crate::core::mappers::mapper_007::AxROM;
-use crate::core::memory::MemMapped;
-use crate::core::rom::Rom;
+use crate::mappers::mapper_002::UxROM;
+use crate::mappers::mapper_003::CNROM;
+use crate::mappers::mapper_007::AxROM;
+use crate::memory::MemMapped;
+use crate::rom::Rom;
 use enum_dispatch::enum_dispatch;
 use std::cell::RefCell;
 use std::ops::Range;

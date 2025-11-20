@@ -1,7 +1,7 @@
-use crate::core::cpu::Cpu;
-use crate::core::errors::EmulationError;
-use crate::core::instructions::Instruction;
-use crate::core::memory::MemMapped;
+use crate::cpu::Cpu;
+use crate::errors::EmulationError;
+use crate::instructions::Instruction;
+use crate::memory::MemMapped;
 use std::ops::Range;
 
 pub fn disassemble_range(
@@ -39,7 +39,7 @@ pub fn disassemble(
     cpu: &Cpu,
     mem_map: &mut impl MemMapped,
 ) -> Result<String, EmulationError> {
-    use crate::core::instructions::AddressingMode::*;
+    use crate::instructions::AddressingMode::*;
 
     mem_map.set_is_mutating_read(false);
 

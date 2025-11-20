@@ -1,6 +1,6 @@
-use crate::core::mappers::{CpuMapper, PpuMapper};
-use crate::core::memory::{MemMapped, Ram};
-use crate::core::rom::{MirroringMode, Rom};
+use crate::mappers::{CpuMapper, PpuMapper};
+use crate::memory::{MemMapped, Ram};
+use crate::rom::{MirroringMode, Rom};
 use std::ops::Range;
 
 const BANK_SIZE_BYTES: usize = 16_384;
@@ -66,17 +66,17 @@ impl CpuMapper for UxROM {
 
 impl PpuMapper for UxROM {
     fn read_chr_rom(&self, index: u16) -> u8 {
-        panic!(format!(
+        panic!(
             "Attempted read from non-existent CHR ROM index (untranslated): 0x{:X}",
             index
-        ))
+        )
     }
 
     fn read_chr_rom_range(&self, range: Range<u16>) -> Vec<u8> {
-        panic!(format!(
+        panic!(
             "Attempted read from non-existent CHR ROM range (untranslated): 0x{:?}",
             range
-        ))
+        )
     }
 
     fn read_chr_ram(&self, index: u16) -> u8 {
