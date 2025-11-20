@@ -1008,16 +1008,13 @@ impl Apu {
 
         for _ in 0..cycles_to_run {
             self.cpu_cycles += 1;
-
             self.clock_frame_counter();
 
-            if self.frame_counter.reset_after_cycles > 0 {
-                self.frame_counter.reset_after_cycles -= 1;
-                if self.frame_counter.reset_after_cycles == 0 {
-                    self.frame_counter.reset();
-                    if self.frame_counter.mode == FrameCounterMode::Mode5Step {
-                        self.clock_length_counters(true);
-                    }
+            self.frame_counter.reset_after_cycles -= 1;
+            if self.frame_counter.reset_after_cycles == 0 {
+                self.frame_counter.reset();
+                if self.frame_counter.mode == FrameCounterMode::Mode5Step {
+                    self.clock_length_counters(true);
                 }
             }
 

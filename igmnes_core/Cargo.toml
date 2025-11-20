@@ -13,7 +13,7 @@ version = "^2.0"
 features = ["verbose-errors"]
 
 [dev-dependencies]
-criterion = { version = "0.7.0", features = ["html_reports"] }
+divan = "0.1.21"
 
 [[bench]]
 name = "bench_igmnes"
