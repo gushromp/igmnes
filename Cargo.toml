@@ -1,15 +1,17 @@
 [workspace]
 resolver = "3"
 members = ["igmnes_core", "igmnes_frontend_sdl2"]
-edition = "2018"
 
 [profile.release]
 debug = true
-debug-assertions = false
-overflow-checks = false
+strip = true
 opt-level = 3
 lto = "fat"
-panic = "abort"
 
-[profile.release.build-override]
-debug = true
+[profile.profiling]
+inherits = "release"
+strip = false
+lto = false
+debug = 2
+opt-level = 3
+split-debuginfo = "packed"

@@ -3,6 +3,7 @@ name = "igmnes_frontend_sdl2"
 version = "0.1.0"
 edition = "2018"
 authors = ["Ivan Đorđević <blashyrk92@gmail.com>"]
+default-run = "igmnes"
 
 [[bin]]
 name = "igmnes"
@@ -12,14 +13,3 @@ path = "src/main.rs"
 igmnes_core = { path = "../igmnes_core" }
 sdl2 = { version = "0.38.0", features = ["bundled"] }
 rfd = "0.14.0"
-
-[profile.release]
-debug = true
-debug-assertions = false
-overflow-checks = false
-opt-level = 3
-lto = "fat"
-panic = "abort"
-
-[profile.release.build-override]
-debug = true

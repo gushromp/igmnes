@@ -125,6 +125,7 @@ impl BusOps for DefaultBus {
         self.cpu.step(&mut self.mem_map, tracer)
     }
 
+    #[inline(never)]
     fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
         self.mem_map.ppu.step(cpu_cycle_count, tracer)
     }

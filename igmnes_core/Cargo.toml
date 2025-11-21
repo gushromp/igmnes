@@ -18,14 +18,3 @@ divan = "0.1.21"
 [[bench]]
 name = "bench_igmnes"
 harness = false
-
-[profile.release]
-debug = true
-debug-assertions = false
-overflow-checks = false
-opt-level = 3
-lto = "fat"
-panic = "abort"
-
-[profile.release.build-override]
-debug = true

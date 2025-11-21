@@ -701,7 +701,7 @@ impl Ppu {
             (self.shift_regs.palette_index_low << 1) | self.shift_regs.attribute_latch_low as u8;
     }
 
-    #[inline]
+    #[inline(never)]
     pub fn step(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
 
