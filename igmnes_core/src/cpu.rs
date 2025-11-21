@@ -9,7 +9,7 @@ use crate::errors::EmulationError;
 
 use crate::debug::Tracer;
 
-const RESET_PC_VEC: u16 = 0xFFFC;
+pub const RESET_PC_VEC: u16 = 0xFFFC;
 const NMI_PC_VEC: u16 = 0xFFFA;
 const BRK_PC_VEC: u16 = 0xFFFE;
 const RESET_SP: u8 = 0xFD;
@@ -182,13 +182,15 @@ impl Cpu {
             instructions_since_last_interrupt: 0,
             is_halted: false,
         };
-        cpu.hard_reset(mem_map);
+
+        let entry_point = mem_map.read_word(RESET_PC_VEC);
+        cpu.hard_reset(entry_point);
 
         cpu
     }
 
     #[inline]
-    pub fn hard_reset(&mut self, mem_map: &mut impl MemMapped) {
+    pub fn hard_reset(&mut self, entry_point: u16) {
         self.reg_a = 0;
         self.reg_x = 0;
         self.reg_y = 0;
@@ -205,9 +207,9 @@ impl Cpu {
         };
 
         self.reg_sp = RESET_SP;
-        self.reg_pc = mem_map.read_word(RESET_PC_VEC);
+        self.reg_pc = entry_point;
 
-        self.cycle_count = 7;
+        self.cycle_count = 0;
     }
 
     #[inline]

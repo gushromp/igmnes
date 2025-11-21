@@ -1,4 +1,4 @@
-use crate::mappers::{CpuMapper, PpuMapper};
+use crate::mappers::{CpuMapper, Mapper, PpuMapper};
 use crate::memory::{MemMapped, Ram};
 use crate::rom::{MirroringMode, Rom};
 use std::ops::Range;
@@ -48,6 +48,12 @@ impl UxROM {
 
     fn select_bank(&mut self, byte: u8) {
         self.bank_index = byte as usize;
+    }
+}
+
+impl Mapper for UxROM {
+    fn hard_reset(&mut self, rom: &Rom) {
+        *self = UxROM::new(rom);
     }
 }
 

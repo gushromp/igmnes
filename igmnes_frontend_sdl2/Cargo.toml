@@ -11,5 +11,5 @@ path = "src/main.rs"
 
 [dependencies]
 igmnes_core = { path = "../igmnes_core" }
-sdl2 = { version = "0.38.0", features = ["bundled"] }
+sdl2 = { git = "https://github.com/Rust-SDL2/rust-sdl2.git", rev = "4583b3d8e4baf1d5a44a9404097f92d5bbc61df7", features = ["bundled"] }
 rfd = "0.14.0"

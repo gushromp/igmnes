@@ -1,4 +1,4 @@
-use crate::mappers::{CpuMapper, PpuMapper};
+use crate::mappers::{CpuMapper, Mapper, PpuMapper};
 use crate::memory::{MemMapped, Ram};
 use crate::rom::{MirroringMode, Rom};
 use std::ops::Range;
@@ -46,6 +46,12 @@ impl CNROM {
         let byte_in_rom = self.read_prg_rom(index);
         let resulting_byte = (byte & 0b11) & byte_in_rom;
         self.bank_index = resulting_byte as usize;
+    }
+}
+
+impl Mapper for CNROM {
+    fn hard_reset(&mut self, rom: &Rom) {
+        *self = CNROM::new(rom);
     }
 }
 

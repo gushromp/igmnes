@@ -2,6 +2,7 @@ use igmnes_core::debug::Tracer;
 use igmnes_core::debugger::Debugger;
 use igmnes_core::Core;
 use rfd::FileDialog;
+use sdl2::rect::Rect;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::time::{Duration, Instant};
@@ -10,7 +11,7 @@ use sdl2::audio::AudioSpecDesired;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
-use sdl2::render::{TextureCreator, WindowCanvas};
+use sdl2::render::{Texture, WindowCanvas};
 use sdl2::video::FullscreenType;
 
 const WINDOW_SCALING: u32 = 3;
@@ -106,6 +107,9 @@ pub fn start(
     renderer.set_logical_size(256, 232).unwrap();
 
     let texture_creator = renderer.texture_creator();
+    let mut texture = texture_creator
+        .create_texture_streaming(PixelFormatEnum::RGB24, 256, 240)
+        .unwrap();
 
     if attach_debugger {
         let debugger = core.attach_debugger();
@@ -119,6 +123,7 @@ pub fn start(
         core.set_entry_point(entry_point);
     }
 
+    core.hard_reset();
     let start_time = Instant::now();
 
     'running: loop {
@@ -133,6 +138,13 @@ pub fn start(
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
+                Event::KeyDown {
+                    keycode: Some(Keycode::F1),
+                    ..
+                } => {
+                    core.hard_reset();
+                    println!("{}", core.cpu_cycles());
+                }
                 Event::KeyDown {
                     keycode: Some(Keycode::F9),
                     ..
@@ -178,7 +190,7 @@ pub fn start(
         }
 
         // Render frame
-        render_frame(&mut core, &mut renderer, &texture_creator);
+        render_frame(&mut core, &mut renderer, &mut texture);
 
         // Audio
         while !core.is_apu_output_ready() {
@@ -194,7 +206,9 @@ pub fn start(
         if frame_duration_nanos < NANOS_PER_FRAME {
             // Sleep for a certain amount to alleviate CPU usage, then use busy loop for rest for accurate timing
             let frame_duration_millis = frame_duration.as_millis();
-            let ms_to_sleep = 16 - frame_duration_millis as u64 - 1;
+            let ms_to_sleep = 16u64
+                .saturating_sub(frame_duration_millis as u64)
+                .saturating_sub(1);
 
             let duration_to_sleep = Duration::from_millis(ms_to_sleep);
             std::thread::sleep(duration_to_sleep);
@@ -246,29 +260,28 @@ where
     core.set_controller_button_state(ControllerIndex::First, &controller_1_state);
 }
 
-fn render_frame<T>(
-    core: &mut Core,
-    renderer: &mut WindowCanvas,
-    texture_creator: &TextureCreator<T>,
-) {
+fn render_frame(core: &mut Core, renderer: &mut WindowCanvas, texture: &mut Texture) {
     let frame = core.ppu_frame();
     unsafe {
         let pointer = ptr::addr_of!(*frame);
         let pointer_arr = pointer as *mut [u8; BYTES_PER_SCANLINE * SCANLINES];
-        let mut data = *pointer_arr;
+        let data = &mut *pointer_arr;
 
         let offset = BYTES_PER_SCANLINE * SCANLINES_OFFSET;
         let data_slice = &mut data[offset..];
-        let surface = sdl2::surface::Surface::from_data(
-            data_slice,
-            256,
-            240 - (SCANLINES_OFFSET as u32 * 2),
-            BYTES_PER_SCANLINE as u32,
-            PixelFormatEnum::RGB24,
-        )
-        .unwrap();
-        let tex = surface.as_texture(texture_creator).unwrap();
-        renderer.copy(&tex, None, None).unwrap();
+        texture
+            .update(
+                Some(Rect::new(
+                    0,
+                    SCANLINES_OFFSET as i32,
+                    256,
+                    240 - (SCANLINES_OFFSET as u32 * 2),
+                )),
+                data_slice,
+                BYTES_PER_SCANLINE,
+            )
+            .unwrap();
+        renderer.copy(texture, None, None).unwrap();
         renderer.present();
     }
 }

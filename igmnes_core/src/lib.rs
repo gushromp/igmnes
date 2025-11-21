@@ -26,6 +26,7 @@ use crate::debug::Tracer;
 use crate::debugger::frontends::terminal::TerminalDebugger;
 use crate::debugger::{Debugger, DebuggerFrontend};
 use crate::dma::Dma;
+use crate::mappers::Mapper;
 use crate::rom::RomError;
 use enum_dispatch::enum_dispatch;
 
@@ -55,6 +56,7 @@ pub trait BusOps {
     fn cpu(&mut self) -> &mut Cpu;
     fn ppu(&mut self) -> &mut Ppu;
     fn apu(&mut self) -> &mut Apu;
+    fn mem_map(&mut self) -> &mut CpuMemMap;
     fn dma(&mut self) -> &mut Dma;
 
     fn controllers(&mut self) -> &mut [Controller; 2];
@@ -66,6 +68,8 @@ pub trait BusOps {
 
     fn nmi(&mut self);
     fn irq(&mut self);
+
+    fn hard_reset(&mut self);
 }
 
 #[enum_dispatch]
@@ -73,7 +77,7 @@ pub trait BusDebugger {
     fn debugger(&mut self) -> Option<&mut DebuggerFrontend>;
 }
 
-struct DefaultBus {
+pub struct DefaultBus {
     cpu: Cpu,
     mem_map: CpuMemMap,
 }
@@ -113,6 +117,10 @@ impl BusOps for DefaultBus {
         &mut self.mem_map.apu
     }
 
+    fn mem_map(&mut self) -> &mut CpuMemMap {
+        &mut self.mem_map
+    }
+
     fn dma(&mut self) -> &mut Dma {
         &mut self.mem_map.dma
     }
@@ -121,14 +129,17 @@ impl BusOps for DefaultBus {
         &mut self.mem_map.controllers
     }
 
+    #[inline]
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {
         self.cpu.step(&mut self.mem_map, tracer)
     }
 
+    #[inline]
     fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
         self.mem_map.ppu.step(cpu_cycle_count, tracer)
     }
 
+    #[inline]
     fn step_apu(&mut self, cpu_cycles: u64) -> bool {
         self.mem_map.apu.step(cpu_cycles)
     }
@@ -151,6 +162,12 @@ impl BusOps for DefaultBus {
     fn irq(&mut self) {
         self.cpu.irq(&mut self.mem_map);
     }
+
+    fn hard_reset(&mut self) {
+        self.mem_map.hard_reset();
+        let entry_point_addr = self.mem_map.read_word(cpu::RESET_PC_VEC);
+        self.cpu.hard_reset(entry_point_addr);
+    }
 }
 
 impl BusDebugger for DefaultBus {
@@ -160,7 +177,7 @@ impl BusDebugger for DefaultBus {
 }
 
 #[enum_dispatch(BusOps, BusDebugger)]
-enum Bus {
+pub enum Bus {
     DefaultBus,
     DebuggerFrontend,
 }
@@ -168,10 +185,8 @@ enum Bus {
 // 2A03 (NTSC) and 2A07 (PAL) emulation
 // contains CPU (nearly identical to MOS 6502) part and APU part
 pub struct Core {
-    bus: Bus,
-
+    pub bus: Bus,
     pub is_debugger_attached: bool,
-    pub is_running: bool,
 }
 
 #[derive(Error, Debug)]
@@ -191,7 +206,6 @@ impl Core {
         let core = Core {
             bus: Bus::from(bus),
             is_debugger_attached: false,
-            is_running: false,
         };
 
         Ok(core)
@@ -200,14 +214,6 @@ impl Core {
     #[inline]
     pub fn cpu_cycles(&mut self) -> u64 {
         self.bus.cpu().cycle_count
-    }
-
-    pub fn unpause(&mut self) {
-        self.is_running = true;
-    }
-
-    pub fn pause(&mut self) {
-        self.is_running = false;
     }
 
     pub fn set_entry_point(&mut self, entry_point_addr: u16) {
@@ -261,6 +267,10 @@ impl Core {
             self.bus = new_bus.into();
             self.is_debugger_attached = false;
         }
+    }
+
+    pub fn hard_reset(&mut self) {
+        self.bus.hard_reset()
     }
 
     pub fn step(&mut self, tracer: &mut Tracer) {

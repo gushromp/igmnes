@@ -638,8 +638,12 @@ impl Ppu {
         self.is_address_latch_on = false;
         self.is_odd_frame = false;
 
-        self.curr_scanline = 261;
+        self.curr_scanline = 0;
         self.curr_scanline_cycle = 0;
+        self.cpu_cycles = 0;
+
+        self.output = None;
+        self.curr_frame = PpuOutput::default();
     }
 
     #[inline(always)]
@@ -951,7 +955,6 @@ impl Ppu {
         }
     }
 
- 
     fn evaluate_sprites(&mut self) {
         self.secondary_oam = [None; 8];
 
@@ -986,7 +989,6 @@ impl Ppu {
         }
     }
 
-    #[inline(always)]
     fn prepare_sprite_units(&mut self) {
         self.sprite_output_units.units = [None; 8];
 

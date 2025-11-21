@@ -13,6 +13,11 @@ use enum_dispatch::enum_dispatch;
 use std::ops::{Deref, DerefMut, Range};
 
 #[enum_dispatch]
+pub trait Mapper: Sized {
+    fn hard_reset(&mut self, rom: &Rom);
+}
+
+#[enum_dispatch]
 pub trait CpuMapper: MemMapped {
     // Reads from PRG ROM
     fn read_prg_rom(&self, index: u16) -> u8;
@@ -37,7 +42,7 @@ pub trait PpuMapper: MemMapped {
 
 // pub trait Mapper : CpuMapper + PpuMapper {}
 
-#[enum_dispatch(CpuMapper, PpuMapper, MemMapped)]
+#[enum_dispatch(Mapper, CpuMapper, PpuMapper, MemMapped)]
 pub enum MapperImpl {
     Mapper000(NRom),
     Mapper002(UxROM),
@@ -58,7 +63,6 @@ pub fn load_mapper_for_rom(rom: &Rom) -> Result<MapperImpl, String> {
 
 #[derive(Clone, Copy)]
 pub struct SharedMapper {
-    // Raw pointer to the mapper
     ptr: *mut MapperImpl,
 }
 

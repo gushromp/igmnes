@@ -1,7 +1,7 @@
 use crate::apu::Apu;
 use crate::controller::Controller;
 use crate::dma::{Dma, DmaType};
-use crate::mappers::{self, MapperImpl, SharedMapper};
+use crate::mappers::{self, Mapper, MapperImpl, SharedMapper};
 use crate::ppu::{memory::PpuMemMap, Ppu};
 use crate::rom::Rom;
 use enum_dispatch::enum_dispatch;
@@ -81,12 +81,13 @@ impl MemMapped for Ram {
 }
 
 pub struct CpuMemMap {
+    rom: Rom,
     pub ram: Ram,
     pub apu: Apu,
     pub ppu: Ppu,
     pub dma: Dma,
     pub controllers: [Controller; 2],
-    mapper: Box<MapperImpl>,
+    pub mapper: Box<MapperImpl>,
 }
 
 impl Default for CpuMemMap {
@@ -94,6 +95,7 @@ impl Default for CpuMemMap {
         let def_mapper = mappers::default_mapper();
 
         CpuMemMap {
+            rom: Rom::default(),
             ram: Ram::default(),
             apu: Apu::default(),
             ppu: Ppu::default(),
@@ -112,6 +114,7 @@ impl CpuMemMap {
         let shared_mapper = SharedMapper::new(&mut mapper_box);
         let ppu_mem_map = PpuMemMap::new(shared_mapper);
         let mem_map = CpuMemMap {
+            rom,
             ram: Ram::new(),
             apu: Apu::new(),
             ppu: Ppu::new(ppu_mem_map),
@@ -121,6 +124,13 @@ impl CpuMemMap {
         };
 
         mem_map
+    }
+
+    pub fn hard_reset(&mut self) {
+        self.ram = Ram::new();
+        self.apu.hard_reset();
+        self.ppu.hard_reset();
+        self.mapper.hard_reset(&self.rom);
     }
 }
 

@@ -849,6 +849,10 @@ impl Apu {
         samples
     }
 
+    pub fn hard_reset(&mut self) {
+        *self = Apu::new();
+    }
+
     fn read_status(&mut self) -> u8 {
         let pulse1_enabled = self.channels[PULSE_1].is_enabled();
         let pulse2_enabled = self.channels[PULSE_2].is_enabled();

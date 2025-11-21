@@ -343,7 +343,8 @@ impl TerminalDebugger {
     }
 
     fn reset(&mut self) {
-        self.cpu.hard_reset(&mut self.mem_map);
+        let entry_point_addr = self.mem_map.read_word(crate::cpu::RESET_PC_VEC);
+        self.cpu.hard_reset(entry_point_addr);
 
         println!();
         println!("CPU has been reset");
@@ -436,12 +437,22 @@ impl BusOps for TerminalDebugger {
         &mut self.mem_map.apu
     }
 
+    fn mem_map(&mut self) -> &mut CpuMemMap {
+        &mut self.mem_map
+    }
+
     fn dma(&mut self) -> &mut Dma {
         &mut self.mem_map.dma
     }
 
     fn controllers(&mut self) -> &mut [Controller; 2] {
         &mut self.mem_map.controllers
+    }
+
+    fn hard_reset(&mut self) {
+        let entry_point_addr = self.mem_map.read_word(crate::cpu::RESET_PC_VEC);
+        self.cpu.hard_reset(entry_point_addr);
+        self.mem_map.hard_reset();
     }
 
     fn step_cpu(&mut self, tracer: &mut Tracer) -> Result<u8, EmulationError> {

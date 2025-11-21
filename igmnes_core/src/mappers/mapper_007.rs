@@ -1,4 +1,4 @@
-use crate::mappers::{CpuMapper, PpuMapper};
+use crate::mappers::{CpuMapper, Mapper, PpuMapper};
 use crate::memory::{MemMapped, Ram};
 use crate::rom::Rom;
 use std::ops::Range;
@@ -52,6 +52,12 @@ impl CpuMapper for AxROM {
     }
 
     fn write_prg_ram(&mut self, _index: u16, _byte: u8) {}
+}
+
+impl Mapper for AxROM {
+    fn hard_reset(&mut self, rom: &Rom) {
+        *self = AxROM::new(rom);
+    }
 }
 
 impl PpuMapper for AxROM {

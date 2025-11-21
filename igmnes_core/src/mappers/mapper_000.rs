@@ -1,4 +1,4 @@
-use crate::mappers::{CpuMapper, PpuMapper};
+use crate::mappers::{CpuMapper, Mapper, PpuMapper};
 use crate::memory::{MemMapped, Ram};
 use crate::rom::{MirroringMode, Rom};
 use std::ops::Range;
@@ -45,6 +45,12 @@ impl NRom {
         // CPU memory map maps the cart address space from 0x4020 to 0xFFFF
         // NROM starts mapping RAM at 0x6000, so there's nothing mapped between 0x4020 and 0x6000
         (index - 0x6000) as usize
+    }
+}
+
+impl Mapper for NRom {
+    fn hard_reset(&mut self, rom: &Rom) {
+        *self = NRom::new(rom);
     }
 }
 
