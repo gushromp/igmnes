@@ -481,7 +481,7 @@ pub struct Ppu {
     curr_frame: PpuOutput,
 
     is_frame_ready: bool,
-    output: Option<PpuOutput>,
+    output: PpuOutput,
 
     // Quirks
 
@@ -642,7 +642,7 @@ impl Ppu {
         self.curr_scanline_cycle = 0;
         self.cpu_cycles = 0;
 
-        self.output = None;
+        self.output = PpuOutput::default();
         self.curr_frame = PpuOutput::default();
     }
 
@@ -819,12 +819,7 @@ impl Ppu {
 
             if self.curr_scanline == 241 && self.curr_scanline_cycle == 1 {
                 if self.is_rendering_enabled() {
-                    self.output = Some(self.curr_frame.clone())
-                } else {
-                    let transparent_color = self.ppu_mem_map.palette.get_transparent_color();
-                    self.output = Some(PpuOutput {
-                        data: Box::new([transparent_color; 256 * 240]),
-                    })
+                    std::mem::swap(&mut self.output, &mut self.curr_frame)
                 }
                 self.is_frame_ready = true;
             }
@@ -1118,11 +1113,7 @@ impl Ppu {
     #[inline(always)]
     pub fn get_frame(&mut self) -> PpuFrame<'_> {
         self.is_frame_ready = false;
-        if let Some(output) = &self.output {
-            &output.data.as_slice()
-        } else {
-            &self.curr_frame.data.as_slice()
-        }
+        &self.output.data.as_slice()
     }
 }
 

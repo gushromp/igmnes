@@ -26,7 +26,6 @@ use crate::debug::Tracer;
 use crate::debugger::frontends::terminal::TerminalDebugger;
 use crate::debugger::{Debugger, DebuggerFrontend};
 use crate::dma::Dma;
-use crate::mappers::Mapper;
 use crate::rom::RomError;
 use enum_dispatch::enum_dispatch;
 
