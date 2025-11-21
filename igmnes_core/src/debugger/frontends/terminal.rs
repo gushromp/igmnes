@@ -538,4 +538,8 @@ impl<'a> MemMapped for MemMapShim<'a> {
             false => self.mem_map.write(index, byte),
         }
     }
+
+    fn read_range(&self, _range: Range<u16>) -> &[u8] {
+        unimplemented!()
+    }
 }

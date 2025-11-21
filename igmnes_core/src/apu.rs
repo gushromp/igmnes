@@ -1010,7 +1010,6 @@ impl Apu {
             self.cpu_cycles += 1;
             self.clock_frame_counter();
 
-
             if self.frame_counter.reset_after_cycles > 0 {
                 self.frame_counter.reset_after_cycles -= 1;
                 if self.frame_counter.reset_after_cycles == 0 {
@@ -1168,5 +1167,9 @@ impl MemMapped for Apu {
 
             _ => unreachable!(),
         }
+    }
+
+    fn read_range(&self, _range: std::ops::Range<u16>) -> &[u8] {
+        unreachable!()
     }
 }

@@ -1,36 +1,31 @@
 // PpuMemMap
 
 use crate::errors::EmulationError;
-use crate::mappers;
-use crate::mappers::MapperImpl;
+use crate::mappers::SharedMapper;
 use crate::memory::MemMapped;
 use crate::ppu::palette::PpuPalette;
 use crate::ppu::OamTable;
 use std::array;
-use std::cell::RefCell;
 use std::ops::Range;
-use std::rc::Rc;
 
 pub struct PpuMemMap {
     pub oam_table: OamTable,
     pub palette: PpuPalette,
-    mapper: Rc<RefCell<MapperImpl>>,
+    mapper: SharedMapper,
 }
 
 impl Default for PpuMemMap {
     fn default() -> Self {
-        let def_mapper = mappers::default_mapper();
-
         PpuMemMap {
             oam_table: OamTable::default(),
             palette: PpuPalette::default(),
-            mapper: def_mapper,
+            mapper: SharedMapper::default(),
         }
     }
 }
 
 impl PpuMemMap {
-    pub fn new(mapper: Rc<RefCell<MapperImpl>>) -> PpuMemMap {
+    pub fn new(mapper: SharedMapper) -> PpuMemMap {
         PpuMemMap {
             oam_table: OamTable::default(),
             palette: PpuPalette::default(),
@@ -38,11 +33,13 @@ impl PpuMemMap {
         }
     }
 
+    #[inline(always)]
     pub fn fetch_name_table_entry(&mut self, reg_v: u16) -> u8 {
         let name_table_entry_addr = 0x2000 | (reg_v & 0x0FFF);
         self.read(name_table_entry_addr)
     }
 
+    #[inline(always)]
     pub fn fetch_attribute_table_entry(&mut self, reg_v: u16) -> u8 {
         // attribute address =                 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
         let attribute_table_entry_addr =
@@ -106,20 +103,21 @@ impl MemMapped for PpuMemMap {
     //      $3000-$3EFF 	$0F00 	Mirrors of $2000-$2EFF
     //      $3F00-$3F1F 	$0020 	Palette RAM indexes
     //      $3F20-$3FFF 	$00E0 	Mirrors of $3F00-$3F1F
+    #[inline(always)]
     fn read(&mut self, index: u16) -> u8 {
         match index {
             0x0000..=0x1FFF => {
                 // CHR ROM/RAM
-                self.mapper.borrow_mut().read(index)
+                self.mapper.read(index)
             }
             0x2000..=0x2FFF => {
                 // VRAM
-                self.mapper.borrow_mut().read(index)
+                self.mapper.read(index)
             }
             0x3000..=0x3EFF => {
                 // Mirrors 0f 0x2000..=0x2EFF
                 let index = index - 0x1000;
-                self.mapper.borrow_mut().read(index)
+                self.mapper.read(index)
             }
             0x3F00..=0x3FFF => {
                 // PPU Palette RAM
@@ -130,20 +128,21 @@ impl MemMapped for PpuMemMap {
         }
     }
 
+    #[inline(always)]
     fn write(&mut self, index: u16, byte: u8) {
         match index {
             0x0000..=0x1FFF => {
                 // CHR ROM/RAM
-                self.mapper.borrow_mut().write(index, byte)
+                self.mapper.write(index, byte)
             }
             0x2000..=0x2FFF => {
                 // VRAM
-                self.mapper.borrow_mut().write(index, byte)
+                self.mapper.write(index, byte)
             }
             0x3000..=0x3EFF => {
                 // Mirrors 0f 0x2000..=0x2EFF
                 let index = index - 0x1000;
-                self.mapper.borrow_mut().write(index, byte)
+                self.mapper.write(index, byte)
             }
             0x3F00..=0x3FFF => {
                 // PPU Palette RAM
@@ -154,7 +153,8 @@ impl MemMapped for PpuMemMap {
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> Vec<u8> {
-        self.mapper.borrow_mut().read_range(range)
+    #[inline(always)]
+    fn read_range(&self, range: Range<u16>) -> &[u8] {
+        self.mapper.read_range(range)
     }
 }

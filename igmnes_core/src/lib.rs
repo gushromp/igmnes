@@ -125,7 +125,6 @@ impl BusOps for DefaultBus {
         self.cpu.step(&mut self.mem_map, tracer)
     }
 
-    #[inline(never)]
     fn step_ppu(&mut self, cpu_cycle_count: u64, tracer: &mut Tracer) -> bool {
         self.mem_map.ppu.step(cpu_cycle_count, tracer)
     }
@@ -137,18 +136,18 @@ impl BusOps for DefaultBus {
     fn step_dma(&mut self) -> bool {
         let mut dma = std::mem::take(&mut self.mem_map.dma);
         let mem_map = &mut self.mem_map;
-        if let Err(e) = dma.step(mem_map) {
-            println!("DMA error: {}", e.to_string());
-        }
+        dma.step(mem_map);
         let result = dma.is_dma_active();
         self.mem_map.dma = dma;
         result
     }
 
+    #[inline]
     fn nmi(&mut self) {
         self.cpu.nmi(&mut self.mem_map)
     }
 
+    #[inline]
     fn irq(&mut self) {
         self.cpu.irq(&mut self.mem_map);
     }

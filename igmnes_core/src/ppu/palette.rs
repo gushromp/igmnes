@@ -89,7 +89,7 @@ impl PpuPalette {
         Ok(PpuPalette::try_from(DEFAULT_PALETTE).unwrap())
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_background_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor {
         if color_index == 0 {
             self.get_transparent_color()
@@ -107,6 +107,7 @@ impl PpuPalette {
         }
     }
 
+    #[inline(always)]
     pub fn get_sprite_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor {
         if color_index == 0 {
             self.get_transparent_color()
@@ -124,10 +125,12 @@ impl PpuPalette {
         }
     }
 
+    #[inline(always)]
     pub fn get_transparent_color(&self) -> PpuPaletteColor {
         self.colors[self.mapping[0]]
     }
 
+    #[inline(always)]
     pub fn is_transparent_color(&self, color: &PpuPaletteColor) -> bool {
         *color == self.colors[self.mapping[0]]
     }
@@ -136,6 +139,10 @@ impl PpuPalette {
 impl MemMapped for PpuPalette {
     fn read(&mut self, index: u16) -> u8 {
         self.mapping[index as usize] as u8
+    }
+
+    fn read_range(&self, _range: std::ops::Range<u16>) -> &[u8] {
+        &[]
     }
 
     fn write(&mut self, index: u16, byte: u8) {

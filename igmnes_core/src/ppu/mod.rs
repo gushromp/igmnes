@@ -1,7 +1,6 @@
 pub mod memory;
 pub mod palette;
 
-use std::convert::TryFrom;
 use std::fmt::{Binary, Display, Formatter};
 use std::{array, fmt};
 
@@ -14,7 +13,7 @@ use crate::ppu::palette::PpuPaletteColor;
 const BIT_MASK: u8 = 0b0000_0001;
 const BIT_MASK_2: u8 = 0b0000_0011;
 
-pub type PpuFrame<'a> = &'a Box<[[PpuPaletteColor; 256]; 240]>;
+pub type PpuFrame<'a> = &'a [PpuPaletteColor];
 
 // We use a whole byte for now, to avoid bit-packing, this type is merely for clarification
 trait BitOps {
@@ -27,20 +26,24 @@ trait BitOps {
 }
 
 impl BitOps for u8 {
+    #[inline(always)]
     fn get_bit(self: &Self, index: usize) -> bool {
         self.get_bit_u8(index) != 0
     }
 
+    #[inline(always)]
     fn get_bit_u8(self: &Self, index: usize) -> u8 {
         (self >> index) & BIT_MASK
     }
 
+    #[inline(always)]
     fn flip_nibbles(self: &Self) -> Self {
         let mut result = *self << 4;
         result |= *self >> 4;
         result
     }
 
+    #[inline(always)]
     fn from_bit(bit: bool) -> Self {
         let bit = bit as u8;
         let mut result = 0;
@@ -63,6 +66,7 @@ struct PpuCtrlReg {
 }
 
 impl PpuCtrlReg {
+    #[inline(always)]
     fn write(&mut self, byte: u8) {
         self.is_nmi_enabled = byte.get_bit(7);
         self.is_slave_mode = byte.get_bit(6);
@@ -108,6 +112,7 @@ struct PpuMaskReg {
 }
 
 impl PpuMaskReg {
+    #[inline(always)]
     fn write(&mut self, byte: u8) {
         self.is_color_emphasis_blue = byte.get_bit(7);
         self.is_color_emphasis_green = byte.get_bit(6);
@@ -147,6 +152,7 @@ struct PpuStatusReg {
 }
 
 impl PpuStatusReg {
+    #[inline(always)]
     fn read(&mut self) -> u8 {
         let value = (self.is_in_vblank as u8) << 7
             | (self.is_sprite_0_hit as u8) << 6
@@ -385,13 +391,13 @@ struct BackgroundPixel {
 
 #[derive(Clone)]
 pub struct PpuOutput {
-    pub data: Box<[[PpuPaletteColor; 256]; 240]>,
+    pub data: Box<[PpuPaletteColor; 256 * 240]>,
 }
 
 impl Default for PpuOutput {
     fn default() -> Self {
         PpuOutput {
-            data: Box::new([[PpuPaletteColor::default(); 256]; 240]),
+            data: Box::new([PpuPaletteColor::default(); 256 * 240]),
         }
     }
 }
@@ -608,12 +614,12 @@ impl Ppu {
             || !self.is_rendering_enabled();
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn clear_nmi(&mut self) {
         self.nmi_pending = false;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_vblank_starting_cycle(&self) -> bool {
         self.curr_scanline == 241 && self.curr_scanline_cycle == 1
     }
@@ -636,12 +642,12 @@ impl Ppu {
         self.curr_scanline_cycle = 0;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn should_suppress_nmi(&self) -> bool {
         self.should_skip_vbl
     }
 
-    #[inline]
+    #[inline(always)]
     fn fetch_tile(&mut self) -> PpuTile {
         let addr = self.reg_v;
         let name_table_entry = self.ppu_mem_map.fetch_name_table_entry(addr);
@@ -692,6 +698,7 @@ impl Ppu {
         self.shift_regs.attribute_latch_low = palette_index_low;
     }
 
+    #[inline(always)]
     fn shift_registers_left(&mut self) {
         self.shift_regs.reg_high_plane <<= 1;
         self.shift_regs.reg_low_plane <<= 1;
@@ -701,7 +708,6 @@ impl Ppu {
             (self.shift_regs.palette_index_low << 1) | self.shift_regs.attribute_latch_low as u8;
     }
 
-    #[inline(never)]
     pub fn step(&mut self, cpu_cycles: u64, tracer: &mut Tracer) -> bool {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
 
@@ -732,7 +738,7 @@ impl Ppu {
                     self.reg_status.is_sprite_0_hit = true;
                 }
 
-                self.curr_frame.data[pixel_y][pixel_x] = output_color;
+                self.curr_frame.data[pixel_y * 256 + pixel_x] = output_color;
             }
 
             if self.is_rendering_enabled()
@@ -813,7 +819,7 @@ impl Ppu {
                 } else {
                     let transparent_color = self.ppu_mem_map.palette.get_transparent_color();
                     self.output = Some(PpuOutput {
-                        data: Box::new([[transparent_color; 256]; 240]),
+                        data: Box::new([transparent_color; 256 * 240]),
                     })
                 }
                 self.is_frame_ready = true;
@@ -852,7 +858,6 @@ impl Ppu {
         self.reg_status.is_in_vblank && self.nmi_pending
     }
 
-    #[inline]
     fn get_background_pixel(&mut self, pixel_x: usize, _pixel_y: usize) -> BackgroundPixel {
         if pixel_x < 8 && !self.reg_mask.is_show_background_enabled_leftmost {
             let color = self.ppu_mem_map.palette.get_background_color(0, 0);
@@ -869,11 +874,11 @@ impl Ppu {
             let palette_index_low = (self.shift_regs.palette_index_low >> pixel_index_x % 8) & 0b1;
             let palette_index = palette_index_high << 1 | palette_index_low;
             let color_index = (pattern_bit_plane_high << 1 | pattern_bit_plane_low) as u8;
-
             let color = self
                 .ppu_mem_map
                 .palette
                 .get_background_color(palette_index, color_index);
+
             BackgroundPixel {
                 color,
                 is_transparent: color_index == 0,
@@ -946,7 +951,7 @@ impl Ppu {
         }
     }
 
-    #[inline(always)]
+ 
     fn evaluate_sprites(&mut self) {
         self.secondary_oam = [None; 8];
 
@@ -1083,33 +1088,38 @@ impl Ppu {
     }
 
     fn flip_pattern_data_vertically(pattern_data: [u8; 16]) -> [u8; 16] {
-        let flipped_low_plane: Vec<&u8> = pattern_data[0..8].iter().rev().collect();
-        let flipped_high_plane: Vec<&u8> = pattern_data[8..16].iter().rev().collect();
-        let reversed_slice: Vec<&&u8> = flipped_low_plane
-            .iter()
-            .chain(flipped_high_plane.iter())
-            .collect();
-        array::from_fn(|index| **reversed_slice[index])
+        array::from_fn(|i| {
+            if i < 8 {
+                // Flip the low plane (indices 0-7)
+                pattern_data[7 - i]
+            } else {
+                // Flip the high plane (indices 8-15)
+                // (i - 8) gets us back to 0-7 range, flip it, then add offset back
+                pattern_data[8 + (7 - (i - 8))]
+            }
+        })
     }
 
-    fn flip_pattern_data_horizontally(pattern_data: [u8; 16]) -> [u8; 16] {
-        let mut pattern_data = pattern_data;
-        for index in 0..pattern_data.len() {
-            pattern_data[index] = pattern_data[index].reverse_bits();
+    #[inline(always)]
+    fn flip_pattern_data_horizontally(mut pattern_data: [u8; 16]) -> [u8; 16] {
+        for x in &mut pattern_data {
+            *x = x.reverse_bits();
         }
         pattern_data
     }
 
+    #[inline(always)]
     pub fn is_frame_ready(&self) -> bool {
         self.is_frame_ready
     }
 
+    #[inline(always)]
     pub fn get_frame(&mut self) -> PpuFrame<'_> {
         self.is_frame_ready = false;
         if let Some(output) = &self.output {
-            &output.data
+            &output.data.as_slice()
         } else {
-            &self.curr_frame.data
+            &self.curr_frame.data.as_slice()
         }
     }
 }
@@ -1271,6 +1281,10 @@ impl MemMapped for Ppu {
 
     fn set_is_mutating_read(&mut self, is_mutating_read: bool) {
         self.mem_map_config.is_mutating_read = is_mutating_read;
+    }
+
+    fn read_range(&self, _range: std::ops::Range<u16>) -> &[u8] {
+        unimplemented!()
     }
 }
 

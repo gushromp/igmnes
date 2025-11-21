@@ -253,7 +253,7 @@ fn render_frame<T>(
 ) {
     let frame = core.ppu_frame();
     unsafe {
-        let pointer = ptr::addr_of!(**frame);
+        let pointer = ptr::addr_of!(*frame);
         let pointer_arr = pointer as *mut [u8; BYTES_PER_SCANLINE * SCANLINES];
         let mut data = *pointer_arr;
 

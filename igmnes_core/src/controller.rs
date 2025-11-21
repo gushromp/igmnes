@@ -75,6 +75,10 @@ impl MemMapped for Controller {
         }
     }
 
+    fn read_range(&self, _range: std::ops::Range<u16>) -> &[u8] {
+        unimplemented!()
+    }
+
     fn write(&mut self, _index: u16, _byte: u8) {}
 
     fn is_mutating_read(&self) -> bool {

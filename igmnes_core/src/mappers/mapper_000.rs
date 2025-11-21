@@ -49,16 +49,19 @@ impl NRom {
 }
 
 impl CpuMapper for NRom {
+    #[inline(always)]
     fn read_prg_rom(&self, index: u16) -> u8 {
         let index: usize = self.get_prg_rom_index(index);
         self.prg_rom_bytes[index]
     }
 
+    #[inline(always)]
     fn read_prg_ram(&self, index: u16) -> u8 {
         let index: usize = self.get_prg_ram_index(index);
         self.prg_ram_bytes[index]
     }
 
+    #[inline(always)]
     fn write_prg_ram(&mut self, index: u16, byte: u8) {
         let index: usize = self.get_prg_ram_index(index);
         self.prg_ram_bytes[index] = byte;
@@ -66,6 +69,7 @@ impl CpuMapper for NRom {
 }
 
 impl PpuMapper for NRom {
+    #[inline(always)]
     fn read_chr_rom(&self, index: u16) -> u8 {
         if self.chr_rom_bytes.is_empty() {
             0
@@ -74,12 +78,13 @@ impl PpuMapper for NRom {
         }
     }
 
-    fn read_chr_rom_range(&self, range: Range<u16>) -> Vec<u8> {
+    #[inline(always)]
+    fn read_chr_rom_range(&self, range: Range<u16>) -> &[u8] {
         if self.chr_rom_bytes.len() == 0 {
             // Mainly for test roms that don't contain CHR
-            vec![]
+            &[]
         } else {
-            self.chr_rom_bytes[range.start as usize..range.end as usize].to_vec()
+            &self.chr_rom_bytes[range.start as usize..range.end as usize]
         }
     }
 
@@ -90,7 +95,7 @@ impl PpuMapper for NRom {
         )
     }
 
-    fn read_chr_ram_range(&self, range: Range<u16>) -> Vec<u8> {
+    fn read_chr_ram_range(&self, range: Range<u16>) -> &[u8] {
         panic!(
             "Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}",
             range
@@ -104,6 +109,7 @@ impl PpuMapper for NRom {
         )
     }
 
+    #[inline(always)]
     fn get_mirrored_index(&self, index: u16) -> u16 {
         let index = index - 0x2000;
         match self.mirroring_mode {
@@ -114,6 +120,7 @@ impl PpuMapper for NRom {
 }
 
 impl MemMapped for NRom {
+    #[inline(always)]
     fn read(&mut self, index: u16) -> u8 {
         match index {
             0..=0x1FFF => self.read_chr_rom(index),
@@ -130,6 +137,7 @@ impl MemMapped for NRom {
         }
     }
 
+    #[inline(always)]
     fn write(&mut self, index: u16, byte: u8) {
         match index {
             0x2000..=0x2FFF => {
@@ -141,7 +149,8 @@ impl MemMapped for NRom {
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> Vec<u8> {
+    #[inline(always)]
+    fn read_range(&self, range: Range<u16>) -> &[u8] {
         match range.start {
             0..=0x1FFF => self.read_chr_rom_range(range),
             _ => unimplemented!(),

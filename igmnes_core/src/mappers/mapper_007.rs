@@ -62,7 +62,7 @@ impl PpuMapper for AxROM {
         )
     }
 
-    fn read_chr_rom_range(&self, range: Range<u16>) -> Vec<u8> {
+    fn read_chr_rom_range(&self, range: Range<u16>) -> &[u8] {
         panic!(
             "Attempted read from non-existent CHR ROM range (untranslated): 0x{:?}",
             range
@@ -73,8 +73,8 @@ impl PpuMapper for AxROM {
         self.chr_ram_bytes[index as usize]
     }
 
-    fn read_chr_ram_range(&self, range: Range<u16>) -> Vec<u8> {
-        self.chr_ram_bytes[range.start as usize..range.end as usize].to_vec()
+    fn read_chr_ram_range(&self, range: Range<u16>) -> &[u8] {
+        &self.chr_ram_bytes[range.start as usize..range.end as usize]
     }
 
     fn write_chr_ram(&mut self, index: u16, byte: u8) {
@@ -120,7 +120,7 @@ impl MemMapped for AxROM {
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> Vec<u8> {
+    fn read_range(&self, range: Range<u16>) -> &[u8] {
         match range.start {
             0..=0x1FFF => self.read_chr_ram_range(range),
             _ => unimplemented!(),

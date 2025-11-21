@@ -42,13 +42,16 @@ pub struct Tracer {
 }
 
 impl Tracer {
+    #[inline(always)]
     pub fn is_enabled(&self) -> bool {
         self.is_enabled
     }
 
+    #[inline(always)]
     pub fn set_enabled(&mut self, is_enabled: bool) {
         self.is_enabled = is_enabled;
     }
+
     pub fn add_cpu_trace(&mut self, cpu_state: &Cpu, mem_map: &mut impl MemMapped) {
         if let Some(ref mut current_trace) = self.current_trace {
             mem_map.set_is_mutating_read(false);
@@ -83,6 +86,7 @@ impl Tracer {
         }
     }
 
+    #[inline(always)]
     pub fn start_new_trace(&mut self) {
         if let Some(ref trace) = self.current_trace {
             if trace.cpu_trace.is_some() && trace.ppu_trace.is_some() {
@@ -97,9 +101,12 @@ impl Tracer {
         fs::write(file_path, &self.traces.join("\n")).unwrap();
     }
 
+    #[inline(always)]
     pub fn has_traces(&mut self) -> bool {
         !self.traces.is_empty()
     }
+
+    #[inline(always)]
     pub fn clear_traces(&mut self) {
         self.traces.clear();
     }

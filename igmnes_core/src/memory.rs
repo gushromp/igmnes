@@ -1,14 +1,13 @@
 use crate::apu::Apu;
 use crate::controller::Controller;
 use crate::dma::{Dma, DmaType};
-use crate::mappers::{self, MapperImpl};
+use crate::mappers::{self, MapperImpl, SharedMapper};
 use crate::ppu::{memory::PpuMemMap, Ppu};
 use crate::rom::Rom;
 use enum_dispatch::enum_dispatch;
-use std::cell::RefCell;
+
 use std::default::Default;
 use std::ops::Range;
-use std::rc::Rc;
 
 const RAM_SIZE: usize = 0x800;
 
@@ -16,6 +15,7 @@ const RAM_SIZE: usize = 0x800;
 pub trait MemMapped {
     fn read(&mut self, index: u16) -> u8;
     fn write(&mut self, index: u16, byte: u8);
+    fn read_range(&self, _range: Range<u16>) -> &[u8];
 
     fn read_word(&mut self, index: u16) -> u16 {
         // little-endian!
@@ -25,14 +25,6 @@ pub trait MemMapped {
         let word: u16 = ((nibble_high as u16) << 8) | nibble_low as u16;
 
         word
-    }
-
-    fn read_range(&self, _range: Range<u16>) -> Vec<u8> {
-        vec![]
-    }
-
-    fn read_range_ref(&self, _range: Range<u16>) -> &[u8] {
-        &[]
     }
 
     fn is_mutating_read(&self) -> bool {
@@ -83,7 +75,7 @@ impl MemMapped for Ram {
         self.ram[index as usize] = byte;
     }
 
-    fn read_range_ref(&self, range: Range<u16>) -> &[u8] {
+    fn read_range(&self, range: Range<u16>) -> &[u8] {
         &self.ram[range.start as usize..range.end as usize]
     }
 }
@@ -94,7 +86,7 @@ pub struct CpuMemMap {
     pub ppu: Ppu,
     pub dma: Dma,
     pub controllers: [Controller; 2],
-    mapper: Rc<RefCell<MapperImpl>>,
+    mapper: Box<MapperImpl>,
 }
 
 impl Default for CpuMemMap {
@@ -107,7 +99,7 @@ impl Default for CpuMemMap {
             ppu: Ppu::default(),
             dma: Dma::default(),
             controllers: [Controller::default(); 2],
-            mapper: def_mapper,
+            mapper: Box::new(def_mapper),
         }
     }
 }
@@ -115,15 +107,17 @@ impl Default for CpuMemMap {
 impl CpuMemMap {
     pub fn new(rom: Rom) -> CpuMemMap {
         let mapper = mappers::load_mapper_for_rom(&rom).unwrap();
+        let mut mapper_box = Box::new(mapper);
 
-        let ppu_mem_map = PpuMemMap::new(mapper.clone());
+        let shared_mapper = SharedMapper::new(&mut mapper_box);
+        let ppu_mem_map = PpuMemMap::new(shared_mapper);
         let mem_map = CpuMemMap {
             ram: Ram::new(),
             apu: Apu::new(),
             ppu: Ppu::new(ppu_mem_map),
             dma: Dma::new(),
             controllers: [Controller::new(); 2],
-            mapper: mapper.clone(),
+            mapper: mapper_box,
         };
 
         mem_map
@@ -169,7 +163,7 @@ impl MemMapped for CpuMemMap {
                 //println!("Attempted unimplemented read from CPU Test Register: 0x{:04X}", index);
                 0
             }
-            0x4020..=0xFFFF => self.mapper.borrow_mut().read(index),
+            0x4020..=0xFFFF => self.mapper.read(index),
         }
     }
 
@@ -214,13 +208,13 @@ impl MemMapped for CpuMemMap {
                     index
                 );
             }
-            0x4020..=0xFFFF => self.mapper.borrow_mut().write(index, byte),
+            0x4020..=0xFFFF => self.mapper.write(index, byte),
         }
     }
 
     #[inline]
-    fn read_range_ref(&self, range: Range<u16>) -> &[u8] {
-        self.ram.read_range_ref(range)
+    fn read_range(&self, range: Range<u16>) -> &[u8] {
+        self.ram.read_range(range)
     }
 
     fn set_is_mutating_read(&mut self, is_mutating_read: bool) {
