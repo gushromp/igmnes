@@ -83,6 +83,15 @@ impl PpuMapper for NRom {
         }
     }
 
+    fn read_chr_rom_range_ref(&self, range: Range<u16>) -> &[u8] {
+        if self.chr_rom_bytes.len() == 0 {
+            // Mainly for test roms that don't contain CHR
+            &[]
+        } else {
+            &self.chr_rom_bytes[range.start as usize..range.end as usize]
+        }
+    }
+
     fn read_chr_ram(&self, index: u16) -> u8 {
         panic!(
             "Attempted read from non-existent CHR RAM index (untranslated): 0x{:X}",
@@ -91,6 +100,13 @@ impl PpuMapper for NRom {
     }
 
     fn read_chr_ram_range(&self, range: Range<u16>) -> Vec<u8> {
+        panic!(
+            "Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}",
+            range
+        )
+    }
+
+    fn read_chr_ram_range_ref(&self, range: Range<u16>) -> &[u8] {
         panic!(
             "Attempted read from non-existent CHR RAM range (untranslated): 0x{:?}",
             range
@@ -144,6 +160,13 @@ impl MemMapped for NRom {
     fn read_range(&self, range: Range<u16>) -> Vec<u8> {
         match range.start {
             0..=0x1FFF => self.read_chr_rom_range(range),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn read_range_ref(&self, range: Range<u16>) -> &[u8] {
+        match range.start {
+            0..=0x1FFF => self.read_chr_rom_range_ref(range),
             _ => unimplemented!(),
         }
     }

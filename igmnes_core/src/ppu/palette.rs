@@ -89,7 +89,7 @@ impl PpuPalette {
         Ok(PpuPalette::try_from(DEFAULT_PALETTE).unwrap())
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_background_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor {
         if color_index == 0 {
             self.get_transparent_color()
@@ -107,6 +107,7 @@ impl PpuPalette {
         }
     }
 
+    #[inline(always)]
     pub fn get_sprite_color(&self, palette_index: u8, color_index: u8) -> PpuPaletteColor {
         if color_index == 0 {
             self.get_transparent_color()
@@ -124,10 +125,12 @@ impl PpuPalette {
         }
     }
 
+    #[inline(always)]
     pub fn get_transparent_color(&self) -> PpuPaletteColor {
         self.colors[self.mapping[0]]
     }
 
+    #[inline(always)]
     pub fn is_transparent_color(&self, color: &PpuPaletteColor) -> bool {
         *color == self.colors[self.mapping[0]]
     }

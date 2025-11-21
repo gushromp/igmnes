@@ -79,12 +79,23 @@ impl PpuMapper for UxROM {
         )
     }
 
+    fn read_chr_rom_range_ref(&self, range: Range<u16>) -> &[u8] {
+        panic!(
+            "Attempted read from non-existent CHR ROM range (untranslated): 0x{:?}",
+            range
+        )
+    }
+
     fn read_chr_ram(&self, index: u16) -> u8 {
         self.chr_ram_bytes[index as usize]
     }
 
     fn read_chr_ram_range(&self, range: Range<u16>) -> Vec<u8> {
-        self.chr_ram_bytes[range.start as usize..range.end as usize].to_vec()
+        self.read_chr_ram_range_ref(range).to_vec()
+    }
+
+    fn read_chr_ram_range_ref(&self, range: Range<u16>) -> &[u8] {
+        &self.chr_ram_bytes[range.start as usize..range.end as usize]
     }
 
     fn write_chr_ram(&mut self, index: u16, byte: u8) {

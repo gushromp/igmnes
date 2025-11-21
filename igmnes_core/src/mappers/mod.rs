@@ -10,9 +10,7 @@ use crate::mappers::mapper_007::AxROM;
 use crate::memory::MemMapped;
 use crate::rom::Rom;
 use enum_dispatch::enum_dispatch;
-use std::cell::RefCell;
-use std::ops::Range;
-use std::rc::Rc;
+use std::ops::{Deref, DerefMut, Range};
 
 #[enum_dispatch]
 pub trait CpuMapper: MemMapped {
@@ -28,10 +26,12 @@ pub trait PpuMapper: MemMapped {
     // Reads from CHR ROM
     fn read_chr_rom(&self, index: u16) -> u8;
     fn read_chr_rom_range(&self, range: Range<u16>) -> Vec<u8>;
+    fn read_chr_rom_range_ref(&self, range: Range<u16>) -> &[u8];
 
     // Reads/Writes to CHR RAM
     fn read_chr_ram(&self, index: u16) -> u8;
     fn read_chr_ram_range(&self, range: Range<u16>) -> Vec<u8>;
+    fn read_chr_ram_range_ref(&self, range: Range<u16>) -> &[u8];
     fn write_chr_ram(&mut self, index: u16, byte: u8);
 
     fn get_mirrored_index(&self, index: u16) -> u16;
@@ -47,7 +47,7 @@ pub enum MapperImpl {
     Mapper007(AxROM),
 }
 
-pub fn load_mapper_for_rom(rom: &Rom) -> Result<Rc<RefCell<MapperImpl>>, String> {
+pub fn load_mapper_for_rom(rom: &Rom) -> Result<MapperImpl, String> {
     let mapper: MapperImpl = match rom.header.mapper_number {
         0 => NRom::new(rom).into(),
         2 => UxROM::new(rom).into(),
@@ -55,10 +55,55 @@ pub fn load_mapper_for_rom(rom: &Rom) -> Result<Rc<RefCell<MapperImpl>>, String>
         7 => AxROM::new(rom).into(),
         mapper_num @ _ => return Err(format!("Unsupported mapper number: {}", mapper_num)),
     };
-    Ok(Rc::new(RefCell::new(mapper)))
+    Ok(mapper)
 }
 
-pub fn default_mapper() -> Rc<RefCell<MapperImpl>> {
+#[derive(Clone, Copy)]
+pub struct SharedMapper {
+    // Raw pointer to the mapper
+    ptr: *mut MapperImpl,
+}
+
+impl SharedMapper {
+    pub fn new(mapper: &mut MapperImpl) -> Self {
+        Self {
+            ptr: mapper as *mut _,
+        }
+    }
+
+    // This is unsafe because the compiler can't guarantee aliasing rules,
+    // but WE know the CPU and PPU don't run simultaneously.
+    #[inline(always)]
+    pub fn get(&self) -> &mut MapperImpl {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+impl Default for SharedMapper {
+    fn default() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+        }
+    }
+}
+
+impl Deref for SharedMapper {
+    type Target = MapperImpl;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl DerefMut for SharedMapper {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+pub fn default_mapper() -> MapperImpl {
     let def_rom = Rom::default();
-    Rc::new(RefCell::new(NRom::new(&def_rom).into()))
+    NRom::new(&def_rom).into()
 }
