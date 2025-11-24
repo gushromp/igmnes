@@ -78,7 +78,7 @@ impl PpuMemMap {
         &mut self,
         pattern_table_index: u8,
         pattern_entry_index: u8,
-    ) -> Result<[u8; 16], EmulationError> {
+    ) -> [u8; 16] {
         let base_addr = (pattern_table_index as u16) << 12;
         let pattern_entry_addr = base_addr + (pattern_entry_index as u16 * 16);
 
@@ -88,7 +88,7 @@ impl PpuMemMap {
         } else {
             array::from_fn(|index| byte_slice[index])
         };
-        Ok(result)
+        result
     }
 }
 
