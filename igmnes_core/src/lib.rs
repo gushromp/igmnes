@@ -27,6 +27,7 @@ use crate::debugger::frontends::terminal::TerminalDebugger;
 use crate::debugger::{Debugger, DebuggerFrontend};
 use crate::dma::Dma;
 use crate::mappers::MapperIrq;
+use crate::ppu::palette::PpuPaletteColor;
 use crate::rom::RomError;
 use enum_dispatch::enum_dispatch;
 
@@ -271,6 +272,10 @@ impl Core {
 
     pub fn hard_reset(&mut self) {
         self.bus.hard_reset()
+    }
+
+    pub fn get_background_color(&mut self) -> PpuPaletteColor {
+        self.bus.ppu().ppu_mem_map.palette.get_transparent_color()
     }
 
     pub fn step(&mut self, tracer: &mut Tracer) {

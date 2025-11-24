@@ -1,5 +1,6 @@
 use igmnes_core::debug::Tracer;
 use igmnes_core::debugger::Debugger;
+use igmnes_core::ppu::palette::PpuPaletteColor;
 use igmnes_core::Core;
 use rfd::FileDialog;
 use sdl2::rect::Rect;
@@ -261,6 +262,10 @@ where
 }
 
 fn render_frame(core: &mut Core, renderer: &mut WindowCanvas, texture: &mut Texture) {
+    let background_color = to_sdl_color(core.get_background_color());
+    renderer.set_draw_color(background_color);
+    renderer.clear();
+
     let frame = core.ppu_frame();
     unsafe {
         let pointer = ptr::addr_of!(*frame);
@@ -284,4 +289,8 @@ fn render_frame(core: &mut Core, renderer: &mut WindowCanvas, texture: &mut Text
         renderer.copy(texture, None, None).unwrap();
         renderer.present();
     }
+}
+
+fn to_sdl_color(ppu_color: PpuPaletteColor) -> sdl2::pixels::Color {
+    sdl2::pixels::Color::RGB(ppu_color.red, ppu_color.green, ppu_color.blue)
 }

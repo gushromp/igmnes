@@ -20,10 +20,6 @@ pub type PpuFrame<'a> = &'a [PpuPaletteColor];
 trait BitOps {
     fn get_bit(self: &Self, index: usize) -> bool;
     fn get_bit_u8(self: &Self, index: usize) -> u8;
-
-    fn flip_nibbles(self: &Self) -> Self;
-
-    fn from_bit(bit: bool) -> Self;
 }
 
 impl BitOps for u8 {
@@ -35,23 +31,6 @@ impl BitOps for u8 {
     #[inline(always)]
     fn get_bit_u8(self: &Self, index: usize) -> u8 {
         (self >> index) & BIT_MASK
-    }
-
-    #[inline(always)]
-    fn flip_nibbles(self: &Self) -> Self {
-        let mut result = *self << 4;
-        result |= *self >> 4;
-        result
-    }
-
-    #[inline(always)]
-    fn from_bit(bit: bool) -> Self {
-        let bit = bit as u8;
-        let mut result = 0;
-        for index in 0..8 {
-            result |= bit << index;
-        }
-        result
     }
 }
 
@@ -184,8 +163,6 @@ impl PpuScrollReg {
         self.x = 0;
         self.y = 0;
     }
-
-    fn soft_reset(&mut self) {}
 }
 
 #[derive(Copy, Clone)]
@@ -366,6 +343,12 @@ struct SecondaryOamEntry {
 }
 
 #[derive(Default, Copy, Clone)]
+struct SecondaryOam {
+    oam_entries: [SecondaryOamEntry; 8],
+    count: usize,
+}
+
+#[derive(Default, Copy, Clone)]
 struct SpriteOutputUnit {
     secondary_oam_entry: SecondaryOamEntry,
     pattern_data: [[u8; 2]; 16],
@@ -373,7 +356,8 @@ struct SpriteOutputUnit {
 
 #[derive(Default)]
 struct SpriteOutputUnits {
-    units: [Option<SpriteOutputUnit>; 8],
+    units: [SpriteOutputUnit; 8],
+    count: usize,
 }
 
 #[derive(Default)]
@@ -476,7 +460,7 @@ pub struct Ppu {
 
     // Rendering data
     shift_regs: PpuShiftRegisters,
-    secondary_oam: [Option<SecondaryOamEntry>; 8],
+    secondary_oam: SecondaryOam,
     sprite_output_units: SpriteOutputUnits,
 
     curr_frame: PpuOutput,
@@ -888,13 +872,8 @@ impl Ppu {
             8
         };
 
-        for unit in self
-            .sprite_output_units
-            .units
-            .iter()
-            .flat_map(|unit| unit)
-            .rev()
-        {
+        for index in (0..self.sprite_output_units.count).rev() {
+            let unit = self.sprite_output_units.units[index];
             if pixel_x < 8 && !self.reg_mask.is_show_sprites_enabled_leftmost {
                 color = self.ppu_mem_map.palette.get_sprite_color(0, 0);
                 priority = unit.secondary_oam_entry.oam_entry.attributes.priority;
@@ -941,7 +920,7 @@ impl Ppu {
     }
 
     fn evaluate_sprites(&mut self) {
-        self.secondary_oam = [None; 8];
+        self.secondary_oam.count = 0;
 
         let sprite_height_pixels = if self.reg_ctrl.sprite_height == 1 {
             16
@@ -960,10 +939,10 @@ impl Ppu {
                 && (next_scanline_index <= sprite_y_last_pixel || is_overflowing_y)
             {
                 if num_found_sprites < 8 {
-                    self.secondary_oam[num_found_sprites] = Some(SecondaryOamEntry {
+                    self.secondary_oam.oam_entries[num_found_sprites] = SecondaryOamEntry {
                         oam_entry: *oam_entry,
                         sprite_index,
-                    });
+                    };
                     num_found_sprites += 1;
                 } else {
                     if sprite_y_first_pixel > 0 && sprite_y_first_pixel <= 240 {
@@ -972,125 +951,120 @@ impl Ppu {
                 }
             }
         }
+        self.secondary_oam.count = num_found_sprites;
     }
 
     fn prepare_sprite_units(&mut self) {
-        self.sprite_output_units.units = [None; 8];
+        self.sprite_output_units.count = self.secondary_oam.count;
 
-        for (index, secondary_oam_entry) in self.secondary_oam.iter().enumerate() {
-            let unit = match secondary_oam_entry {
-                Some(secondary_oam_entry) => {
-                    let mut pattern_data_bitplanes: [[u8; 2]; 16] = [[0; 2]; 16];
+        for index in 0..self.secondary_oam.count {
+            let secondary_oam_entry = self.secondary_oam.oam_entries[index];
 
-                    if self.reg_ctrl.sprite_height == 1 {
-                        // 8x16 sprites
-                        let pattern_entry_byte = secondary_oam_entry.oam_entry.tile_bank_index;
-                        let pattern_table_index = pattern_entry_byte & 0b1;
+            let mut pattern_data_bitplanes: [[u8; 2]; 16] = [[0; 2]; 16];
 
-                        let pattern_entry_index_top = pattern_entry_byte & 0xFE;
-                        let pattern_entry_index_bottom = pattern_entry_index_top + 1;
+            if self.reg_ctrl.sprite_height == 1 {
+                // 8x16 sprites
+                let pattern_entry_byte = secondary_oam_entry.oam_entry.tile_bank_index;
+                let pattern_table_index = pattern_entry_byte & 0b1;
 
-                        let mut pattern_data_top = self
-                            .ppu_mem_map
-                            .fetch_sprite_pattern(pattern_table_index, pattern_entry_index_top)
-                            .unwrap();
-                        let mut pattern_data_bottom = self
-                            .ppu_mem_map
-                            .fetch_sprite_pattern(pattern_table_index, pattern_entry_index_bottom)
-                            .unwrap();
+                let pattern_entry_index_top = pattern_entry_byte & 0xFE;
+                let pattern_entry_index_bottom = pattern_entry_index_top + 1;
 
-                        if secondary_oam_entry
-                            .oam_entry
-                            .attributes
-                            .is_flipped_vertically
-                        {
-                            let temp = pattern_data_top;
-                            pattern_data_top = pattern_data_bottom;
-                            pattern_data_bottom = temp;
+                let mut pattern_data_top = self
+                    .ppu_mem_map
+                    .fetch_sprite_pattern(pattern_table_index, pattern_entry_index_top)
+                    .unwrap();
+                let mut pattern_data_bottom = self
+                    .ppu_mem_map
+                    .fetch_sprite_pattern(pattern_table_index, pattern_entry_index_bottom)
+                    .unwrap();
 
-                            pattern_data_top = Self::flip_pattern_data_vertically(pattern_data_top);
-                            pattern_data_bottom =
-                                Self::flip_pattern_data_vertically(pattern_data_bottom);
-                        }
+                if secondary_oam_entry
+                    .oam_entry
+                    .attributes
+                    .is_flipped_vertically
+                {
+                    let temp = pattern_data_top;
+                    pattern_data_top = pattern_data_bottom;
+                    pattern_data_bottom = temp;
 
-                        if secondary_oam_entry
-                            .oam_entry
-                            .attributes
-                            .is_flipped_horizontally
-                        {
-                            pattern_data_top =
-                                Self::flip_pattern_data_horizontally(pattern_data_top);
-                            pattern_data_bottom =
-                                Self::flip_pattern_data_horizontally(pattern_data_bottom);
-                        }
-
-                        for index in 0..8 {
-                            pattern_data_bitplanes[index][0] = pattern_data_top[index];
-                            pattern_data_bitplanes[index][1] = pattern_data_top[index + 8];
-                        }
-
-                        for index in 8..16 {
-                            pattern_data_bitplanes[index][0] = pattern_data_bottom[index - 8];
-                            pattern_data_bitplanes[index][1] = pattern_data_bottom[index];
-                        }
-                    } else {
-                        // 8x8 sprites
-                        let pattern_table_index = self.reg_ctrl.sprite_pattern_table_index;
-                        let pattern_entry_index = secondary_oam_entry.oam_entry.tile_bank_index;
-                        let mut pattern_data = self
-                            .ppu_mem_map
-                            .fetch_sprite_pattern(pattern_table_index, pattern_entry_index)
-                            .unwrap();
-
-                        if secondary_oam_entry
-                            .oam_entry
-                            .attributes
-                            .is_flipped_vertically
-                        {
-                            pattern_data = Self::flip_pattern_data_vertically(pattern_data);
-                        }
-
-                        if secondary_oam_entry
-                            .oam_entry
-                            .attributes
-                            .is_flipped_horizontally
-                        {
-                            pattern_data = Self::flip_pattern_data_horizontally(pattern_data);
-                        }
-
-                        for index in 0..8 {
-                            pattern_data_bitplanes[index][0] = pattern_data[index];
-                            pattern_data_bitplanes[index][1] = pattern_data[index + 8];
-                        }
-                    }
-                    Some(SpriteOutputUnit {
-                        secondary_oam_entry: *secondary_oam_entry,
-                        pattern_data: pattern_data_bitplanes,
-                    })
+                    pattern_data_top = Self::flip_pattern_data_vertically(pattern_data_top);
+                    pattern_data_bottom = Self::flip_pattern_data_vertically(pattern_data_bottom);
                 }
-                None => {
-                    // We must fetch pattern data even if no sprite exists to toggle A12.
-                    // The PPU typically fetches the pattern for tile 0xFF in this case.
-                    let dummy_tile_index = 0xFF;
-                    if self.reg_ctrl.sprite_height == 1 {
-                        let pattern_table_index = dummy_tile_index & 0b1;
-                        let _ = self
-                            .ppu_mem_map
-                            .fetch_sprite_pattern(pattern_table_index, dummy_tile_index & 0xFE);
-                        let _ = self.ppu_mem_map.fetch_sprite_pattern(
-                            pattern_table_index,
-                            (dummy_tile_index & 0xFE) + 1,
-                        );
-                    } else {
-                        let pattern_table_index = self.reg_ctrl.sprite_pattern_table_index;
-                        let _ = self
-                            .ppu_mem_map
-                            .fetch_sprite_pattern(pattern_table_index, dummy_tile_index);
-                    }
-                    None
+
+                if secondary_oam_entry
+                    .oam_entry
+                    .attributes
+                    .is_flipped_horizontally
+                {
+                    pattern_data_top = Self::flip_pattern_data_horizontally(pattern_data_top);
+                    pattern_data_bottom = Self::flip_pattern_data_horizontally(pattern_data_bottom);
                 }
+
+                for index in 0..8 {
+                    pattern_data_bitplanes[index][0] = pattern_data_top[index];
+                    pattern_data_bitplanes[index][1] = pattern_data_top[index + 8];
+                }
+
+                for index in 8..16 {
+                    pattern_data_bitplanes[index][0] = pattern_data_bottom[index - 8];
+                    pattern_data_bitplanes[index][1] = pattern_data_bottom[index];
+                }
+            } else {
+                // 8x8 sprites
+                let pattern_table_index = self.reg_ctrl.sprite_pattern_table_index;
+                let pattern_entry_index = secondary_oam_entry.oam_entry.tile_bank_index;
+                let mut pattern_data = self
+                    .ppu_mem_map
+                    .fetch_sprite_pattern(pattern_table_index, pattern_entry_index)
+                    .unwrap();
+
+                if secondary_oam_entry
+                    .oam_entry
+                    .attributes
+                    .is_flipped_vertically
+                {
+                    pattern_data = Self::flip_pattern_data_vertically(pattern_data);
+                }
+
+                if secondary_oam_entry
+                    .oam_entry
+                    .attributes
+                    .is_flipped_horizontally
+                {
+                    pattern_data = Self::flip_pattern_data_horizontally(pattern_data);
+                }
+
+                for index in 0..8 {
+                    pattern_data_bitplanes[index][0] = pattern_data[index];
+                    pattern_data_bitplanes[index][1] = pattern_data[index + 8];
+                }
+            }
+
+            self.sprite_output_units.units[index] = SpriteOutputUnit {
+                secondary_oam_entry: secondary_oam_entry,
+                pattern_data: pattern_data_bitplanes,
             };
-            self.sprite_output_units.units[index] = unit;
+        }
+
+        for _ in self.secondary_oam.count..8 {
+            // We must fetch pattern data even if no sprite exists to toggle A12.
+            // The PPU typically fetches the pattern for tile 0xFF in this case.
+            let dummy_tile_index = 0xFF;
+            if self.reg_ctrl.sprite_height == 1 {
+                let pattern_table_index = dummy_tile_index & 0b1;
+                let _ = self
+                    .ppu_mem_map
+                    .fetch_sprite_pattern(pattern_table_index, dummy_tile_index & 0xFE);
+                let _ = self
+                    .ppu_mem_map
+                    .fetch_sprite_pattern(pattern_table_index, (dummy_tile_index & 0xFE) + 1);
+            } else {
+                let pattern_table_index = self.reg_ctrl.sprite_pattern_table_index;
+                let _ = self
+                    .ppu_mem_map
+                    .fetch_sprite_pattern(pattern_table_index, dummy_tile_index);
+            }
         }
     }
 
