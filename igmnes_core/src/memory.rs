@@ -15,7 +15,7 @@ const RAM_SIZE: usize = 0x800;
 pub trait MemMapped {
     fn read(&mut self, index: u16) -> u8;
     fn write(&mut self, index: u16, byte: u8);
-    fn read_range(&self, _range: Range<u16>) -> &[u8];
+    fn read_range(&mut self, _range: Range<u16>) -> &[u8];
 
     fn read_word(&mut self, index: u16) -> u16 {
         // little-endian!
@@ -75,7 +75,7 @@ impl MemMapped for Ram {
         self.ram[index as usize] = byte;
     }
 
-    fn read_range(&self, range: Range<u16>) -> &[u8] {
+    fn read_range(&mut self, range: Range<u16>) -> &[u8] {
         &self.ram[range.start as usize..range.end as usize]
     }
 }
@@ -223,7 +223,7 @@ impl MemMapped for CpuMemMap {
     }
 
     #[inline]
-    fn read_range(&self, range: Range<u16>) -> &[u8] {
+    fn read_range(&mut self, range: Range<u16>) -> &[u8] {
         self.ram.read_range(range)
     }
 

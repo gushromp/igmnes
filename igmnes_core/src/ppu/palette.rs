@@ -141,12 +141,12 @@ impl MemMapped for PpuPalette {
         self.mapping[index as usize] as u8
     }
 
-    fn read_range(&self, _range: std::ops::Range<u16>) -> &[u8] {
-        &[]
+    fn read_range(&mut self, _range: std::ops::Range<u16>) -> &[u8] {
+        unimplemented!()
     }
 
     fn write(&mut self, index: u16, byte: u8) {
-        let value = byte as usize;
+        let value = (byte & 0x3F) as usize;
         if index == 0x0 || index == 0x10 {
             self.mapping[0x0] = value;
             self.mapping[0x10] = value;

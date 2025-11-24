@@ -1,9 +1,9 @@
 #[macro_use]
 extern crate nom;
 
-mod apu;
+pub mod apu;
 mod controller;
-mod cpu;
+pub mod cpu;
 pub mod debug;
 pub mod debugger;
 mod dma;
@@ -11,7 +11,7 @@ mod errors;
 mod instructions;
 mod mappers;
 mod memory;
-mod ppu;
+pub mod ppu;
 mod rom;
 
 use self::apu::Apu;
@@ -26,6 +26,7 @@ use crate::debug::Tracer;
 use crate::debugger::frontends::terminal::TerminalDebugger;
 use crate::debugger::{Debugger, DebuggerFrontend};
 use crate::dma::Dma;
+use crate::mappers::MapperIrq;
 use crate::rom::RomError;
 use enum_dispatch::enum_dispatch;
 
@@ -283,7 +284,9 @@ impl Core {
             self.bus.nmi();
         }
 
-        let irq = self.bus.step_apu(current_cycle_count);
+        let mapper_irq = self.bus.mem_map().mapper.irq_pending();
+        let apu_irq = self.bus.step_apu(current_cycle_count);
+        let irq = apu_irq || mapper_irq;
         if irq && !nmi {
             self.bus.irq();
         }

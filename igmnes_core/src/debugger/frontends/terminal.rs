@@ -550,7 +550,7 @@ impl<'a> MemMapped for MemMapShim<'a> {
         }
     }
 
-    fn read_range(&self, _range: Range<u16>) -> &[u8] {
+    fn read_range(&mut self, _range: Range<u16>) -> &[u8] {
         unimplemented!()
     }
 }

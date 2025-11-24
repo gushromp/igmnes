@@ -1,12 +1,15 @@
 mod mapper_000;
 mod mapper_002;
 mod mapper_003;
+mod mapper_004;
 mod mapper_007;
+mod mapper_189;
 
 use self::mapper_000::NRom;
-use crate::mappers::mapper_002::UxROM;
 use crate::mappers::mapper_003::CNROM;
+use crate::mappers::mapper_004::Mmc3;
 use crate::mappers::mapper_007::AxROM;
+use crate::mappers::{mapper_002::UxROM, mapper_189::Mapper189};
 use crate::memory::MemMapped;
 use crate::rom::Rom;
 use enum_dispatch::enum_dispatch;
@@ -40,14 +43,22 @@ pub trait PpuMapper: MemMapped {
     fn get_mirrored_index(&self, index: u16) -> u16;
 }
 
-// pub trait Mapper : CpuMapper + PpuMapper {}
+#[enum_dispatch]
+pub trait MapperIrq {
+    fn clock_irq(&mut self, _addr: u16) {}
+    fn irq_pending(&self) -> bool {
+        false
+    }
+}
 
-#[enum_dispatch(Mapper, CpuMapper, PpuMapper, MemMapped)]
+#[enum_dispatch(Mapper, CpuMapper, PpuMapper, MapperIrq, MemMapped)]
 pub enum MapperImpl {
     Mapper000(NRom),
     Mapper002(UxROM),
     Mapper003(CNROM),
+    Mapper004(Mmc3),
     Mapper007(AxROM),
+    Mapper189(Mapper189),
 }
 
 pub fn load_mapper_for_rom(rom: &Rom) -> Result<MapperImpl, String> {
@@ -55,7 +66,9 @@ pub fn load_mapper_for_rom(rom: &Rom) -> Result<MapperImpl, String> {
         0 => NRom::new(rom).into(),
         2 => UxROM::new(rom).into(),
         3 => CNROM::new(rom).into(),
+        4 => Mmc3::new(rom).into(),
         7 => AxROM::new(rom).into(),
+        189 => Mapper189::new(rom).into(),
         mapper_num @ _ => return Err(format!("Unsupported mapper number: {}", mapper_num)),
     };
     Ok(mapper)

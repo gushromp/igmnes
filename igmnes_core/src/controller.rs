@@ -75,7 +75,7 @@ impl MemMapped for Controller {
         }
     }
 
-    fn read_range(&self, _range: std::ops::Range<u16>) -> &[u8] {
+    fn read_range(&mut self, _range: std::ops::Range<u16>) -> &[u8] {
         unimplemented!()
     }
 

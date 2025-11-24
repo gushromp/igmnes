@@ -11,7 +11,7 @@ use std::ops::Range;
 pub struct PpuMemMap {
     pub oam_table: OamTable,
     pub palette: PpuPalette,
-    mapper: SharedMapper,
+    pub mapper: SharedMapper,
 }
 
 impl Default for PpuMemMap {
@@ -154,7 +154,7 @@ impl MemMapped for PpuMemMap {
     }
 
     #[inline(always)]
-    fn read_range(&self, range: Range<u16>) -> &[u8] {
+    fn read_range(&mut self, range: Range<u16>) -> &[u8] {
         self.mapper.read_range(range)
     }
 }

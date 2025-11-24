@@ -6,6 +6,7 @@ use std::{array, fmt};
 
 use crate::debug::Tracer;
 
+use crate::mappers::MapperIrq;
 use crate::memory::{MemMapConfig, MemMapped};
 use crate::ppu::memory::PpuMemMap;
 use crate::ppu::palette::PpuPaletteColor;
@@ -550,7 +551,7 @@ impl Ppu {
         self.reg_mask.is_show_background_enabled && self.reg_mask.is_show_sprites_enabled
     }
 
-    #[inline]
+    #[inline(always)]
     fn increment_addr_read(&mut self) {
         self.reg_v = if self.reg_ctrl.is_increment_mode_32 {
             self.reg_v.wrapping_add(32)
@@ -606,12 +607,6 @@ impl Ppu {
             }
             self.reg_v = (self.reg_v & !0x03E0) | (y << 5);
         }
-    }
-
-    #[inline]
-    fn is_in_vblank(&self) -> bool {
-        return (self.curr_scanline > 240 && self.curr_scanline <= 260)
-            || !self.is_rendering_enabled();
     }
 
     #[inline(always)]
@@ -775,7 +770,7 @@ impl Ppu {
                     self.increment_addr_y();
                 }
 
-                if self.curr_scanline_cycle == 257 {
+                if self.curr_scanline_cycle == 258 {
                     // If rendering is enabled, the PPU copies all bits related to horizontal position from t to v:
                     // reg_v: .....A.. ...BCDEF <- reg_t: .....A.. ...BCDEF
                     let mask = 0b0000_0100_0001_1111;
@@ -809,19 +804,14 @@ impl Ppu {
                 self.reg_status.is_in_vblank = true;
             }
 
-            if self.curr_scanline == 241
-                && self.curr_scanline_cycle == 1
-                && self.reg_ctrl.is_nmi_enabled
-                && !self.should_skip_vbl
-            {
-                self.nmi_pending = true;
-            }
-
             if self.curr_scanline == 241 && self.curr_scanline_cycle == 1 {
                 if self.is_rendering_enabled() {
                     std::mem::swap(&mut self.output, &mut self.curr_frame)
                 }
                 self.is_frame_ready = true;
+                if self.reg_ctrl.is_nmi_enabled && !self.should_skip_vbl {
+                    self.nmi_pending = true;
+                }
             }
 
             if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
@@ -1078,7 +1068,27 @@ impl Ppu {
                         pattern_data: pattern_data_bitplanes,
                     })
                 }
-                None => None,
+                None => {
+                    // We must fetch pattern data even if no sprite exists to toggle A12.
+                    // The PPU typically fetches the pattern for tile 0xFF in this case.
+                    let dummy_tile_index = 0xFF;
+                    if self.reg_ctrl.sprite_height == 1 {
+                        let pattern_table_index = dummy_tile_index & 0b1;
+                        let _ = self
+                            .ppu_mem_map
+                            .fetch_sprite_pattern(pattern_table_index, dummy_tile_index & 0xFE);
+                        let _ = self.ppu_mem_map.fetch_sprite_pattern(
+                            pattern_table_index,
+                            (dummy_tile_index & 0xFE) + 1,
+                        );
+                    } else {
+                        let pattern_table_index = self.reg_ctrl.sprite_pattern_table_index;
+                        let _ = self
+                            .ppu_mem_map
+                            .fetch_sprite_pattern(pattern_table_index, dummy_tile_index);
+                    }
+                    None
+                }
             };
             self.sprite_output_units.units[index] = unit;
         }
@@ -1114,6 +1124,11 @@ impl Ppu {
     pub fn get_frame(&mut self) -> PpuFrame<'_> {
         self.is_frame_ready = false;
         &self.output.data.as_slice()
+    }
+
+    #[inline(always)]
+    fn clock_mapper_irq(&mut self) {
+        self.ppu_mem_map.mapper.clock_irq(self.reg_v);
     }
 }
 
@@ -1172,6 +1187,7 @@ impl MemMapped for Ppu {
                 if self.is_mutating_read() {
                     self.read_buffer = self.ppu_mem_map.read(self.reg_v);
                     self.increment_addr_read();
+                    self.clock_mapper_irq();
                 }
                 data
             }
@@ -1185,6 +1201,7 @@ impl MemMapped for Ppu {
                 // TODO: For better accuracy, replace old_is_nmi_enabled check with PPU cycle count
                 let old_is_nmi_enabled = self.reg_ctrl.is_nmi_enabled;
                 self.reg_ctrl.write(byte);
+
                 if !old_is_nmi_enabled
                     && self.reg_ctrl.is_nmi_enabled
                     && self.reg_status.is_in_vblank
@@ -1202,6 +1219,7 @@ impl MemMapped for Ppu {
                 self.reg_t = (self.reg_t & !mask) | (name_table_index & mask);
             }
             1 => self.reg_mask.write(byte),
+            2 => (),
             3 => {
                 self.reg_oam_addr = byte;
             }
@@ -1209,7 +1227,6 @@ impl MemMapped for Ppu {
                 self.ppu_mem_map.oam_table.write_u8(self.reg_oam_addr, byte);
                 self.reg_oam_addr = self.reg_oam_addr.wrapping_add(1);
             }
-            2 => (),
             5 => {
                 if !self.is_address_latch_on {
                     // First write
@@ -1258,10 +1275,12 @@ impl MemMapped for Ppu {
                     self.reg_v = self.reg_t;
                     self.reset_address_latch();
                 }
+                self.clock_mapper_irq();
             }
             7 => {
                 let result = self.ppu_mem_map.write(self.reg_v, byte);
                 self.increment_addr_read();
+                self.clock_mapper_irq();
                 result
             }
             _ => unreachable!(),
@@ -1276,7 +1295,7 @@ impl MemMapped for Ppu {
         self.mem_map_config.is_mutating_read = is_mutating_read;
     }
 
-    fn read_range(&self, _range: std::ops::Range<u16>) -> &[u8] {
+    fn read_range(&mut self, _range: std::ops::Range<u16>) -> &[u8] {
         unimplemented!()
     }
 }

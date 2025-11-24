@@ -1,4 +1,4 @@
-use crate::mappers::{CpuMapper, Mapper, PpuMapper};
+use crate::mappers::{CpuMapper, Mapper, MapperIrq, PpuMapper};
 use crate::memory::{MemMapped, Ram};
 use crate::rom::Rom;
 use std::ops::Range;
@@ -98,6 +98,8 @@ impl PpuMapper for AxROM {
     }
 }
 
+impl MapperIrq for AxROM {}
+
 impl MemMapped for AxROM {
     fn read(&mut self, index: u16) -> u8 {
         match index {
@@ -126,7 +128,7 @@ impl MemMapped for AxROM {
         }
     }
 
-    fn read_range(&self, range: Range<u16>) -> &[u8] {
+    fn read_range(&mut self, range: Range<u16>) -> &[u8] {
         match range.start {
             0..=0x1FFF => self.read_chr_ram_range(range),
             _ => unimplemented!(),
