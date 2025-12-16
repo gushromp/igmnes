@@ -409,9 +409,9 @@ pub struct Ppu {
     sprite_output_units: SpriteOutputUnits,
 
     curr_frame: PpuOutput,
+    output_frame: PpuOutput,
 
     is_frame_ready: bool,
-    output: PpuOutput,
 
     // Quirks
 
@@ -472,8 +472,9 @@ impl Ppu {
 
     #[inline]
     fn is_rendering_enabled(&self) -> bool {
-        let flags = PpuMaskReg::IS_SHOW_BACKGROUND_ENABLED | PpuMaskReg::IS_SHOW_SPRITES_ENABLED;
-        self.reg_mask.contains(flags)
+        self.reg_mask
+            .contains(PpuMaskReg::IS_SHOW_BACKGROUND_ENABLED)
+            || self.reg_mask.contains(PpuMaskReg::IS_SHOW_SPRITES_ENABLED)
     }
 
     #[inline(always)]
@@ -562,7 +563,7 @@ impl Ppu {
         self.curr_scanline_cycle = 0;
         self.cpu_cycles = 0;
 
-        self.output = PpuOutput::default();
+        self.output_frame = PpuOutput::default();
         self.curr_frame = PpuOutput::default();
     }
 
@@ -637,11 +638,14 @@ impl Ppu {
         let cycles_to_run = (cpu_cycles - self.cpu_cycles) * 3;
 
         for _ in 0..cycles_to_run {
+            let is_rendering_enabled = self.is_rendering_enabled();
+            let curr_scanline = self.curr_scanline;
+            let curr_scanline_cycle = self.curr_scanline_cycle;
+
             // Rendering scanlines & cycles
-            let pixel_x = self.curr_scanline_cycle.wrapping_sub(1) as usize;
-            let pixel_y = self.curr_scanline as usize;
-            if self.is_rendering_enabled() && pixel_y < 240 && pixel_x < 256 {
-                // Background
+            let pixel_x = curr_scanline_cycle.wrapping_sub(1) as usize;
+            let pixel_y = curr_scanline as usize;
+            if is_rendering_enabled && pixel_y < 240 && pixel_x < 256 {
                 let background_pixel = self.get_background_pixel(pixel_x, pixel_y);
                 let sprite_pixel = self.get_sprite_pixel(pixel_x, pixel_y);
 
@@ -655,8 +659,7 @@ impl Ppu {
                     _ => background_pixel.color,
                 };
 
-                let is_sprite_0_hit = self.is_rendering_enabled()
-                    && sprite_pixel.sprite_index == 0
+                let is_sprite_0_hit = sprite_pixel.sprite_index == 0
                     && !sprite_pixel.is_transparent
                     && !background_pixel.is_transparent;
                 if is_sprite_0_hit {
@@ -666,19 +669,17 @@ impl Ppu {
                 self.curr_frame.data[pixel_y * 256 + pixel_x] = output_color;
             }
 
-            if self.is_rendering_enabled()
-                && (self.curr_scanline < 240 || self.curr_scanline == 261)
-            {
-                if (self.curr_scanline_cycle >= 1 && self.curr_scanline_cycle <= 256)
-                    || (self.curr_scanline_cycle >= 321 && self.curr_scanline_cycle <= 336)
+            if is_rendering_enabled && (curr_scanline < 240 || curr_scanline == 261) {
+                if (curr_scanline_cycle >= 1 && curr_scanline_cycle <= 256)
+                    || (curr_scanline_cycle >= 321 && curr_scanline_cycle <= 336)
                 {
                     self.shift_registers_left();
                 }
 
-                if (self.curr_scanline_cycle >= 8 && self.curr_scanline_cycle <= 256
-                    || self.curr_scanline_cycle == 328
-                    || self.curr_scanline_cycle == 336)
-                    && self.curr_scanline_cycle % 8 == 0
+                if (curr_scanline_cycle >= 8 && curr_scanline_cycle <= 256
+                    || curr_scanline_cycle == 328
+                    || curr_scanline_cycle == 336)
+                    && curr_scanline_cycle % 8 == 0
                 {
                     // If rendering is enabled, the PPU increments the horizontal position in v many times across the scanline,
                     // it begins at dots 328 and 336, and will continue through the next scanline at 8, 16, 24... 240, 248, 256
@@ -689,14 +690,14 @@ impl Ppu {
                     self.increment_addr_x();
                 }
 
-                if self.curr_scanline_cycle == 256 {
+                if curr_scanline_cycle == 256 {
                     // If rendering is enabled, the PPU increments the vertical position in v.
                     // The effective Y scroll coordinate is incremented, which is a complex operation that will correctly skip the attribute table memory regions,
                     // and wrap to the next nametable appropriately.
                     self.increment_addr_y();
                 }
 
-                if self.curr_scanline_cycle == 258 {
+                if curr_scanline_cycle == 258 {
                     // If rendering is enabled, the PPU copies all bits related to horizontal position from t to v:
                     // reg_v: .....A.. ...BCDEF <- reg_t: .....A.. ...BCDEF
                     let mask = 0b0000_0100_0001_1111;
@@ -708,9 +709,7 @@ impl Ppu {
                     self.prepare_sprite_units();
                 }
 
-                if self.curr_scanline == 261
-                    && self.curr_scanline_cycle >= 280
-                    && self.curr_scanline_cycle <= 304
+                if curr_scanline == 261 && curr_scanline_cycle >= 280 && curr_scanline_cycle <= 304
                 {
                     // If rendering is enabled, at the end of vblank,
                     // shortly after the horizontal bits are copied from t to v at dot 257,
@@ -722,7 +721,8 @@ impl Ppu {
                 }
             }
 
-            if self.curr_scanline_cycle >= 257 && self.curr_scanline_cycle <= 320 {
+            if curr_scanline_cycle == 257 {
+                //&& self.curr_scanline_cycle <= 320 {
                 self.reg_oam_addr = 0;
             }
 
@@ -730,9 +730,9 @@ impl Ppu {
                 self.reg_status.set(PpuStatusReg::IS_IN_VBLANK, true);
             }
 
-            if self.curr_scanline == 241 && self.curr_scanline_cycle == 1 {
+            if curr_scanline == 241 && curr_scanline_cycle == 1 {
                 if self.is_rendering_enabled() {
-                    std::mem::swap(&mut self.output, &mut self.curr_frame)
+                    std::mem::swap(&mut self.output_frame, &mut self.curr_frame)
                 }
                 self.is_frame_ready = true;
                 if self.reg_ctrl.contains(PpuCtrlReg::IS_NMI_ENABLED) && !self.should_skip_vbl {
@@ -740,7 +740,7 @@ impl Ppu {
                 }
             }
 
-            if self.curr_scanline == 261 && self.curr_scanline_cycle == 1 {
+            if curr_scanline == 261 && curr_scanline_cycle == 1 {
                 self.reg_status = PpuStatusReg::empty();
                 self.is_odd_frame = !self.is_odd_frame;
                 self.should_skip_vbl = false;
@@ -748,9 +748,9 @@ impl Ppu {
                 self.is_frame_ready = false;
             }
 
-            if self.curr_scanline_cycle == 341
-                || (self.curr_scanline == 261
-                    && self.curr_scanline_cycle == 340
+            if curr_scanline_cycle == 341
+                || (curr_scanline == 261
+                    && curr_scanline_cycle == 340
                     && self.is_odd_frame
                     && self.is_rendering_enabled())
             {
@@ -1046,7 +1046,7 @@ impl Ppu {
     #[inline(always)]
     pub fn get_frame(&mut self) -> PpuFrame<'_> {
         self.is_frame_ready = false;
-        &self.output.data.as_slice()
+        &self.output_frame.data.as_slice()
     }
 
     #[inline(always)]
